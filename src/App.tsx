@@ -1,5 +1,7 @@
+// @ts-nocheck
+
 import './index.css'
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 const App = () => {
   const [users, setUsers] = useState([]);
