@@ -274,36 +274,28 @@ const App = () => {
       if (!mounted) return;
 
       setSession(session);
-
-      // Si usas sessionUser en otras partes, mantenlo sincronizado
-      const { data: userRes } = await supabase.auth.getUser();
-      if (!mounted) return;
-      setSessionUser(userRes.user ?? null);
-
-      setLoading(false);
+      setSessionUser(session?.user ?? null);
 
       if (session?.user) {
         await loadInitialData(session.user.id);
-        await ensurePendingRegistration(session.user.id); // <-- agrega esto
       }
 
+      if (mounted) setLoading(false);
     })();
 
     // 2) Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
+      (_event, newSession) => {
         setSession(newSession);
         setSessionUser(newSession?.user ?? null);
 
         if (newSession?.user) {
-          await loadInitialData(newSession.user.id);
-          await ensurePendingRegistration(newSession.user.id); // <-- aquí también
+          loadInitialData(newSession.user.id);
         } else {
-          // limpia estados si hace falta
+          // aquí puedes limpiar estados si hace falta
         }
       }
     );
-
 
     return () => {
       mounted = false;
@@ -433,7 +425,6 @@ const App = () => {
       setError(null);
 
       try {
-        const emailUsed = (newUser.email || '').trim();
         const tournamentId = newUser.tournaments[0] || null; // <-- ya es UUID
         const divisionId   = newUser.division || null;       // <-- ya es UUID
         if (!tournamentId || !divisionId) {
@@ -451,18 +442,10 @@ const App = () => {
         });
         if (signUpErr) throw signUpErr;
 
+        // Si tu proyecto NO exige confirmación de correo,
+        // debería venir con sesión; si no, avisa y corta.
         if (!authData.session) {
-          // Guarda lo elegido para completarlo después del login
-          localStorage.setItem(
-            'pending_registration',
-            JSON.stringify({ tournament_id: tournamentId, division_id: divisionId })
-          );
-
-          alert('Te enviamos un correo de confirmación. Luego vuelve al Login para inciar sesión.');
-
-          // Vuelve a la pantalla de login
-          setLoginView(true);
-          setRegistrationStep(1);
+          alert('We sent you a confirmation email. Please confirm it and then log in.');
           setLoading(false);
           return;
         }
@@ -527,27 +510,8 @@ const App = () => {
           division: ''
         });
         setRegistrationStep(1);
-        alert('Listo! Verifica tú correo y vuelve a entrar');
-        // Cerrar cualquier sesión que haya quedado abierta tras signUp
-        await supabase.auth.signOut();
-
-        // Volver a la pantalla de Login
-        setLoginView(true);
-        setRegistrationStep(1);
-
-        // Resetear el formulario pero dejando el email pre-llenado para el Login
-        setNewUser({
-          name: '',
-          email: emailUsed, // <- queda listo en el login
-          password: '',
-          profilePic: '',
-          locations: [],
-          availability: {},
-          tournaments: [],
-          division: ''
-        });
-
-        return;        
+        alert('Registration completed!');
+        // El efecto de sesión y loadInitialData actualizará la UI.
       } catch (err: any) {
         console.error('Registration failed ->', err);
         alert(`Registration failed: ${err.message ?? err}`);
@@ -663,44 +627,6 @@ const App = () => {
       setLoading(false);
     }
   };
-
-  const ensurePendingRegistration = async (userId: string) => {
-    const raw = localStorage.getItem('pending_registration');
-    if (!raw) return;
-
-    const pending = JSON.parse(raw) as { tournament_id: string; division_id: string };
-    if (!pending?.tournament_id || !pending?.division_id) {
-      localStorage.removeItem('pending_registration');
-      return;
-    }
-
-    // ¿Ya existe?
-    const { data: exists } = await supabase
-      .from('tournament_registrations')
-      .select('id')
-      .eq('profile_id', userId)
-      .eq('tournament_id', pending.tournament_id)
-      .eq('division_id', pending.division_id)
-      .maybeSingle();
-
-    if (!exists) {
-      const { error: insErr } = await supabase.from('tournament_registrations').insert({
-        profile_id: userId,
-        tournament_id: pending.tournament_id,
-        division_id: pending.division_id
-      }).single();
-      if (insErr) {
-        console.error('Auto-registration insert failed:', insErr);
-        return; // deja el localStorage para reintentar en el próximo login
-      }
-    }
-
-    // Limpia y refresca UI
-    localStorage.removeItem('pending_registration');
-    const { data: regs } = await supabase.from('tournament_registrations').select('*');
-    if (regs) setRegistrations(regs as Registration[]);
-  };
-
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1398,6 +1324,41 @@ const App = () => {
 
           {registrationStep === 1 ? (
             <>
+              <div className="mb-6 text-center">
+                <h2 className="text-2xl font-semibold text-gray-800 mb-6">Create Account</h2>
+                <form onSubmit={handleRegister}>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <input
+                        type="text"
+                        value={newUser.name}
+                        onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                      <input
+                        type="email"
+                        value={newUser.email}
+                        onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
+                    >
+                      Continue
+                    </button>
+                  </div>
+                </form>
+              </div>
+
               <div className="border-t pt-6">
                 <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">Login</h2>
                 <form onSubmit={handleLogin}>
@@ -1443,45 +1404,9 @@ const App = () => {
                 </form>
                 
                 <div className="mt-4 text-sm text-center text-gray-600">
+                  <p>Utiliza tú correo y una clave de 6 caracteres mínimo</p>
                 </div>
               </div>
-
-              <div className="mb-6 text-center">
-                <h2 className="text-2xl font-semibold text-gray-800 mb-6">Create Account</h2>
-                <form onSubmit={handleRegister}>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                      <input
-                        type="text"
-                        value={newUser.name}
-                        onChange={(e) => setNewUser({...newUser, name: e.target.value})}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                      <input
-                        type="email"
-                        value={newUser.email}
-                        onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        required
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
-                    >
-                      Continue
-                    </button>
-                    <p>Utiliza Nombre + Apellido, y correo personal</p>
-                  </div>
-                </form>
-              </div>
-
             </>
           ) : registrationStep === 2 ? (
             <div>
@@ -1659,7 +1584,6 @@ const App = () => {
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         required
                       />
-                      <p>Utiliza Nombre + Apellido, y correo personal</p>
                     </div>
 
                   <div className="flex space-x-4">
@@ -2424,46 +2348,19 @@ const App = () => {
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
-
-    // Stats solo de quienes tienen partidos (como antes)
-    const divisionStats = standings
+    const divisionStandings = standings
       .filter(s => s.division_id === selectedDivision.id && s.tournament_id === selectedTournament.id)
       .map(s => ({
         ...s,
         name: profiles.find(p => p.id === s.profile_id)?.name || ''
-      }));
-
-    // Mapa rápido por id para mezclar stats con el roster completo
-    const statsById = new Map(divisionStats.map(s => [s.profile_id, s]));
-
-    // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
-    const rosterRows = players.map(p => {
-      const s = statsById.get(p.id);
-      return {
-        profile_id: p.id,
-        name: p.name,
-        points: s?.points ?? 0,
-        wins: s?.wins ?? 0,
-        losses: s?.losses ?? 0,
-        sets_won: s?.sets_won ?? 0,
-        sets_lost: s?.sets_lost ?? 0,
-        set_diff: s?.set_diff ?? 0,
-        pints: s?.pints ?? 0,
-      };
-    })
-    // orden principal por puntos, secundario por nombre
-    .sort((a, b) => (b.points - a.points) || a.name.localeCompare(b.name));
-
-    // Para compatibilidad con código más abajo
-    const divisionStandings = divisionStats;
-
-    // Líder y top pintas ahora salen del roster mezclado (incluye 0s)
-    const leader = rosterRows[0] ?? null;
-    const topPintsPlayer = rosterRows.reduce(
-      (max, r) => (max == null || r.pints > max.pints ? r : max),
-      null as null | typeof rosterRows[number]
-    );
-
+      }))
+      .sort((a, b) => b.points - a.points);
+    
+    const leader = divisionStandings.length > 0 ? divisionStandings[0] : null;
+    
+    // Find player with most pints in division
+    const topPintsPlayer = divisionStandings.length > 0 ? 
+      divisionStandings.sort((a, b) => b.pints - a.pints)[0] : null;
 
     // Get all scheduled matches for this division
     const pendingMatches = matches.filter(match => 
@@ -2998,10 +2895,11 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {rosterRows.length > 0 ? (
-                        rosterRows.map((stats, index) => {
+                      {divisionStandings.length > 0 ? (
+                        divisionStandings.map((stats, index) => {
                           const player = profiles.find(p => p.id === stats.profile_id);
                           if (!player) return null;
+                          
                           return (
                             <tr 
                               key={stats.profile_id} 
@@ -3042,12 +2940,11 @@ const App = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
+                          <td colSpan="11" className="px-6 py-4 text-center text-gray-500">
                             No players in this division yet
                           </td>
                         </tr>
                       )}
-
                     </tbody>
                   </table>
                 </div>
