@@ -1062,57 +1062,52 @@ const App = () => {
     safeShareOnWhatsApp(msg); // usa tu helper
   };
 
-
   const copyTableToClipboard = () => {
     if (!selectedTournament) {
       alert('Primero elige un torneo');
       return;
     }
     
-    // Get all scheduled matches for the tournament
     const allScheduled = matches
-      .filter(match => 
-        match.tournament_id === selectedTournament.id && 
-        match.status === 'scheduled'
-      )
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
+      .filter(m => m.tournament_id === selectedTournament.id && m.status === 'scheduled')
+      .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
     if (allScheduled.length === 0) {
-      alert('No scheduled matches to copy');
+      alert('No hay partidos programados para copiar');
       return;
     }
-    
-    let table = `*Pinta Post Championship - Partidos Programados*\n\n`;
-    
-    // Create a formatted table
-    allScheduled.forEach(match => {
-      const date = match.date;
-      const time = match.time || '';
-      const player1 = profiles.find(p => p.id === match.home_player_id)?.name || '';
-      const player2 = profiles.find(p => p.id === match.away_player_id)?.name || '';
-      const players = `${player1} vs ${player2}`;
-      const division = divisions.find(d => d.id === match.division_id)?.name || '';
-      const location = locations.find(l => l.id === match.location_id)?.name || '';
-      
-      // Format the row with fixed width
-      table += `| ${date.padEnd(10)} | ${time.padEnd(10)} | ${players.padEnd(30)} | ${division.padEnd(10)} | ${location.padEnd(20)} |\n`;
+
+    // Usamos la misma lógica de formato que para WhatsApp
+    let message = `*Pinta Post Championship - Partidos Programados*\n\n`;
+
+    const grouped = allScheduled.reduce((acc, match) => {
+      const key = dateKey(match.date);
+      (acc[key] ||= []).push(match);
+      return acc;
+    }, {} as Record<string, Match[]>);
+
+    Object.keys(grouped).sort().forEach(date => {
+      message += `*${tituloFechaEs(date)}*\n`;
+      grouped[date].forEach(m => {
+        const p1 = profiles.find(p => p.id === m.home_player_id)?.name || '';
+        const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
+        const divName = divisions.find(d => d.id === m.division_id)?.name || '';
+        const icon = divisionIcon(divName);
+        const loc = locations.find(l => l.id === m.location_id)?.name || '';
+        const time = m.time ? ` – ${m.time}` : '';
+        const extra = (loc || m.location_details) ? ` ${loc}${m.location_details ? ` (${m.location_details})` : ''}${time}` : time;
+        message += `• ${p1} vs ${p2} ${icon}${extra}\n`;
+      });
+      message += '\n';
     });
-    
-    table += `\nCopied from Pinta Post Championship Tennis League`;
-    
-    // Copy to clipboard
-    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      navigator.clipboard.writeText(table)
-        .then(() => {
-          alert('Upcoming matches table copied to clipboard!');
-        })
-        .catch(() => {
-          // Fallback for older browsers
-          copyToClipboardFallback(table);
-        });
-    } else {
-      copyToClipboardFallback(table);
-    }
+
+    // Copiamos el mensaje formateado al portapapeles
+    navigator.clipboard.writeText(message.trim()).then(() => {
+      alert('Lista de partidos copiada al portapapeles!');
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+      alert('No se pudo copiar la lista.');
+    });
   };
 
   const handleAddMatch = async (e: React.FormEvent) => {
