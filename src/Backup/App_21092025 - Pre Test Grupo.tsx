@@ -164,7 +164,6 @@ const App = () => {
     tournaments: [] as string[],
     division: ''
   });
-
   const [newMatch, setNewMatch] = useState({ 
     player1: '', 
     player2: '', 
@@ -172,9 +171,9 @@ const App = () => {
     division: '', 
     tournament: '',
     hadPint: false, 
-    pintsCount: 1, // Tipo número
+    pintsCount: '1',
     location: '',
-    location_details: '', // Campo añadido
+    location_details: '',
     date: '', 
     time: '' 
   });
@@ -268,89 +267,128 @@ const App = () => {
     if (sets.length === 0) return `${m.player1_games_won}-${m.player2_games_won}`;
 
     // Si paso un 'perspectiveId', muestro el marcador desde ese jugador
-    const invert = perspectiveId && m.home_player_id !== perspectiveId;
+    const invert = perspectiveId && m.player1 !== perspectiveId;
     return sets
       .map(s => invert ? `${s.p2_games}-${s.p1_games}` : `${s.p1_games}-${s.p2_games}`)
       .join(' ');
-    }
+  }
 
-
-  // Esta es nuestra ÚNICA función para cargar todos los datos.
-  const fetchData = async (userId?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const promises = [
-        supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
-        supabase.from('divisions').select('*'),
-        supabase.from('profiles').select('*'),
-        supabase.from('matches').select('*'),
-        supabase.from('v_standings').select('*'),
-        supabase.from('locations').select('*'),
-        supabase.from('tournament_registrations').select('*'),
-        supabase.from('match_sets').select('*'),
-      ];
-      if (userId) {
-        promises.push(supabase.from('availability').select('*').eq('profile_id', userId));
-      }
-
-      const responses = await Promise.all(promises);
-      for (const res of responses) if (res.error) throw res.error;
-
-      setTournaments(responses[0].data || []);
-      setDivisions(responses[1].data || []);
-      setProfiles(responses[2].data || []);
-      setMatches(responses[3].data || []);
-      setStandings(responses[4].data || []);
-      setLocations(responses[5].data || []);
-      setRegistrations(responses[6].data || []);
-      setMatchSets(responses[7].data || []);
-      if (userId && responses[8]) {
-        setAvailabilitySlots(responses[8].data || []);
-      }
-    } catch (err: any) {
-      setError(`Failed to load data: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // EFECTO 1: Maneja la sesión y el "onboarding"
+  // EFECTO 1: Cargar todos los datos públicos UNA SOLA VEZ al iniciar la app.
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const loadPublicData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Usamos Promise.all para cargar todo en paralelo y mejorar la velocidad
+        const [
+          tournamentsRes,
+          divisionsRes,
+          profilesRes,
+          matchesRes,
+          standingsRes,
+          locationsRes,
+          registrationsRes,
+          matchSetsRes,
+        ] = await Promise.all([
+          supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
+          supabase.from('divisions').select('*'),
+          supabase.from('profiles').select('*'),
+          supabase.from('matches').select('*'),
+          supabase.from('v_standings').select('*'),
+          supabase.from('locations').select('*'),
+          supabase.from('tournament_registrations').select('*'),
+          supabase.from('match_sets').select('*'),
+        ]);
+
+        // Verificamos errores en cada respuesta
+        if (tournamentsRes.error) throw tournamentsRes.error;
+        if (divisionsRes.error) throw divisionsRes.error;
+        if (profilesRes.error) throw profilesRes.error;
+        if (matchesRes.error) throw matchesRes.error;
+        if (standingsRes.error) throw standingsRes.error;
+        if (locationsRes.error) throw locationsRes.error;
+        if (registrationsRes.error) throw registrationsRes.error;
+        if (matchSetsRes.error) throw matchSetsRes.error;
+
+        // Actualizamos el estado con los datos públicos
+        setTournaments(tournamentsRes.data || []);
+        setDivisions(divisionsRes.data || []);
+        setProfiles(profilesRes.data || []);
+        setStandings(standingsRes.data || []);
+        setLocations(locationsRes.data || []);
+        setRegistrations(registrationsRes.data || []);
+        setMatchSets(matchSetsRes.data || []);
+
+      } catch (err: any) {
+        setError(`Failed to load initial data: ${err.message}`);
+        console.error('Error loading public data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPublicData();
+  }, []); // El array vacío [] asegura que esto solo se ejecute UNA VEZ.
+
+  // EFECTO 2: Manejar la sesión del usuario de forma reactiva.
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!mounted) return;
+
       setSession(session);
       setSessionUser(session?.user ?? null);
-      
-      if (_event === 'SIGNED_IN' && session?.user) {
-        // Pasamos el objeto User completo a ensurePendingOnboarding
-        await ensurePendingOnboarding(session.user.id, session.user);
-        // fetchData ya no es necesario aquí porque el Efecto 3 lo manejará
+
+      try {
+        if (session?.user) {
+          await ensurePendingOnboarding(session.user.id); // completa perfil/registro si viene de verificación
+          await loadInitialData(session.user.id);         // carga todo lo demás
+        }
+      } finally {
+        if (mounted) setLoading(false); // nunca dejar el loader colgado
       }
-    });
-    return () => subscription.unsubscribe();
+    })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        setSession(newSession);
+        setSessionUser(newSession?.user ?? null);
+
+        try {
+          if (newSession?.user) {
+            await ensurePendingOnboarding(newSession.user.id);
+            await loadInitialData(newSession.user.id);
+          }
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // EFECTO 2: Sincroniza el currentUser con los datos cargados
+
+  // EFECTO 3: Sincronizar el estado de la UI (currentUser y loginView) con la sesión.
   useEffect(() => {
-    if (sessionUser && profiles.length > 0) {
-      const userProfile = profiles.find(p => p.id === sessionUser.id);
+    // Este efecto se ejecuta cada vez que 'session' o 'profiles' cambian.
+    if (session?.user && profiles.length > 0) {
+      // Si hay una sesión y ya tenemos los perfiles cargados...
+      const userProfile = profiles.find(p => p.id === session.user.id);
       setCurrentUser(userProfile || null);
+      // Ya no es necesario mostrar la vista de login.
       setLoginView(false);
-    } else if (!sessionUser) {
+    } else if (!session?.user) {
+      // Si no hay sesión, reseteamos el usuario y mostramos la vista de login.
       setCurrentUser(null);
       setLoginView(true);
     }
-  }, [sessionUser, profiles]);
-
-  // EFECTO 3: Carga los datos cuando la sesión cambia o al inicio
-  useEffect(() => {
-    // Carga todos los datos públicos al inicio.
-    // Si ya hay una sesión, también carga los datos específicos del usuario.
-    fetchData(session?.user.id);
-  }, [session]); // Se ejecuta al inicio y cada vez que la sesión cambia.
-
-  // --- FIN DEL BLOQUE DE CÓDIGO DEFINITIVO ---
-  
+  }, [session, profiles]); // Dependencias clave para la sincronización.
   // Load all initial data from Supabase
   const loadInitialData = async (userId: string) => {
     try {
@@ -453,27 +491,6 @@ const App = () => {
     })();
   }, [selectedPlayer?.id, locations]);
 
-  useEffect(() => {
-    let lastFetchTime = Date.now();
-
-    const handleVisibilityChange = () => {
-      // Si la pestaña vuelve a estar visible y ha pasado más de 5 minutos desde la última carga
-      if (document.visibilityState === 'visible' && Date.now() - lastFetchTime > 300000) {
-        console.log("Tab is visible after a while, refreshing data...");
-        if (session?.user) {
-          fetchData(session.user.id);
-          lastFetchTime = Date.now(); // Actualizamos el tiempo de la última carga
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [session]); // Depende de la sesión para tener el ID de usuario disponible
-
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -568,7 +585,6 @@ const App = () => {
   };
 
   const handleAvatarSelectDuringSignup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
     const f = e.target.files?.[0];
     if (!f) return;
 
@@ -795,7 +811,7 @@ const App = () => {
     }
   }
 
-  async function ensurePendingOnboarding(userId: string, sessionUser: User) {
+  async function ensurePendingOnboarding(userId: string) {
     const rawOnboarding = localStorage.getItem('pending_onboarding');
     if (!rawOnboarding) return;
 
@@ -804,72 +820,43 @@ const App = () => {
     try {
       const onboarding = JSON.parse(rawOnboarding);
 
-      // 1. Aseguramos que el perfil exista (lo crea si el trigger falló)
-      const { error: profileErr } = await supabase.from('profiles').upsert({
-        id: userId,
-        name: onboarding.name,
-        email: sessionUser.email,
-        role: 'player',
-      });
-      if (profileErr) throw profileErr;
-
-      // 2. Subir el avatar desde localStorage
+      // 1. SUBIR AVATAR desde localStorage
       if (onboarding.profilePicDataUrl) {
         const file = dataURLtoFile(onboarding.profilePicDataUrl, `${userId}.jpg`);
-        const { error: uploadError } = await supabase.storage.from('avatars').upload(`${userId}.jpg`, file, { upsert: true });
+        const filePath = `${userId}.jpg`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(filePath, file, { upsert: true });
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(`${userId}.jpg`);
+        // Obtenemos la URL pública y la guardamos en el perfil
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
         await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', userId);
+        console.log("Avatar uploaded and profile updated.");
       }
 
-      // 3. Inscribir en el torneo
+      // 2. INSCRIBIR EN TORNEO Y DIVISIÓN
       if (onboarding.tournament_id && onboarding.division_id) {
-        await supabase.rpc('register_player_for_tournament', {
-          p_tournament_id: onboarding.tournament_id,
-          p_division_id: onboarding.division_id,
+        await supabase.from('tournament_registrations').insert({
+          profile_id: userId,
+          tournament_id: onboarding.tournament_id,
+          division_id: onboarding.division_id,
         });
+        console.log("User registered in tournament.");
       }
-      
-      // 4. --- LÓGICA CORREGIDA Y AÑADIDA PARA GUARDAR DISPONIBILIDAD Y UBICACIONES ---
-      
-      // Guardar Disponibilidad (Availability)
-      const availabilityRows = buildAvailabilityRowsFromObject(onboarding.availability, userId);
-      // Borramos la disponibilidad anterior por si acaso
-      await supabase.from('availability').delete().eq('profile_id', userId); 
-      if (availabilityRows.length > 0) {
-        const { error: availabilityError } = await supabase.from('availability').insert(availabilityRows);
-        if (availabilityError) throw availabilityError;
-        console.log("User availability saved.");
-      }
-      
-      // Guardar Ubicaciones (Locations)
-      // Borramos las ubicaciones anteriores por si acaso
-      await supabase.from('profile_locations').delete().eq('profile_id', userId); 
-      if (onboarding.locations && onboarding.locations.length > 0) {
-        for (const areaName of onboarding.locations) {
-          // Buscamos si la ubicación ya existe en la tabla 'locations'
-          const { data: loc } = await supabase.from('locations').select('id').eq('name', areaName).maybeSingle();
-          const locId = loc?.id;
-          
-          if (locId) {
-            // Si existe, solo creamos la relación en 'profile_locations'
-            const { error: plError } = await supabase.from('profile_locations').insert({ profile_id: userId, location_id: locId });
-            if (plError) console.error(`Error linking location ${areaName}:`, plError);
-          }
-        }
-        console.log("User locations saved.");
-      }
-      
-      // 5. Limpiar localStorage y recargar datos
+
+      // (Aquí iría la lógica para guardar availability y locations, que ya tienes)
+
       localStorage.removeItem('pending_onboarding');
       console.log("Onboarding complete.");
       
-      await fetchData(userId); // Recarga final para que la UI muestre todo
+      // Forzamos una recarga de datos para que la UI refleje los cambios inmediatamente
+      await loadInitialData(userId);
 
     } catch (e: any) {
       console.error('ensurePendingOnboarding failed:', e);
-      alert(`We couldn't finalize your profile setup. Error: ${e.message}`);
+      alert(`We couldn't finalize your profile setup. Please try editing your profile manually. Error: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -1029,47 +1016,68 @@ const App = () => {
     return s.replace(/ de /g, ' ').replace(',', '').replace(/^\w/, c => c.toUpperCase());
   }
 
+
+
+
   const shareAllScheduledMatches = () => {
-    if (!selectedTournament) return;
+    if (!selectedTournament) {
+      alert('Please select a tournament first');
+      return;
+    }
+
     const all = matches
       .filter(m => m.tournament_id === selectedTournament.id && m.status === 'scheduled')
       .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    if (all.length === 0) return alert('No scheduled matches to share');
+    if (all.length === 0) {
+      alert('No scheduled matches to share');
+      return;
+    }
 
-    let msg = `*Pinta Post Championship - Partidos Programados*\n\n`;
-    
-    const grouped = all.reduce((acc, match) => {
-      const key = dateKey(match.date);
-      (acc[key] ||= []).push(match);
-      return acc;
-    }, {} as Record<string, Match[]>);
+    // Agrupar por fecha
+    const grouped: Record<string, Match[]> = {};
+    all.forEach(m => {
+      const key = dateKey(m.date);
+      (grouped[key] ??= []).push(m);
+    });
 
+
+    let msg = '';
     Object.keys(grouped).sort().forEach(date => {
-      msg += `*${tituloFechaEs(date)}*\n`;
+      msg += `${tituloFechaEs(date)}\n`;
       grouped[date].forEach(m => {
-        const p1 = profiles.find(p => p.id === m.home_player_id)?.name || '';
-        const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
+        const player1 = profiles.find(p => p.id === match.home_player_id)?.name || '';
+        const player2 = profiles.find(p => p.id === match.away_player_id)?.name || '';
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
-        // MENSAJE SIMPLIFICADO
-        msg += `• ${p1} vs ${p2} ${icon}\n`;
+        const loc = locations.find(l => l.id === m.location_id)?.name || '';
+        const time = m.time ? ` – ${m.time}` : '';
+        const extra = (loc || time) ? ` ${loc}${time ? ` ${time}` : ''}` : '';
+        msg += `• ${p1} vs ${p2} ${icon}${extra}\n`;
       });
       msg += '\n';
     });
-    
-    safeShareOnWhatsApp(msg.trim());
+    msg = msg.trim();
+
+    safeShareOnWhatsApp(msg); // usa tu helper
   };
 
   const copyTableToClipboard = () => {
-    if (!selectedTournament) return alert('Primero elige un torneo');
+    if (!selectedTournament) {
+      alert('Primero elige un torneo');
+      return;
+    }
+    
     const allScheduled = matches
       .filter(m => m.tournament_id === selectedTournament.id && m.status === 'scheduled')
       .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    if (allScheduled.length === 0) return alert('No hay partidos programados para copiar');
+    if (allScheduled.length === 0) {
+      alert('No hay partidos programados para copiar');
+      return;
+    }
 
-    // FORMATO SIMPLIFICADO IGUAL A WHATSAPP
+    // Usamos la misma lógica de formato que para WhatsApp
     let message = `*Pinta Post Championship - Partidos Programados*\n\n`;
 
     const grouped = allScheduled.reduce((acc, match) => {
@@ -1085,12 +1093,15 @@ const App = () => {
         const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
-        // MENSAJE SIMPLIFICADO
-        message += `• ${p1} vs ${p2} ${icon}\n`;
+        const loc = locations.find(l => l.id === m.location_id)?.name || '';
+        const time = m.time ? ` – ${m.time}` : '';
+        const extra = (loc || m.location_details) ? ` ${loc}${m.location_details ? ` (${m.location_details})` : ''}${time}` : time;
+        message += `• ${p1} vs ${p2} ${icon}${extra}\n`;
       });
       message += '\n';
     });
 
+    // Copiamos el mensaje formateado al portapapeles
     navigator.clipboard.writeText(message.trim()).then(() => {
       alert('Lista de partidos copiada al portapapeles!');
     }).catch(err => {
@@ -1204,7 +1215,7 @@ const App = () => {
         player2: '',
         sets: [{ score1: '', score2: '' }],
         hadPint: false,
-        pintsCount: 1,
+        pintsCount: '1',
         location: '',
         date: '',
         time: ''
@@ -1436,44 +1447,18 @@ const App = () => {
     }));
   };
 
-
-  // FUNCIÓN PARA EL FORMULARIO DE REGISTRO
   const handleProfilePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const target = e.target; // 1. Guardamos e.target en una constante
-    if (!target || !target.files) { // 2. Hacemos la comprobación sobre la constante
-      return;
-    }
-
-    const file = target.files[0]; // 3. Ahora usamos la constante segura
+    const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
         const dataUrl = event.target.result as string;
+        // Esto asegura que tanto el preview como el estado principal se actualicen
         setPendingAvatarPreview(dataUrl);
         setNewUser(prev => ({ ...prev, profilePic: dataUrl }));
       }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // FUNCIÓN PARA EL MODAL DE EDICIÓN DE PERFIL
-  const handleEditAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const target = e.target; // 1. Guardamos e.target en una constante
-    if (!target || !target.files) { // 2. Hacemos la comprobación sobre la constante
-      return;
-    }
-
-    const file = target.files[0]; // 3. Ahora usamos la constante segura
-    if (!file) return;
-
-    setPendingAvatarFile(file);
-    
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setEditUser(prev => ({ ...prev, profilePic: dataUrl }));
     };
     reader.readAsDataURL(file);
   };
@@ -1915,7 +1900,7 @@ const App = () => {
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={handleEditAvatarSelect}  // <- usa el handler nuevo
+                      onChange={handleProfilePicUpload}  // <- usa el handler nuevo
                       className="hidden"
                     />
                   </label>
@@ -2319,7 +2304,7 @@ const App = () => {
 
           {/* Division Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
+            {divisionsData.map(({ division, players, gamesPlayed, scheduledMatches, winner, totalPints, leader, topPints }) => (
               <div 
                 key={division.id} 
                 className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
@@ -2346,16 +2331,16 @@ const App = () => {
                       <div className="text-sm text-gray-600">Total Pintas</div>
                     </div>
                     <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
+                      <div className="text-2xl font-bold text-orange-600">{topPints ? Number(topPints.pints) : 0}</div>
                       <div className="text-sm text-gray-600">Pintas Máximas</div>
                     </div>
                   </div>
 
-                  {topPintsPlayer && (
+                  {topPints && (
                     <div className="bg-blue-50 p-3 rounded-lg mb-4">
                       <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                      <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
-                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                      <div className="font-semibold text-blue-900">{topPints.name}</div>
+                      <div className="text-sm text-blue-700">{Number(topPints.pints)} pintas</div>
                     </div>
                   )}
                   
@@ -2601,19 +2586,7 @@ const App = () => {
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
                       <p className="font-semibold text-gray-800">{currentUser.name}</p>
-                      <p className="text-sm text-gray-600">
-                        Division: {(() => {
-                          const registration = registrations.find(r => 
-                            r.profile_id === currentUser.id && r.tournament_id === selectedTournament?.id
-                          );
-                          if (registration) {
-                            const division = divisions.find(d => d.id === registration.division_id);
-                            return division?.name || 'N/A';
-                          }
-                          return 'N/A';
-                        })()}
-                        {currentUser.role === 'admin' && ' (Admin)'}
-                      </p>
+                      <p className="text-sm text-gray-600">Division: {currentUser.division} {currentUser.role === 'admin' && '(Admin)'}</p>
                     </div>
                     <button
                       onClick={handleLogout}
@@ -2858,21 +2831,23 @@ const App = () => {
                             </div>
                             <button 
                               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
-                              // Reemplaza el onClick completo del botón "Schedule Match"
                               onClick={() => {
-                                // Guarda los IDs de los jugadores, no los nombres
-                                setNewMatch(prev => ({
-                                  ...prev,
+                                // Schedule a match with this opponent
+                                setNewMatch({
                                   player1: selectedPlayer.id,
                                   player2: opponent.id,
-                                  // Reseteamos campos específicos del partido anterior
+                                  sets: [{ score1: '', score2: '' }],
+                                  division: selectedDivision.name,
+                                  tournament: selectedTournament.name,
+                                  hadPint: false,
+                                  pintsCount: '1',
                                   location: '',
-                                  location_details: '',
                                   date: '',
-                                  time: '',
-                                }));
-                                // Vuelve a la vista de la división para ver el formulario pre-llenado
-                                setSelectedPlayer(null); 
+                                  time: ''
+                                });
+                                setSelectedPlayer(null)
+                                setSelectedDivision(null);
+                                setSelectedTournament(null);
                               }}
                             >
                               Schedule Match
@@ -2999,21 +2974,7 @@ const App = () => {
                 <div className="flex items-center space-x-4">
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{currentUser.name}</p>
-                    <p className="text-sm text-gray-600">
-                      Division: {(() => {
-                        // Buscamos el registro del usuario en el torneo que se está viendo
-                        const registration = registrations.find(r => 
-                          r.profile_id === currentUser.id && r.tournament_id === selectedTournament?.id
-                        );
-                        // Si lo encontramos, buscamos el nombre de la división
-                        if (registration) {
-                          const division = divisions.find(d => d.id === registration.division_id);
-                          return division?.name || 'N/A';
-                        }
-                        return 'N/A';
-                      })()}
-                      {currentUser.role === 'admin' && ' (Admin)'}
-                    </p>
+                    <p className="text-sm text-gray-600">Division: {currentUser.division} {currentUser.role === 'admin' && '(Admin)'}</p>
                   </div>
                   <button
                     onClick={handleLogout}
@@ -3278,7 +3239,7 @@ const App = () => {
                           min="1"
                           max="10"
                           value={newMatch.pintsCount}
-                          onChange={(e) => setNewMatch({...newMatch, pintsCount: parseInt(e.target.value)})}
+                          onChange={(e) => setNewMatch({...newMatch, pintsCount: e.target.value})}
                           className="w-20 px-3 py-2 border border-gray-300 rounded text-center"
                         />
                         <span className="ml-2 text-gray-600">pintas</span>
