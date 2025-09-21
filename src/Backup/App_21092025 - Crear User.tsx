@@ -64,8 +64,8 @@ interface Match {
   time?: string;
   location_id?: string;
   status: string;
-  home_player_id: string;
-  away_player_id: string | null;
+  player1: string;
+  player2: string;
   player1_sets_won: number;
   player2_sets_won: number;
   player1_games_won: number;
@@ -172,8 +172,7 @@ const App = () => {
     tournament: '',
     hadPint: false, 
     pintsCount: '1',
-    location: '',
-    location_details: '',
+    location: '', 
     date: '', 
     time: '' 
   });
@@ -200,6 +199,14 @@ const App = () => {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
   const locationsList = ['South', 'Southeast', 'Southwest', 'North', 'Northeast', 'Northwest', 'Central', 'West', 'East'];
+
+  const normalizeMatches = (rows: any[] = []) =>
+    rows.map(r => ({
+      ...r,
+      // toma primero home/away; si no existen, cae a player1_id/player2_id; si tampoco, usa player1/player2
+      player1: r.home_player_id ?? r.player1_id ?? r.player1,
+      player2: r.away_player_id ?? r.player2_id ?? r.player2,
+    }));
 
   const abbreviateLocation = (location: string) => {
     const abbreviations: Record<string, string> = {
@@ -314,6 +321,7 @@ const App = () => {
         setTournaments(tournamentsRes.data || []);
         setDivisions(divisionsRes.data || []);
         setProfiles(profilesRes.data || []);
+        setMatches(normalizeMatches(matchesRes.data));
         setStandings(standingsRes.data || []);
         setLocations(locationsRes.data || []);
         setRegistrations(registrationsRes.data || []);
@@ -427,7 +435,7 @@ const App = () => {
       setLocations(locationsRes.data as Location[]);
       setProfiles(profilesRes.data as Profile[]);
       setRegistrations(registrationsRes.data as Registration[]);
-      setMatches(matchesRes.data as Match[]);
+      setMatches(normalizeMatches(matchesRes.data as any[]));
       setStandings(standingsRes.data as Standings[]);
       setMatchSets(matchSetsRes.data || []);
       setAvailabilitySlots(availabilityRes.data as AvailabilitySlot[]);
@@ -896,8 +904,6 @@ const App = () => {
     setSavingProfile(true);
     setProfileError(null);
 
-
-
     try {
       const uid = session?.user?.id;
       if (!uid) {
@@ -1046,8 +1052,8 @@ const App = () => {
     Object.keys(grouped).sort().forEach(date => {
       msg += `${tituloFechaEs(date)}\n`;
       grouped[date].forEach(m => {
-        const player1 = profiles.find(p => p.id === match.home_player_id)?.name || '';
-        const player2 = profiles.find(p => p.id === match.away_player_id)?.name || '';
+        const p1 = profiles.find(p => p.id === m.player1)?.name || '';
+        const p2 = profiles.find(p => p.id === m.player2)?.name || '';
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         const loc = locations.find(l => l.id === m.location_id)?.name || '';
@@ -1088,8 +1094,8 @@ const App = () => {
     allScheduled.forEach(match => {
       const date = match.date;
       const time = match.time || '';
-      const player1 = profiles.find(p => p.id === match.home_player_id)?.name || '';
-      const player2 = profiles.find(p => p.id === match.away_player_id)?.name || '';
+      const player1 = profiles.find(p => p.id === match.player1)?.name || '';
+      const player2 = profiles.find(p => p.id === match.player2)?.name || '';
       const players = `${player1} vs ${player2}`;
       const division = divisions.find(d => d.id === match.division_id)?.name || '';
       const location = locations.find(l => l.id === match.location_id)?.name || '';
@@ -1236,44 +1242,6 @@ const App = () => {
     }
   };
 
-  const handleScheduleMatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // ... (toda la lógica que tenías en el onSubmit, desde las validaciones hasta el setLoading)
-    if (!newMatch.player1 || !newMatch.location || !newMatch.date || !newMatch.time) {
-      return alert('Please fill all required fields.');
-    }
-
-    const locationId = locations.find(l => l.name === newMatch.location)?.id || null;
-    const status = newMatch.player2 ? 'scheduled' : 'pending';
-
-    try {
-      setLoading(true);
-      const { error } = await supabase.from('matches').insert({
-        tournament_id: selectedTournament!.id,
-        division_id: selectedDivision!.id,
-        date: newMatch.date,
-        time: newMatch.time,
-        location_id: locationId,
-        location_details: newMatch.location_details,
-        status,
-        home_player_id: newMatch.player1,
-        away_player_id: newMatch.player2 || null,
-        created_by: session?.user.id,
-        // ... valores iniciales para scores y pintas
-      });
-      if (error) throw error;
-
-      await loadInitialData(session?.user.id);
-      alert(status === 'scheduled' ? 'Match scheduled!' : 'Match published as pending!');
-      // Reset form
-      setNewMatch(prev => ({ ...prev, player1: '', player2: '', location: '', location_details: '', date: '', time: '' }));
-    } catch (err: any) {
-      alert(`Error scheduling match: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const addSet = () => {
     setNewMatch(prev => ({
       ...prev,
@@ -1330,22 +1298,23 @@ const App = () => {
   const getHeadToHeadResult = (divisionId: string, tournamentId: string, playerAId: string, playerBId: string) => {
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
     const h2hMatches = divisionMatches.filter(match => 
-      (match.home_player_id === playerAId && match.away_player_id === playerBId) || // <-- CORREGIDO
-      (match.home_player_id === playerBId && match.away_player_id === playerAId)    // <-- CORREGIDO
+      (match.player1 === playerAId && match.player2 === playerBId) ||
+      (match.player1 === playerBId && match.player2 === playerAId)
     );
     
     if (h2hMatches.length === 0) return null;
     
+    // Count wins
     let playerAWins = 0;
     let playerBWins = 0;
     
     h2hMatches.forEach(match => {
-      // La lógica de victoria aquí ya usa player1_sets_won y player2_sets_won, lo cual es correcto
-      // pero la asignación de quién es quién debe ser explícita
-      if (match.home_player_id === playerAId) {
-        if (match.player1_sets_won > match.player2_sets_won) playerAWins++; else playerBWins++;
-      } else { // El jugador A es el away_player
-        if (match.player2_sets_won > match.player1_sets_won) playerAWins++; else playerBWins++;
+      if (match.player1 === playerAId && match.player1_sets_won > match.player2_sets_won) {
+        playerAWins++;
+      } else if (match.player2 === playerAId && match.player2_sets_won > match.player1_sets_won) {
+        playerAWins++;
+      } else {
+        playerBWins++;
       }
     });
     
@@ -1356,9 +1325,45 @@ const App = () => {
     };
   };
 
+  const calculatePlayerStats = (divisionId: string, tournamentId: string, playerId: string) => {
+    const playerName = profiles.find(p => p.id === playerId)?.name || 'Player';
+    
+    // Busca las estadísticas pre-calculadas desde la vista v_standings
+    const playerStandings = standings.find(s => 
+      s.division_id === divisionId && 
+      s.tournament_id === tournamentId && 
+      s.profile_id === playerId
+    );
+
+    if (playerStandings) {
+      return {
+        name: playerName,
+        points: playerStandings.points,
+        matchesPlayed: playerStandings.wins + playerStandings.losses,
+        matchesWon: playerStandings.wins,
+        matchesDrawn: 0, // No hay empates
+        matchesLost: playerStandings.losses,
+        setsWon: playerStandings.sets_won,
+        setsLost: playerStandings.sets_lost,
+        setsDifference: playerStandings.set_diff,
+        pints: playerStandings.pints,
+        // Los partidos agendados y pendientes aún necesitan un cálculo aparte
+        matchesScheduled: matches.filter(m => m.status === 'scheduled' && (m.player1 === playerId || m.player2 === playerId)).length,
+        matchesPending: 0, // La lógica del fixture pendiente iría aquí
+      };
+    }
+
+    // Si no hay standings, devuelve un objeto vacío
+    return { name: playerName, points: 0, matchesPlayed: 0, matchesScheduled: 0, matchesPending: 0, matchesWon: 0, matchesDrawn: 0, matchesLost: 0, setsWon: 0, setsLost: 0, setsDifference: 0, pints: 0 };
+  };
+
   const getPlayerMatches = (divisionId: string, tournamentId: string, playerId: string) => {
     if (!divisionId || !tournamentId || !playerId) {
-      return { played: [] as Match[], scheduled: [] as Match[], upcoming: [] as Profile[] };
+      return {
+        played: [] as Match[],
+        scheduled: [] as Match[],
+        upcoming: [] as Profile[]
+      };
     }
     
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
@@ -1366,11 +1371,11 @@ const App = () => {
     
     const playerMatches = {
       played: divisionMatches.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+        (match.player1 === playerId || match.player2 === playerId) &&
         match.status === 'played'
       ),
       scheduled: scheduled.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+        (match.player1 === playerId || match.player2 === playerId) && 
         match.status === 'scheduled'
       )
     };
@@ -1380,11 +1385,11 @@ const App = () => {
 
     const upcoming = opponents.filter(opponent => {
       return !playerMatches.played.some(match => 
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
+        (match.player1 === playerId && match.player2 === opponent.id) ||
+        (match.player1 === opponent.id && match.player2 === playerId)
       ) && !playerMatches.scheduled.some(match =>
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
+        (match.player1 === playerId && match.player2 === opponent.id) ||
+        (match.player1 === opponent.id && match.player2 === playerId)
       );
     });
 
@@ -2177,46 +2182,48 @@ const App = () => {
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
-      const totalPossibleMatches = players.length > 1 ? players.length - 1 : 0;
-
+      const divisionMatches = getDivisionMatches(division.id, selectedTournament.id) || [];
+      const scheduled = getScheduledMatches(division.id, selectedTournament.id) || [];
+      
+      // standings de la división
       const divisionStandings = standings.filter(
         s => s.division_id === division.id && s.tournament_id === selectedTournament.id
       );
 
-      // Mapeamos las estadísticas de cada jugador en la división
-      const playerStats = players.map(player => {
-        const standing = divisionStandings.find(s => s.profile_id === player.id);
-        const played = (standing?.wins || 0) + (standing?.losses || 0);
-        const scheduled = matches.filter(m =>
-          m.division_id === division.id &&
-          (m.home_player_id === player.id || m.away_player_id === player.id) && // <-- CORREGIDO
-          m.status === 'scheduled'
-        ).length;
+      // líder por puntos
+      const leaderRow = divisionStandings.length > 0
+        ? [...divisionStandings].sort((a, b) => b.points - a.points)[0]
+        : null;
+      const leader = leaderRow
+        ? profiles.find(p => p.id === leaderRow.profile_id) || null
+        : null;
 
-        return {
-          id: player.id,
-          name: player.name,
-          gamesPlayed: played,
-          gamesScheduled: scheduled,
-          gamesNotScheduled: totalPossibleMatches - played - scheduled,
-          pints: standing?.pints || 0,
-          points: standing?.points || 0,
-        };
-      });
-      
-      // Ordenamos las estadísticas para encontrar al líder y al "top pintas"
-      const sortedByPoints = [...playerStats].sort((a, b) => b.points - a.points);
-      const sortedByPints = [...playerStats].sort((a, b) => b.pints - a.pints);
+      // top pintas (fila con más pintas)
+      const topRow = divisionStandings.reduce(
+        (acc, s) => (acc == null || s.pints > acc.pints ? s : acc),
+        null as (typeof divisionStandings[number]) | null
+      );
+      const topPints =
+        topRow
+          ? {
+              profile_id: topRow.profile_id,
+              name: profiles.find(p => p.id === topRow.profile_id)?.name || 'N/A',
+              pints: topRow.pints,
+            }
+          : null;
 
       return {
         division,
         players: players.length,
-        gamesPlayed: matches.filter(m => m.division_id === division.id && m.status === 'played').length,
-        totalPints: playerStats.reduce((sum, p) => sum + p.pints, 0), // <-- AÑADE ESTA LÍNEA
-        leader: sortedByPoints[0] || null,
-        topPintsPlayer: sortedByPints[0] || null,
-        playerStats: sortedByPoints,
+        gamesPlayed: divisionMatches.length,
+        scheduledMatches: scheduled.length,
+        winner: leader ? leader.name : 'N/A',
+        totalPints: divisionStandings.reduce((sum, s) => sum + s.pints, 0),
+        leader,
+        topPints,             // <-- guardamos nombre + pints
+        playersList: players
       };
+
     });
 
     return (
@@ -2371,19 +2378,35 @@ const App = () => {
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
                         </tr>
                       </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {divisionsData
-                            .find(d => d.division.id === division.id)
-                            ?.playerStats.slice(0, 3) // Mostramos solo el top 3
-                            .map(stats => (
-                              <tr key={stats.id} className="text-sm">
-                                <td className="px-4 py-2 font-medium text-gray-900">{stats.name}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                              </tr>
-                          ))}
-                        </tbody>
+                      <tbody className="divide-y divide-gray-200">
+                        {players > 0 ? (
+                          Array.from({ length: 3 }).map((_, index) => {
+                            const standingsForDivision = standings.filter(s => 
+                              s.division_id === division.id && s.tournament_id === selectedTournament.id
+                            );
+                            
+                            const sortedStandings = standingsForDivision.sort((a, b) => b.points - a.points);
+                            const standing = sortedStandings[index];
+                            const player = profiles.find(p => p.id === standing?.profile_id);
+                            
+                            if (standing && player) {
+                              return (
+                                <tr key={player.id} className="text-sm">
+                                  <td className="px-4 py-2 font-medium text-gray-900">{player.name}</td>
+                                  <td className="px-4 py-2 text-center">{standing.wins + standing.losses}</td>
+                                  <td className="px-4 py-2 text-center">{0}</td>
+                                  <td className="px-4 py-2 text-center">{0}</td>
+                                </tr>
+                              );
+                            }
+                            return null;
+                          }).filter(Boolean)
+                        ) : (
+                          <tr>
+                            <td colSpan="4" className="px-4 py-2 text-center text-gray-500">No players yet</td>
+                          </tr>
+                        )}
+                      </tbody>
                     </table>
                   </div>
                 </div>
@@ -2438,15 +2461,15 @@ const App = () => {
                     )
                     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                     .map(match => {
-                      const player1 = profiles.find(p => p.id === match.home_player_id);
-                      const player2 = profiles.find(p => p.id === match.away_player_id);
+                      const player1 = profiles.find(p => p.id === match.player1)?.name || '';
+                      const player2 = profiles.find(p => p.id === match.player2)?.name || '';
                       const division = divisions.find(d => d.id === match.division_id)?.name || '';
                       const location = locations.find(l => l.id === match.location_id)?.name || '';
                       
                       return (
                         <tr key={match.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.date}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1} vs {player2}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{location}</td>
@@ -2564,11 +2587,11 @@ const App = () => {
       
       const upcomingMatches = allOpponents.filter(opponent => {
         return !playerMatches.played.some(match => 
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+          (match.player1 === selectedPlayer.id && match.player2 === opponent.id) ||
+          (match.player1 === opponent.id && match.player2 === selectedPlayer.id)
         ) && !playerMatches.scheduled.some(match =>
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+          (match.player1 === selectedPlayer.id && match.player2 === opponent.id) ||
+          (match.player1 === opponent.id && match.player2 === selectedPlayer.id)
         );
       });
       
@@ -2781,8 +2804,8 @@ const App = () => {
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
-                        const player1 = profiles.find(p => p.id === match.home_player_id);
-                        const player2 = profiles.find(p => p.id === match.away_player_id);
+                        const player1 = profiles.find(p => p.id === match.player1);
+                        const player2 = profiles.find(p => p.id === match.player2);
                         const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
                         
                         return (
@@ -2839,8 +2862,8 @@ const App = () => {
                               onClick={() => {
                                 // Schedule a match with this opponent
                                 setNewMatch({
-                                  player1: selectedPlayer.id,
-                                  player2: opponent.id,
+                                  player1: selectedPlayer.name,
+                                  player2: opponent.name,
                                   sets: [{ score1: '', score2: '' }],
                                   division: selectedDivision.name,
                                   tournament: selectedTournament.name,
@@ -2850,7 +2873,6 @@ const App = () => {
                                   date: '',
                                   time: ''
                                 });
-                                setSelectedPlayer(null)
                                 setSelectedDivision(null);
                                 setSelectedTournament(null);
                               }}
@@ -2872,8 +2894,8 @@ const App = () => {
                     <div className="space-y-6">
                       {divisionPlayers.filter(p => p.id !== selectedPlayer.id).map(opponent => {
                         const h2hMatches = playerMatches.played.filter(match => 
-                          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-                          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+                          (match.player1 === selectedPlayer.id && match.player2 === opponent.id) ||
+                          (match.player1 === opponent.id && match.player2 === selectedPlayer.id)
                         );
                         
                         if (h2hMatches.length === 0) return null;
@@ -2885,7 +2907,7 @@ const App = () => {
                         let totalSetsLost = 0;
                         
                         h2hMatches.forEach(match => {
-                          if (match.home_player_id === selectedPlayer.id) {
+                          if (match.player1 === selectedPlayer.id) {
                             totalSetsWon += match.player1_sets_won;
                             totalSetsLost += match.player2_sets_won;
                             if (match.player1_sets_won > match.player2_sets_won) wins++;
@@ -2917,8 +2939,8 @@ const App = () => {
                             
                             <div className="space-y-2">
                               {h2hMatches.map((match, index) => {
-                                const player1 = profiles.find(p => p.id === match.home_player_id);
-                                const player2 = profiles.find(p => p.id === match.away_player_id);
+                                const player1 = profiles.find(p => p.id === match.player1);
+                                const player2 = profiles.find(p => p.id === match.player2);
                                 
                                 return (
                                   <div key={index} className="border-t pt-2">
@@ -3019,11 +3041,7 @@ const App = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Pintas:</span>
-                    <span className="font-bold text-purple-600">
-                      {matches
-                        .filter(m => m.division_id === selectedDivision.id)
-                        .reduce((sum, match) => sum + match.player1_pints + match.player2_pints, 0)}
-                    </span>
+                    <span className="font-bold text-purple-600">{divisionStandings.reduce((sum, s) => sum + s.pints, 0)}</span>
                   </div>
                 </div>
 
@@ -3266,7 +3284,109 @@ const App = () => {
             {/* Schedule Match */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Programar un Partido</h3>
-              <form onSubmit={handleScheduleMatch} className="space-y-4">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+
+                // Validaciones mínimas
+                if (!newMatch.player1) {
+                  alert('Please select Player 1');
+                  return;
+                }
+                if (!newMatch.location) {
+                  alert('Please enter a location');
+                  return;
+                }
+                if (!newMatch.date) {
+                  alert('Please select a date');
+                  return;
+                }
+                if (!newMatch.time) {
+                  alert('Please select a time');
+                  return;
+                }
+
+                // Evitar duplicados programados entre los mismos jugadores
+                const duplicate = matches.some(m => {
+                  const samePlayers =
+                    (m.player1 === newMatch.player1 && m.player2 === newMatch.player2) ||
+                    (m.player1 === newMatch.player2 && m.player2 === newMatch.player1);
+
+                  return samePlayers &&
+                        m.division_id === selectedDivision!.id &&
+                        m.tournament_id === selectedTournament!.id &&
+                        m.status === 'scheduled';
+                });
+                if (duplicate) {
+                  alert('A match between these players is already scheduled in this division.');
+                  return;
+                }
+
+                // Resolver location_id por nombre
+                const locationId = locations.find(l => l.name === newMatch.location)?.id || null;
+
+                // Status según haya segundo jugador o no
+                const status = newMatch.player2 ? 'scheduled' : 'pending';
+
+                try {
+                  setLoading(true);
+
+                  const { data: inserted, error } = await supabase
+                    .from('matches')
+                    .insert({
+                      tournament_id: selectedTournament!.id,
+                      division_id: selectedDivision!.id,
+                      date: newMatch.date,
+                      time: newMatch.time,
+                      location_id: locationId,
+                      status,
+                      // usar columnas reales de tu tabla
+                      home_player_id: newMatch.player1,
+                      away_player_id: newMatch.player2 || null,
+                      // iniciales
+                      player1_sets_won: 0,
+                      player2_sets_won: 0,
+                      player1_games_won: 0,
+                      player2_games_won: 0,
+                      player1_had_pint: false,
+                      player2_had_pint: false,
+                      player1_pints: 0,
+                      player2_pints: 0,
+                      created_by: session?.user.id,
+                      created_at: new Date().toISOString(),
+                    })
+                    .select()
+                    .single();
+
+                  if (error) throw error;
+
+                  // Refrescar todo para que el resto vea el partido
+                  await loadInitialData(session?.user.id);
+
+                  alert(
+                    status === 'scheduled'
+                      ? '¡Partido programado! Ambos jugadores confirmaron.'
+                      : '¡Partido publicado! Queda pendiente para que otro jugador se una.'
+                  );
+
+                  // Reset del formulario (conserva div/tournament en estado global)
+                  setNewMatch(prev => ({
+                    ...prev,
+                    player1: '',
+                    player2: '',
+                    sets: [{ score1: '', score2: '' }],
+                    hadPint: false,
+                    pintsCount: '1',
+                    location: '',
+                    date: '',
+                    time: ''
+                  }));
+                } catch (err: any) {
+                  console.error('schedule match error:', err);
+                  alert(`Error scheduling match: ${err.message}`);
+                } finally {
+                  setLoading(false);
+                }
+              }} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 1</label>
                   {/* Jugador 1 */}
@@ -3312,17 +3432,7 @@ const App = () => {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name (Optional)</label>
-                  <input
-                    type="text"
-                    placeholder="E.g., Court 3, Parliament Hill"
-                    value={newMatch.location_details || ''} // <-- Necesitarás añadir `location_details` a tu estado `newMatch`
-                    onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                  />
-                </div>
-
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
@@ -3369,7 +3479,7 @@ const App = () => {
               
               <div className="space-y-4">
                 {pendingMatches.map(match => {
-                  const player1 = profiles.find(p => p.id === match.home_player_id);
+                  const player1 = profiles.find(p => p.id === match.player1);
                   
                   return (
                     <div key={match.id} className="border rounded-lg p-4">
@@ -3386,7 +3496,7 @@ const App = () => {
                       <div className="text-sm text-gray-600">
                         <span className="font-medium">Location:</span> {locations.find(l => l.id === match.location_id)?.name || ''}
                       </div>
-                      {currentUser?.id !== match.home_player_id && (
+                      {currentUser?.id !== match.player1 && (
                         <button 
                           type="button"
                           className="mt-2 w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition duration-200 text-sm"
@@ -3487,8 +3597,8 @@ const App = () => {
                             <h4 className="font-medium text-gray-700 mb-3">{timeSlot}</h4>
                             <div className="space-y-3">
                               {matchesForTime.map(match => {
-                                const player1 = profiles.find(p => p.id === match.home_player_id);
-                                const player2 = profiles.find(p => p.id === match.away_player_id);
+                                const player1 = profiles.find(p => p.id === match.player1);
+                                const player2 = profiles.find(p => p.id === match.player2);
                                 const location = locations.find(l => l.id === match.location_id);
                                 
                                 return (

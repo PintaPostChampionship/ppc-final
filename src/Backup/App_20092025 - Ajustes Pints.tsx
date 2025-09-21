@@ -64,8 +64,8 @@ interface Match {
   time?: string;
   location_id?: string;
   status: string;
-  home_player_id: string;
-  away_player_id: string | null;
+  player1: string;
+  player2: string;
   player1_sets_won: number;
   player2_sets_won: number;
   player1_games_won: number;
@@ -116,17 +116,17 @@ const dataURItoBlob = (dataURI: string) => {
   return new Blob([ab], {type: mimeString});
 };
 
-function dataURLtoFile(dataurl: string, filename: string): File {
-    const arr = dataurl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while(n--){
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, {type:mime});
+function dataURLtoFile(dataUrl: string, filename: string): File {
+  const arr = dataUrl.split(',');
+  const mimeMatch = arr[0].match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) u8arr[n] = bstr.charCodeAt(n);
+  return new File([u8arr], filename, { type: mime });
 }
+
 
 const App = () => {
   // Initialize all state with proper types
@@ -140,14 +140,10 @@ const App = () => {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [divisionsByTournament, setDivisionsByTournament] = useState<Record<string, Division[]>>({});
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [availabilitySlots, setAvailabilitySlots] = useState<AvailabilitySlot[]>([]);
-  const [selectedPlayerAvailability, setSelectedPlayerAvailability] = useState<AvailabilitySlot[]>([]);  
-  const [selectedPlayerAreas, setSelectedPlayerAreas] = useState<string[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
-  const [matchSets, setMatchSets] = useState<MatchSet[]>([]);
   const [standings, setStandings] = useState<Standings[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<Division | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<Profile | null>(null);
@@ -172,8 +168,7 @@ const App = () => {
     tournament: '',
     hadPint: false, 
     pintsCount: '1',
-    location: '',
-    location_details: '',
+    location: '', 
     date: '', 
     time: '' 
   });
@@ -181,8 +176,6 @@ const App = () => {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [newRegistration, setNewRegistration] = useState({ tournamentId: '', divisionId: '' }); 
   const [registrationStep, setRegistrationStep] = useState(1);
-  const [pickedTournamentId, setPickedTournamentId] = useState<string>('');
-  const [pickedDivisionId, setPickedDivisionId] = useState<string>('');
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [showAvailability, setShowAvailability] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
@@ -201,6 +194,14 @@ const App = () => {
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
   const locationsList = ['South', 'Southeast', 'Southwest', 'North', 'Northeast', 'Northwest', 'Central', 'West', 'East'];
 
+const normalizeMatches = (rows: any[] = []) =>
+  rows.map(r => ({
+    ...r,
+    // toma primero home/away; si no existen, cae a player1_id/player2_id; si tampoco, usa player1/player2
+    player1: r.home_player_id ?? r.player1_id ?? r.player1,
+    player2: r.away_player_id ?? r.player2_id ?? r.player2,
+  }));
+
   const abbreviateLocation = (location: string) => {
     const abbreviations: Record<string, string> = {
       'South': 'S',
@@ -215,63 +216,6 @@ const App = () => {
     };
     return abbreviations[location] || location;
   };
-
-  useEffect(() => {
-    const map: Record<string, Division[]> = {};
-    divisions.forEach(d => {
-      (map[d.tournament_id] ||= []).push(d);
-    });
-    setDivisionsByTournament(map);
-  }, [divisions]);
-
-  
-  function slotToTimes(slot: string): { start: string; end: string } {
-    if (slot.startsWith('Morning'))   return { start: '07:00', end: '12:00' };
-    if (slot.startsWith('Afternoon')) return { start: '12:00', end: '18:00' };
-    if (slot.startsWith('Evening'))   return { start: '18:00', end: '22:00' };
-    return { start: '00:00', end: '23:59' };
-  }
-
-  const DAY_MAP: Record<string, number> = {
-    Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
-    Thursday: 4, Friday: 5, Saturday: 6,
-  };
-
-  const SLOT_MAP: Record<string, { start: string; end: string }> = {
-    'Morning (07:00-12:00)':  { start: '07:00', end: '12:00' },
-    'Afternoon (12:00-18:00)':{ start: '12:00', end: '18:00' },
-    'Evening (18:00-22:00)':  { start: '18:00', end: '22:00' },
-  };
-
-
-  function parseDateSafe(d: string | Date): Date {
-    if (d instanceof Date) return d;
-    const clean = String(d).split('|')[0].trim(); // por si llega “fecha | algo”
-    const dt = new Date(clean);
-    if (!isNaN(dt.getTime())) return dt;
-    const m = clean.match(/^(\d{4})-(\d{2})-(\d{2})/); // YYYY-MM-DD
-    return m ? new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`) : new Date();
-  }
-
-  function dateKey(val: string | Date) {
-    const d = parseDateSafe(val);
-    return d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  }
- 
-  function setsLineFor(m: Match, perspectiveId?: string) {
-    const sets = matchSets
-      .filter(s => s.match_id === m.id)
-      .sort((a, b) => a.set_number - b.set_number);
-
-    // Si aún no hay detalle guardado, cae a totales de games
-    if (sets.length === 0) return `${m.player1_games_won}-${m.player2_games_won}`;
-
-    // Si paso un 'perspectiveId', muestro el marcador desde ese jugador
-    const invert = perspectiveId && m.player1 !== perspectiveId;
-    return sets
-      .map(s => invert ? `${s.p2_games}-${s.p1_games}` : `${s.p1_games}-${s.p2_games}`)
-      .join(' ');
-  }
 
   // EFECTO 1: Cargar todos los datos públicos UNA SOLA VEZ al iniciar la app.
   useEffect(() => {
@@ -288,7 +232,6 @@ const App = () => {
           standingsRes,
           locationsRes,
           registrationsRes,
-          matchSetsRes,
         ] = await Promise.all([
           supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
           supabase.from('divisions').select('*'),
@@ -297,7 +240,6 @@ const App = () => {
           supabase.from('v_standings').select('*'),
           supabase.from('locations').select('*'),
           supabase.from('tournament_registrations').select('*'),
-          supabase.from('match_sets').select('*'),
         ]);
 
         // Verificamos errores en cada respuesta
@@ -307,23 +249,23 @@ const App = () => {
         if (matchesRes.error) throw matchesRes.error;
         if (standingsRes.error) throw standingsRes.error;
         if (locationsRes.error) throw locationsRes.error;
-        if (registrationsRes.error) throw registrationsRes.error;
-        if (matchSetsRes.error) throw matchSetsRes.error;
+        if (registrationsRes.error) throw registrationsRes.error; 
 
         // Actualizamos el estado con los datos públicos
         setTournaments(tournamentsRes.data || []);
         setDivisions(divisionsRes.data || []);
         setProfiles(profilesRes.data || []);
+        setMatches(normalizeMatches(matchesRes.data));
         setStandings(standingsRes.data || []);
         setLocations(locationsRes.data || []);
         setRegistrations(registrationsRes.data || []);
-        setMatchSets(matchSetsRes.data || []);
 
       } catch (err: any) {
         setError(`Failed to load initial data: ${err.message}`);
         console.error('Error loading public data:', err);
       } finally {
-        setLoading(false);
+        // La carga inicial termina aquí, pero el estado de loading
+        // se desactivará completamente cuando la sesión se verifique.
       }
     };
 
@@ -335,44 +277,47 @@ const App = () => {
     let mounted = true;
 
     (async () => {
+      // 1) Sesión actual
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
 
       setSession(session);
-      setSessionUser(session?.user ?? null);
 
-      try {
-        if (session?.user) {
-          await ensurePendingOnboarding(session.user.id); // completa perfil/registro si viene de verificación
-          await loadInitialData(session.user.id);         // carga todo lo demás
-        }
-      } finally {
-        if (mounted) setLoading(false); // nunca dejar el loader colgado
+      // Si usas sessionUser en otras partes, mantenlo sincronizado
+      const { data: userRes } = await supabase.auth.getUser();
+      if (!mounted) return;
+      setSessionUser(userRes.user ?? null);
+
+      setLoading(false);
+
+      if (session?.user) {
+        await loadInitialData(session.user.id);
+        await ensurePendingRegistration(session.user.id); // <-- agrega esto
       }
+
     })();
 
+    // 2) Suscripción a cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
         setSession(newSession);
         setSessionUser(newSession?.user ?? null);
 
-        try {
-          if (newSession?.user) {
-            await ensurePendingOnboarding(newSession.user.id);
-            await loadInitialData(newSession.user.id);
-          }
-        } finally {
-          setLoading(false);
+        if (newSession?.user) {
+          await loadInitialData(newSession.user.id);
+          await ensurePendingRegistration(newSession.user.id); // <-- aquí también
+        } else {
+          // limpia estados si hace falta
         }
       }
     );
+
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
   }, []);
-
 
   // EFECTO 3: Sincronizar el estado de la UI (currentUser y loginView) con la sesión.
   useEffect(() => {
@@ -397,7 +342,7 @@ const App = () => {
       
       // Fetch all required data
       const [tournamentsRes, divisionsRes, locationsRes, profilesRes, 
-        registrationsRes, matchesRes, standingsRes, matchSetsRes, availabilityRes] = 
+        registrationsRes, matchesRes, standingsRes, availabilityRes] = 
         await Promise.all([
           supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
           supabase.from('divisions').select('*'),
@@ -406,7 +351,6 @@ const App = () => {
           supabase.from('tournament_registrations').select('*'),
           supabase.from('matches').select('*'),
           supabase.from('v_standings').select('*'),
-          supabase.from('match_sets').select('*'),
           supabase.from('availability').select('*').eq('profile_id', userId)
         ]);
 
@@ -418,7 +362,6 @@ const App = () => {
       if (registrationsRes.error) throw registrationsRes.error;
       if (matchesRes.error) throw matchesRes.error;
       if (standingsRes.error) throw standingsRes.error;
-      if (matchSetsRes.error) throw matchSetsRes.error;
       if (availabilityRes.error) throw availabilityRes.error;
 
       // Set state
@@ -427,9 +370,8 @@ const App = () => {
       setLocations(locationsRes.data as Location[]);
       setProfiles(profilesRes.data as Profile[]);
       setRegistrations(registrationsRes.data as Registration[]);
-      setMatches(matchesRes.data as Match[]);
+      setMatches(normalizeMatches(matchesRes.data as any[]));
       setStandings(standingsRes.data as Standings[]);
-      setMatchSets(matchSetsRes.data || []);
       setAvailabilitySlots(availabilityRes.data as AvailabilitySlot[]);
       
       // Set current user
@@ -461,95 +403,162 @@ const App = () => {
     }
   }, [selectedDivision, selectedTournament]);
 
-  useEffect(() => {
-    if (!selectedPlayer) {
-      setSelectedPlayerAvailability([]);
-      setSelectedPlayerAreas([]);
-      return;
-    }
-
-    (async () => {
-      // Availability
-      const { data: av, error: avErr } = await supabase
-        .from('availability')
-        .select('*')
-        .eq('profile_id', selectedPlayer.id);
-      if (!avErr) setSelectedPlayerAvailability(av || []);
-
-      // Zonas preferidas (leer ids y resolver nombres con 'locations' que ya tienes en estado)
-      const { data: pls, error: plsErr } = await supabase
-        .from('profile_locations')
-        .select('location_id')
-        .eq('profile_id', selectedPlayer.id);
-
-      if (!plsErr && pls) {
-        const names = pls
-          .map(pl => locations.find(l => l.id === pl.location_id)?.name)
-          .filter((n): n is string => Boolean(n));
-        setSelectedPlayerAreas(names);
-      }
-    })();
-  }, [selectedPlayer?.id, locations]);
-
-
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // --- PASO 1: Nombre + Email ---
     if (registrationStep === 1) {
-      if (!newUser.name || !newUser.email) return alert('Please fill in name/email.');
+      if (!newUser.name || !newUser.email) {
+        alert('Please fill in your name and email to continue.');
+        return;
+      }
+      // (opcional) evitar duplicados por email en profiles
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', newUser.email);
+      if (existing && existing.length > 0) {
+        alert('An account with this email already exists. Please log in.');
+        return;
+      }
       setRegistrationStep(2);
       return;
     }
+
+    // --- PASO 2: Foto + preferencias ---
     if (registrationStep === 2) {
-      if (!newUser.profilePic) return alert('Please upload a profile picture.');
+      if (!pendingAvatarFile && !newUser.profilePic) {
+        alert('Please upload a profile picture.');
+        return;
+      }
       setRegistrationStep(3);
       return;
     }
 
+    // --- PASO 3: Crear auth user, perfil, subir avatar y registrar en torneo/división ---
     if (registrationStep === 3) {
       setLoading(true);
+      setError(null);
+
       try {
-        const { name, email, password, profilePic, locations, availability } = newUser;
-        const tournamentId = pickedTournamentId;
-        const divisionId = pickedDivisionId;
-
-        if (!tournamentId || !divisionId || !password) {
-          throw new Error('Please select a tournament, division, and enter a password.');
+        const emailUsed = (newUser.email || '').trim();
+        const tournamentId = newUser.tournaments[0] || null; // <-- ya es UUID
+        const divisionId   = newUser.division || null;       // <-- ya es UUID
+        if (!tournamentId || !divisionId) {
+          throw new Error('Missing tournament or division selection.');
         }
-        
-        const onboardingData = {
-          name: name.trim(),
-          locations: locations || [],
-          availability: availability || {},
-          tournament_id: tournamentId,
-          division_id: divisionId,
-          profilePicDataUrl: profilePic 
-        };
+        if (!newUser.password) {
+          throw new Error('Missing password.');
+        }
 
-        localStorage.setItem('pending_onboarding', JSON.stringify(onboardingData));
-
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password: password,
-          options: {
-            emailRedirectTo: window.location.origin,
-            data: { name: name.trim() }
-          }
+        // 1) Crear usuario en Auth
+        const { data: authData, error: signUpErr } = await supabase.auth.signUp({
+          email: newUser.email,
+          password: newUser.password,
+          options: { data: { name: newUser.name } },
         });
+        if (signUpErr) throw signUpErr;
 
-        if (error) throw error;
-        
-        alert('Registration successful! Please check your email to verify your account, then log in.');
+        if (!authData.session) {
+          // Guarda lo elegido para completarlo después del login
+          localStorage.setItem(
+            'pending_registration',
+            JSON.stringify({ tournament_id: tournamentId, division_id: divisionId })
+          );
+
+          alert('Te enviamos un correo de confirmación. Luego vuelve al Login para inciar sesión.');
+
+          // Vuelve a la pantalla de login
+          setLoginView(true);
+          setRegistrationStep(1);
+          setLoading(false);
+          return;
+        }
+
+        const uid = authData.user?.id;
+        if (!uid) throw new Error('Could not get new user id after sign up.');
+
+        // 2) PERFIL (upsert por id)
+        const { error: profErr } = await supabase
+          .from('profiles')
+          .upsert(
+            { id: uid, name: newUser.name, email: newUser.email, role: 'player' },
+            { onConflict: 'id' }
+          );
+        if (profErr) throw profErr;
+
+        // 3) SUBIR AVATAR (si hay archivo o dataURL)
+        let fileToUpload: File | null = null;
+        if (pendingAvatarFile) {
+          fileToUpload = pendingAvatarFile;
+        } else if (newUser.profilePic) {
+          // convierte el dataURL guardado en un File
+          fileToUpload = dataURLtoFile(newUser.profilePic, 'avatar.jpg');
+        }
+        if (fileToUpload) {
+          const path = `${uid}.jpg`;
+          const up = await supabase.storage
+            .from('avatars')
+            .upload(path, fileToUpload, { upsert: true });
+          if (up.error) throw up.error;
+
+          const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+          const { error: upd } = await supabase
+            .from('profiles')
+            .update({ avatar_url: pub.publicUrl })
+            .eq('id', uid);
+          if (upd) throw upd;
+        }
+
+        // 4) REGISTRAR en torneo/división (RLS: profile_id debe ser auth.uid())
+        const { error: regErr } = await supabase
+          .from('tournament_registrations')
+          .insert({
+            profile_id: uid,
+            tournament_id: tournamentId,
+            division_id: divisionId,
+          })
+          .single();
+        if (regErr) throw regErr;
+
+        // Limpieza y éxito
+        setPendingAvatarFile(null);
+        setPendingAvatarPreview(null);
+        setNewUser({
+          name: '',
+          email: '',
+          password: '',
+          profilePic: '',
+          locations: [],
+          availability: {},
+          tournaments: [],
+          division: ''
+        });
+        setRegistrationStep(1);
+        alert('Listo! Verifica tú correo y vuelve a entrar');
+        // Cerrar cualquier sesión que haya quedado abierta tras signUp
+        await supabase.auth.signOut();
+
+        // Volver a la pantalla de Login
         setLoginView(true);
         setRegistrationStep(1);
-        setNewUser({ name: '', email: '', password: '', profilePic: '', locations: [], availability: {}, tournaments: [], division: '' });
-        setPickedTournamentId('');
-        setPickedDivisionId('');
 
+        // Resetear el formulario pero dejando el email pre-llenado para el Login
+        setNewUser({
+          name: '',
+          email: emailUsed, // <- queda listo en el login
+          password: '',
+          profilePic: '',
+          locations: [],
+          availability: {},
+          tournaments: [],
+          division: ''
+        });
+
+        return;        
       } catch (err: any) {
-        console.error("Registration failed:", err);
-        alert(`Registration failed: ${err.message}`);
-        localStorage.removeItem('pending_onboarding');
+        console.error('Registration failed ->', err);
+        alert(`Registration failed: ${err.message ?? err}`);
       } finally {
         setLoading(false);
       }
@@ -700,168 +709,6 @@ const App = () => {
     if (regs) setRegistrations(regs as Registration[]);
   };
 
-  // --- helpers de onboarding post-signup ---
-  function buildAvailabilityRowsFromObject(availability: Record<string,string[]>, uid: string) {
-    const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-    const out: any[] = [];
-    days.forEach((day, idx) => {
-      const slots = availability[day] || [];
-      slots.forEach(label => {
-        const { start, end } = slotToTimes(label);
-        out.push({
-          profile_id: uid,
-          day_of_week: idx,   // Monday=0 ... Sunday=6
-          start_time: start,  // '07:00' | '12:00' | '18:00'
-          end_time: end,      // '12:00' | '18:00' | '22:00'
-          location_id: null
-        });
-      });
-    });
-    return out;
-  }
-
-  // === Helper para cargar torneos y divisiones ===
-  async function fetchTournamentsAndDivisions() {
-    const { data: ts, error: tErr } = await supabase
-      .from('tournaments')
-      .select('id,name,season,start_date,end_date,status')
-      .order('start_date', { ascending: false });
-    if (tErr) throw tErr;
-
-    const { data: ds, error: dErr } = await supabase
-      .from('divisions')
-      .select('id,tournament_id,name,color');
-    if (dErr) throw dErr;
-
-    setTournaments(ts || []);
-    setDivisions(ds || []);
-
-    const map: Record<string, Division[]> = {};
-    (ds || []).forEach(d => {
-      (map[d.tournament_id] ||= []).push(d);
-    });
-    setDivisionsByTournament(map);
-  }
-
-
-  async function persistOnboarding(uid: string, onboarding: {
-    name: string;
-    email: string;
-    profilePic?: string;
-    locations: string[];
-    availability: Record<string,string[]>;
-    tournament_id: string;
-    division_id: string;
-  }) {
-    // 1) Perfil
-    const { error: profErr } = await supabase
-      .from('profiles')
-      .upsert({ id: uid, name: onboarding.name, email: onboarding.email, role: 'player' }, { onConflict: 'id' });
-    if (profErr) throw profErr;
-
-    // 2) Avatar (si viene como dataURL)
-    if (onboarding.profilePic) {
-      const fileBlob = dataURItoBlob(onboarding.profilePic); // <— usa la que SÍ existe
-      const path = `${uid}.jpg`;
-      const up = await supabase.storage.from('avatars').upload(path, fileBlob, { upsert: true });
-      if (up.error) throw up.error;
-
-      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
-      const { error: upd } = await supabase
-        .from('profiles')
-        .update({ avatar_url: pub.publicUrl })
-        .eq('id', uid);
-      if (upd) throw upd;
-    }
-
-    // 3) Registro en torneo/división (si no existe)
-    const { data: exists } = await supabase
-      .from('tournament_registrations')
-      .select('id')
-      .eq('profile_id', uid).eq('tournament_id', onboarding.tournament_id).eq('division_id', onboarding.division_id)
-      .maybeSingle();
-    if (!exists) {
-      const { error: regErr } = await supabase.from('tournament_registrations').insert({
-        profile_id: uid, tournament_id: onboarding.tournament_id, division_id: onboarding.division_id
-      }).single();
-      if (regErr) throw regErr;
-    }
-
-    // 4) Availability (evita ON CONFLICT: borramos y reinsertamos)
-    const rows = buildAvailabilityRowsFromObject(onboarding.availability, uid);
-    await supabase.from('availability').delete().eq('profile_id', uid);
-    if (rows.length) {
-      const { error: avErr } = await supabase.from('availability').insert(rows);
-      if (avErr) throw avErr;
-    }
-
-    // 5) Zonas preferidas -> profile_locations (resolver id por nombre; crear si falta)
-    await supabase.from('profile_locations').delete().eq('profile_id', uid);
-    for (const areaName of onboarding.locations) {
-      let { data: loc, error: selErr } = await supabase.from('locations').select('id').eq('name', areaName).maybeSingle();
-      if (selErr) throw selErr;
-      let locId = loc?.id as string | undefined;
-      if (!locId) {
-        const { data: created, error: insErr } = await supabase.from('locations').insert({ name: areaName }).select('id').single();
-        if (insErr) throw insErr;
-        locId = created.id;
-      }
-      const { error: plErr } = await supabase.from('profile_locations').insert({ profile_id: uid, location_id: locId! });
-      if (plErr) throw plErr;
-    }
-  }
-
-  async function ensurePendingOnboarding(userId: string) {
-    const rawOnboarding = localStorage.getItem('pending_onboarding');
-    if (!rawOnboarding) return;
-
-    console.log("Pending onboarding found, completing profile for user:", userId);
-    setLoading(true);
-    try {
-      const onboarding = JSON.parse(rawOnboarding);
-
-      // 1. SUBIR AVATAR desde localStorage
-      if (onboarding.profilePicDataUrl) {
-        const file = dataURLtoFile(onboarding.profilePicDataUrl, `${userId}.jpg`);
-        const filePath = `${userId}.jpg`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(filePath, file, { upsert: true });
-        if (uploadError) throw uploadError;
-
-        // Obtenemos la URL pública y la guardamos en el perfil
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', userId);
-        console.log("Avatar uploaded and profile updated.");
-      }
-
-      // 2. INSCRIBIR EN TORNEO Y DIVISIÓN
-      if (onboarding.tournament_id && onboarding.division_id) {
-        await supabase.from('tournament_registrations').insert({
-          profile_id: userId,
-          tournament_id: onboarding.tournament_id,
-          division_id: onboarding.division_id,
-        });
-        console.log("User registered in tournament.");
-      }
-
-      // (Aquí iría la lógica para guardar availability y locations, que ya tienes)
-
-      localStorage.removeItem('pending_onboarding');
-      console.log("Onboarding complete.");
-      
-      // Forzamos una recarga de datos para que la UI refleje los cambios inmediatamente
-      await loadInitialData(userId);
-
-    } catch (e: any) {
-      console.error('ensurePendingOnboarding failed:', e);
-      alert(`We couldn't finalize your profile setup. Please try editing your profile manually. Error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -875,28 +722,25 @@ const App = () => {
   };
 
   function openEditProfile() {
-    if (!currentUser) return;
-    const fallback = supabase.storage.from('avatars').getPublicUrl(`${currentUser.id}.jpg`).data.publicUrl;
-    const pic = currentUser.avatar_url || fallback || '';
-    setEditUser({
-      name: currentUser.name ?? '',
-      email: currentUser.email ?? '',
-      password: '',
-      profilePic: pic,
-      tournaments: [],
-      division: ''
-    });
-    setPendingAvatarFile(null);
-    setPendingAvatarPreview(currentUser?.avatar_url ?? null);
+    const fallbackUrl = session?.user?.id
+      ? supabase.storage.from('avatars').getPublicUrl(`${session.user.id}.jpg`).data.publicUrl
+      : '';
+
+    setEditUser(prev => ({
+      ...prev,
+      name: currentUser?.name ?? '',
+      email: session?.user?.email ?? '',           // el email viene de Auth
+      profilePic: currentUser?.avatar_url || fallbackUrl || '',
+      password: ''
+    }));
     setEditProfile(true);
   }
+
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingProfile(true);
     setProfileError(null);
-
-
 
     try {
       const uid = session?.user?.id;
@@ -1006,18 +850,13 @@ const App = () => {
     };
     return map[name] || '🎾';
   }
-
-  function tituloFechaEs(iso?: string | null) {
-    if (!iso) return 'Fecha por definir';
-    const str = iso.includes('T') ? iso : `${iso}T00:00:00`;
-    const d = new Date(str);
-    if (isNaN(d.getTime())) return 'Fecha por definir';
-    const s = d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
-    return s.replace(/ de /g, ' ').replace(',', '').replace(/^\w/, c => c.toUpperCase());
+  function tituloFechaEs(iso: string) {
+    const d = new Date(iso + 'T00:00:00');
+    const parts = d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
+                  .replaceAll(' de ', ' ')
+                  .split(',')[0];
+    return parts.charAt(0).toUpperCase() + parts.slice(1); // “Lunes 22 septiembre”
   }
-
-
-
 
   const shareAllScheduledMatches = () => {
     if (!selectedTournament) {
@@ -1036,18 +875,14 @@ const App = () => {
 
     // Agrupar por fecha
     const grouped: Record<string, Match[]> = {};
-    all.forEach(m => {
-      const key = dateKey(m.date);
-      (grouped[key] ??= []).push(m);
-    });
-
+    all.forEach(m => { (grouped[m.date] ??= []).push(m); });
 
     let msg = '';
     Object.keys(grouped).sort().forEach(date => {
       msg += `${tituloFechaEs(date)}\n`;
       grouped[date].forEach(m => {
-        const player1 = profiles.find(p => p.id === match.home_player_id)?.name || '';
-        const player2 = profiles.find(p => p.id === match.away_player_id)?.name || '';
+        const p1 = profiles.find(p => p.id === m.player1)?.name || '';
+        const p2 = profiles.find(p => p.id === m.player2)?.name || '';
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         const loc = locations.find(l => l.id === m.location_id)?.name || '';
@@ -1088,8 +923,8 @@ const App = () => {
     allScheduled.forEach(match => {
       const date = match.date;
       const time = match.time || '';
-      const player1 = profiles.find(p => p.id === match.home_player_id)?.name || '';
-      const player2 = profiles.find(p => p.id === match.away_player_id)?.name || '';
+      const player1 = profiles.find(p => p.id === match.player1)?.name || '';
+      const player2 = profiles.find(p => p.id === match.player2)?.name || '';
       const players = `${player1} vs ${player2}`;
       const division = divisions.find(d => d.id === match.division_id)?.name || '';
       const location = locations.find(l => l.id === match.location_id)?.name || '';
@@ -1213,7 +1048,6 @@ const App = () => {
       }
 
       await loadInitialData(session?.user.id);
-      await fetchTournamentsAndDivisions();
       setNewMatch(prev => ({
         ...prev,
         player1: '',
@@ -1231,44 +1065,6 @@ const App = () => {
       setError(err.message);
       alert(`Error adding match: ${err.message}`);
       console.error('Match creation error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleScheduleMatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // ... (toda la lógica que tenías en el onSubmit, desde las validaciones hasta el setLoading)
-    if (!newMatch.player1 || !newMatch.location || !newMatch.date || !newMatch.time) {
-      return alert('Please fill all required fields.');
-    }
-
-    const locationId = locations.find(l => l.name === newMatch.location)?.id || null;
-    const status = newMatch.player2 ? 'scheduled' : 'pending';
-
-    try {
-      setLoading(true);
-      const { error } = await supabase.from('matches').insert({
-        tournament_id: selectedTournament!.id,
-        division_id: selectedDivision!.id,
-        date: newMatch.date,
-        time: newMatch.time,
-        location_id: locationId,
-        location_details: newMatch.location_details,
-        status,
-        home_player_id: newMatch.player1,
-        away_player_id: newMatch.player2 || null,
-        created_by: session?.user.id,
-        // ... valores iniciales para scores y pintas
-      });
-      if (error) throw error;
-
-      await loadInitialData(session?.user.id);
-      alert(status === 'scheduled' ? 'Match scheduled!' : 'Match published as pending!');
-      // Reset form
-      setNewMatch(prev => ({ ...prev, player1: '', player2: '', location: '', location_details: '', date: '', time: '' }));
-    } catch (err: any) {
-      alert(`Error scheduling match: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -1330,22 +1126,23 @@ const App = () => {
   const getHeadToHeadResult = (divisionId: string, tournamentId: string, playerAId: string, playerBId: string) => {
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
     const h2hMatches = divisionMatches.filter(match => 
-      (match.home_player_id === playerAId && match.away_player_id === playerBId) || // <-- CORREGIDO
-      (match.home_player_id === playerBId && match.away_player_id === playerAId)    // <-- CORREGIDO
+      (match.player1 === playerAId && match.player2 === playerBId) ||
+      (match.player1 === playerBId && match.player2 === playerAId)
     );
     
     if (h2hMatches.length === 0) return null;
     
+    // Count wins
     let playerAWins = 0;
     let playerBWins = 0;
     
     h2hMatches.forEach(match => {
-      // La lógica de victoria aquí ya usa player1_sets_won y player2_sets_won, lo cual es correcto
-      // pero la asignación de quién es quién debe ser explícita
-      if (match.home_player_id === playerAId) {
-        if (match.player1_sets_won > match.player2_sets_won) playerAWins++; else playerBWins++;
-      } else { // El jugador A es el away_player
-        if (match.player2_sets_won > match.player1_sets_won) playerAWins++; else playerBWins++;
+      if (match.player1 === playerAId && match.player1_sets_won > match.player2_sets_won) {
+        playerAWins++;
+      } else if (match.player2 === playerAId && match.player2_sets_won > match.player1_sets_won) {
+        playerAWins++;
+      } else {
+        playerBWins++;
       }
     });
     
@@ -1356,9 +1153,45 @@ const App = () => {
     };
   };
 
+  const calculatePlayerStats = (divisionId: string, tournamentId: string, playerId: string) => {
+    const playerName = profiles.find(p => p.id === playerId)?.name || 'Player';
+    
+    // Busca las estadísticas pre-calculadas desde la vista v_standings
+    const playerStandings = standings.find(s => 
+      s.division_id === divisionId && 
+      s.tournament_id === tournamentId && 
+      s.profile_id === playerId
+    );
+
+    if (playerStandings) {
+      return {
+        name: playerName,
+        points: playerStandings.points,
+        matchesPlayed: playerStandings.wins + playerStandings.losses,
+        matchesWon: playerStandings.wins,
+        matchesDrawn: 0, // No hay empates
+        matchesLost: playerStandings.losses,
+        setsWon: playerStandings.sets_won,
+        setsLost: playerStandings.sets_lost,
+        setsDifference: playerStandings.set_diff,
+        pints: playerStandings.pints,
+        // Los partidos agendados y pendientes aún necesitan un cálculo aparte
+        matchesScheduled: matches.filter(m => m.status === 'scheduled' && (m.player1 === playerId || m.player2 === playerId)).length,
+        matchesPending: 0, // La lógica del fixture pendiente iría aquí
+      };
+    }
+
+    // Si no hay standings, devuelve un objeto vacío
+    return { name: playerName, points: 0, matchesPlayed: 0, matchesScheduled: 0, matchesPending: 0, matchesWon: 0, matchesDrawn: 0, matchesLost: 0, setsWon: 0, setsLost: 0, setsDifference: 0, pints: 0 };
+  };
+
   const getPlayerMatches = (divisionId: string, tournamentId: string, playerId: string) => {
     if (!divisionId || !tournamentId || !playerId) {
-      return { played: [] as Match[], scheduled: [] as Match[], upcoming: [] as Profile[] };
+      return {
+        played: [] as Match[],
+        scheduled: [] as Match[],
+        upcoming: [] as Profile[]
+      };
     }
     
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
@@ -1366,11 +1199,11 @@ const App = () => {
     
     const playerMatches = {
       played: divisionMatches.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+        (match.player1 === playerId || match.player2 === playerId) &&
         match.status === 'played'
       ),
       scheduled: scheduled.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+        (match.player1 === playerId || match.player2 === playerId) && 
         match.status === 'scheduled'
       )
     };
@@ -1380,11 +1213,11 @@ const App = () => {
 
     const upcoming = opponents.filter(opponent => {
       return !playerMatches.played.some(match => 
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
+        (match.player1 === playerId && match.player2 === opponent.id) ||
+        (match.player1 === opponent.id && match.player2 === playerId)
       ) && !playerMatches.scheduled.some(match =>
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
+        (match.player1 === playerId && match.player2 === opponent.id) ||
+        (match.player1 === opponent.id && match.player2 === playerId)
       );
     });
 
@@ -1452,21 +1285,21 @@ const App = () => {
     }));
   };
 
-  const handleProfilePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  function handleProfilePicUpload(e: any) {
+    const file = e?.target?.files?.[0];
     if (!file) return;
 
+    setPendingAvatarFile(file);
+
     const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        const dataUrl = event.target.result as string;
-        // Esto asegura que tanto el preview como el estado principal se actualicen
-        setPendingAvatarPreview(dataUrl);
-        setNewUser(prev => ({ ...prev, profilePic: dataUrl }));
-      }
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setPendingAvatarPreview(dataUrl);
+      // mantenemos profilePic para que tu UI actual siga mostrando la imagen
+      setNewUser((prev: any) => ({ ...prev, profilePic: dataUrl }));
     };
     reader.readAsDataURL(file);
-  };
+  }
 
 
 
@@ -1652,33 +1485,31 @@ const App = () => {
                 <div className="space-y-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                      {(pendingAvatarPreview || editUser.profilePic) ? (
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                      {(pendingAvatarPreview || newUser.profilePic) ? (
                         <img
-                          src={pendingAvatarPreview || editUser.profilePic}
-                          alt="Profile preview"
+                          src={pendingAvatarPreview || newUser.profilePic}
+                          alt="Profile"
                           className="mx-auto h-24 w-24 rounded-full object-cover"
                         />
                       ) : (
                         <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4 4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4 4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
-
                       <div className="mt-4">
                         <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200">
                           Upload Photo
                           <input
                             type="file"
                             accept="image/*"
+                            onChange={handleAvatarSelectDuringSignup} // <- ahora solo guarda y hace preview
                             className="hidden"
-                            onChange={handleProfilePicUpload}
                           />
                         </label>
                       </div>
-                      <p className="mt-2 text-sm text-gray-500">PNG/JPG hasta 5MB</p>
+                      <p className="mt-2 text-sm text-gray-500">PNG, JPG up to 5MB</p>
                     </div>
-
                   </div>
 
                   <div>
@@ -1760,44 +1591,60 @@ const App = () => {
               <h2 className="text-2xl font-semibold text-gray-800 mb-6">Join Tournament</h2>
               <form onSubmit={handleRegister}>
                 <div className="space-y-6">
+
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Select Tournament</label>
                     <select
-                      value={pickedTournamentId}
+                      value={newUser.tournaments[0] || ''} // CORRECTO: El estado ahora guarda el ID
                       onChange={(e) => {
-                        setPickedTournamentId(e.target.value);
-                        setPickedDivisionId(''); // reset división al cambiar torneo
+                        setNewUser({
+                          ...newUser,
+                          tournaments: e.target.value ? [e.target.value] : [], // Guarda solo el ID
+                          division: '' // Resetea la división al cambiar de torneo
+                        });
                       }}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
                     >
                       <option value="">Select Tournament</option>
-                      {(tournaments || []).map(t => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
+                      {tournaments
+                        .filter(t => t.status === 'active') // Opcional: Muestra solo torneos activos
+                        .map(tournament => (
+                          // CORRECTO: El valor de la opción ahora es el ID del torneo
+                          <option key={tournament.id} value={tournament.id}>
+                            {tournament.name}
+                          </option>
                       ))}
                     </select>
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Select Division</label>
                     <select
-                      value={pickedDivisionId}
-                      onChange={(e) => setPickedDivisionId(e.target.value)}
+                      value={newUser.division} // CORRECTO: El estado ahora guarda el ID
+                      onChange={(e) => {
+                        setNewUser({...newUser, division: e.target.value}); // Guarda el ID
+                      }}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
-                      disabled={!pickedTournamentId}
+                      disabled={!newUser.tournaments[0]} // Se mantiene deshabilitado hasta elegir torneo
                     >
-                      <option value="">Select Division</option>
-                      {(divisions || [])
-                        .filter(d => d.tournament_id === pickedTournamentId)
-                        .map(d => (
-                          <option key={d.id} value={d.id}>
-                            {d.name}
+                      <option value="">
+                        {newUser.tournaments[0] ? 'Select Division' : 'Select a tournament first'}
+                      </option>
+                      {divisions
+                        // CORRECTO: Filtro simple y directo usando el ID del torneo guardado en el estado
+                        .filter(d => d.tournament_id === newUser.tournaments[0])
+                        .map(division => (
+                          // CORRECTO: El valor de la opción ahora es el ID de la división
+                          <option key={division.id} value={division.id}>
+                            {division.name}
                           </option>
-                        ))}
+                      ))}
                     </select>
                   </div>
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
                       <input
@@ -2177,46 +2024,48 @@ const App = () => {
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
-      const totalPossibleMatches = players.length > 1 ? players.length - 1 : 0;
-
+      const divisionMatches = getDivisionMatches(division.id, selectedTournament.id) || [];
+      const scheduled = getScheduledMatches(division.id, selectedTournament.id) || [];
+      
+      // standings de la división
       const divisionStandings = standings.filter(
         s => s.division_id === division.id && s.tournament_id === selectedTournament.id
       );
 
-      // Mapeamos las estadísticas de cada jugador en la división
-      const playerStats = players.map(player => {
-        const standing = divisionStandings.find(s => s.profile_id === player.id);
-        const played = (standing?.wins || 0) + (standing?.losses || 0);
-        const scheduled = matches.filter(m =>
-          m.division_id === division.id &&
-          (m.home_player_id === player.id || m.away_player_id === player.id) && // <-- CORREGIDO
-          m.status === 'scheduled'
-        ).length;
+      // líder por puntos
+      const leaderRow = divisionStandings.length > 0
+        ? [...divisionStandings].sort((a, b) => b.points - a.points)[0]
+        : null;
+      const leader = leaderRow
+        ? profiles.find(p => p.id === leaderRow.profile_id) || null
+        : null;
 
-        return {
-          id: player.id,
-          name: player.name,
-          gamesPlayed: played,
-          gamesScheduled: scheduled,
-          gamesNotScheduled: totalPossibleMatches - played - scheduled,
-          pints: standing?.pints || 0,
-          points: standing?.points || 0,
-        };
-      });
-      
-      // Ordenamos las estadísticas para encontrar al líder y al "top pintas"
-      const sortedByPoints = [...playerStats].sort((a, b) => b.points - a.points);
-      const sortedByPints = [...playerStats].sort((a, b) => b.pints - a.pints);
+      // top pintas (fila con más pintas)
+      const topRow = divisionStandings.reduce(
+        (acc, s) => (acc == null || s.pints > acc.pints ? s : acc),
+        null as (typeof divisionStandings[number]) | null
+      );
+      const topPints =
+        topRow
+          ? {
+              profile_id: topRow.profile_id,
+              name: profiles.find(p => p.id === topRow.profile_id)?.name || 'N/A',
+              pints: topRow.pints,
+            }
+          : null;
 
       return {
         division,
         players: players.length,
-        gamesPlayed: matches.filter(m => m.division_id === division.id && m.status === 'played').length,
-        totalPints: playerStats.reduce((sum, p) => sum + p.pints, 0), // <-- AÑADE ESTA LÍNEA
-        leader: sortedByPoints[0] || null,
-        topPintsPlayer: sortedByPints[0] || null,
-        playerStats: sortedByPoints,
+        gamesPlayed: divisionMatches.length,
+        scheduledMatches: scheduled.length,
+        winner: leader ? leader.name : 'N/A',
+        totalPints: divisionStandings.reduce((sum, s) => sum + s.pints, 0),
+        leader,
+        topPints,             // <-- guardamos nombre + pints
+        playersList: players
       };
+
     });
 
     return (
@@ -2267,6 +2116,90 @@ const App = () => {
           </div>
         </header>
 
+        {editProfile && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-2xl p-8 w-full max-w-md">
+              <h2 className="text-2xl font-bold text-gray-800 mb-6">Edit Profile</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
+                  <input
+                    type="text"
+                    value={editUser.name ?? ''}
+                    onChange={(e) => setEditUser({...editUser, name: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+
+                  <input
+                    type="email"
+                    value={editUser.email ?? ''}              // ← así no queda vacío por TS
+                    onChange={(e) => setEditUser(v => ({ ...v, email: e.target.value }))}
+                  />
+
+                  <input
+                    type="password"
+                    value={editUser.password ?? ''}           // contraseña nueva (opcional)
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                  <input
+                    type="email"
+                    value={editUser.email}
+                    disabled
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={editUser.password}
+                    onChange={(e) => setEditUser({...editUser, password: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                    {editUser.profilePic ? (
+                      <img src={editUser.profilePic} alt="Profile" className="mx-auto h-20 w-20 rounded-full object-cover mb-2" />
+                    ) : (
+                      <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4 4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 inline-block mt-2">
+                      Change Photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfilePicUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+                
+                <div className="flex space-x-4 pt-4">
+                  <button
+                    onClick={() => setEditProfile(false)}
+                    className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition duration-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveProfileChanges}
+                    className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Tournament Summary */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
@@ -2309,7 +2242,7 @@ const App = () => {
 
           {/* Division Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {divisionsData.map(({ division, players, gamesPlayed, scheduledMatches, winner, totalPints, leader, topPints }) => (
+            {divisionsData.map(({ division, players, gamesPlayed, scheduledMatches, winner, totalPints, leader, topPintsPlayer }) => (
               <div 
                 key={division.id} 
                 className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
@@ -2348,6 +2281,7 @@ const App = () => {
                       <div className="text-sm text-blue-700">{Number(topPints.pints)} pintas</div>
                     </div>
                   )}
+
                   
                   {leader && (
                     <div className="bg-yellow-50 p-3 rounded-lg mb-4">
@@ -2356,6 +2290,14 @@ const App = () => {
                       <div className="text-sm text-yellow-700">
                         {standings.find(s => s.profile_id === leader.id && s.division_id === division.id)?.points || 0} puntos
                       </div>
+                    </div>
+                  )}
+                  
+                  {topPintsPlayer && (
+                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                      <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
+                      <div className="text-sm text-blue-700">{topPintsPlayer.pints} pintas</div>
                     </div>
                   )}
                   
@@ -2371,19 +2313,35 @@ const App = () => {
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
                         </tr>
                       </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {divisionsData
-                            .find(d => d.division.id === division.id)
-                            ?.playerStats.slice(0, 3) // Mostramos solo el top 3
-                            .map(stats => (
-                              <tr key={stats.id} className="text-sm">
-                                <td className="px-4 py-2 font-medium text-gray-900">{stats.name}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                              </tr>
-                          ))}
-                        </tbody>
+                      <tbody className="divide-y divide-gray-200">
+                        {players > 0 ? (
+                          Array.from({ length: 3 }).map((_, index) => {
+                            const standingsForDivision = standings.filter(s => 
+                              s.division_id === division.id && s.tournament_id === selectedTournament.id
+                            );
+                            
+                            const sortedStandings = standingsForDivision.sort((a, b) => b.points - a.points);
+                            const standing = sortedStandings[index];
+                            const player = profiles.find(p => p.id === standing?.profile_id);
+                            
+                            if (standing && player) {
+                              return (
+                                <tr key={player.id} className="text-sm">
+                                  <td className="px-4 py-2 font-medium text-gray-900">{player.name}</td>
+                                  <td className="px-4 py-2 text-center">{standing.wins + standing.losses}</td>
+                                  <td className="px-4 py-2 text-center">{0}</td>
+                                  <td className="px-4 py-2 text-center">{0}</td>
+                                </tr>
+                              );
+                            }
+                            return null;
+                          }).filter(Boolean)
+                        ) : (
+                          <tr>
+                            <td colSpan="4" className="px-4 py-2 text-center text-gray-500">No players yet</td>
+                          </tr>
+                        )}
+                      </tbody>
                     </table>
                   </div>
                 </div>
@@ -2438,15 +2396,15 @@ const App = () => {
                     )
                     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                     .map(match => {
-                      const player1 = profiles.find(p => p.id === match.home_player_id);
-                      const player2 = profiles.find(p => p.id === match.away_player_id);
+                      const player1 = profiles.find(p => p.id === match.player1)?.name || '';
+                      const player2 = profiles.find(p => p.id === match.player2)?.name || '';
                       const division = divisions.find(d => d.id === match.division_id)?.name || '';
                       const location = locations.find(l => l.id === match.location_id)?.name || '';
                       
                       return (
                         <tr key={match.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.date}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1} vs {player2}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{location}</td>
@@ -2523,24 +2481,17 @@ const App = () => {
 
 
     // Get all scheduled matches for this division
-  const pendingMatches = matches.filter(m =>
-    m.division_id === selectedDivision.id &&
-    m.tournament_id === selectedTournament.id &&
-    m.status === 'pending'
-  );
+    const pendingMatches = matches.filter(match => 
+      match.division_id === selectedDivision.id && 
+      match.tournament_id === selectedTournament.id && 
+      match.status === 'pending'
+    );
 
-  const scheduledMatches = matches.filter(m =>
-    m.division_id === selectedDivision.id &&
-    m.tournament_id === selectedTournament.id &&
-    m.status === 'scheduled'
-  );
-
-  const playedMatches = matches.filter(m =>
-    m.division_id === selectedDivision.id &&
-    m.tournament_id === selectedTournament.id &&
-    m.status === 'played'
-  );
-
+    const confirmedMatches = matches.filter(match => 
+      match.division_id === selectedDivision.id && 
+      match.tournament_id === selectedTournament.id && 
+      match.status === 'played'
+    );
 
     // Player Profile View
     if (selectedPlayer) {
@@ -2564,11 +2515,11 @@ const App = () => {
       
       const upcomingMatches = allOpponents.filter(opponent => {
         return !playerMatches.played.some(match => 
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+          (match.player1 === selectedPlayer.id && match.player2 === opponent.id) ||
+          (match.player1 === opponent.id && match.player2 === selectedPlayer.id)
         ) && !playerMatches.scheduled.some(match =>
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+          (match.player1 === selectedPlayer.id && match.player2 === opponent.id) ||
+          (match.player1 === opponent.id && match.player2 === selectedPlayer.id)
         );
       });
       
@@ -2612,16 +2563,17 @@ const App = () => {
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <div className="text-center mb-6">
                     <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-green-100">
-                      <img
-                        src={
-                          selectedPlayer.avatar_url
-                            || supabase.storage.from('avatars').getPublicUrl(`${selectedPlayer.id}.jpg`).data.publicUrl
-                            || ''
-                        }
-                        alt="Profile"
-                        className="w-full h-full object-cover"
-                      />
-
+                      {session?.user && (
+                        <img
+                          src={
+                            selectedPlayer.avatar_url
+                              || supabase.storage.from('avatars').getPublicUrl(`${selectedPlayer.id}.jpg`).data.publicUrl
+                              || ''
+                          }
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800 mt-4">{selectedPlayer.name}</h2>
                     <p className="text-gray-600">{selectedDivision.name} Division</p>
@@ -2635,20 +2587,20 @@ const App = () => {
                           <div key={day} className="flex justify-between">
                             <span className="text-gray-700 font-medium">{day}:</span>
                             <div className="flex flex-wrap justify-end gap-1">
-                              {selectedPlayerAvailability
+                              {availabilitySlots
                                 .filter(slot => slot.day_of_week === days.indexOf(day))
                                 .map(slot => {
                                   let timeSlot = '';
                                   if (slot.start_time === '07:00') timeSlot = 'Morning (07:00-12:00)';
                                   else if (slot.start_time === '12:00') timeSlot = 'Afternoon (12:00-18:00)';
                                   else timeSlot = 'Evening (18:00-22:00)';
+                                  
                                   return (
                                     <span key={slot.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
                                       {timeSlot}
                                     </span>
                                   );
                                 })}
-
                             </div>
                           </div>
                         ))}
@@ -2658,19 +2610,14 @@ const App = () => {
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <h3 className="font-semibold text-gray-800 mb-2">Locations</h3>
                       <div className="flex flex-wrap gap-2">
-                        {selectedPlayerAreas.length > 0 ? (
-                          selectedPlayerAreas.map(name => (
-                            <span key={name} className="bg-gray-100 text-gray-800 text-sm px-3 py-1 rounded-full">
-                              {abbreviateLocation(name)}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-sm text-gray-500">No preferred areas yet</span>
-                        )}
+                        {locationsList.map(location => (
+                          <span key={location} className="bg-gray-100 text-gray-800 text-sm px-3 py-1 rounded-full">
+                            {abbreviateLocation(location)}
+                          </span>
+                        ))}
                       </div>
                     </div>
-
-                 
+                    
                     <div className="bg-yellow-50 p-4 rounded-lg">
                       <h3 className="font-semibold text-yellow-800 mb-2">Tournaments & Division</h3>
                       <div className="space-y-2">
@@ -2781,8 +2728,8 @@ const App = () => {
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
-                        const player1 = profiles.find(p => p.id === match.home_player_id);
-                        const player2 = profiles.find(p => p.id === match.away_player_id);
+                        const player1 = profiles.find(p => p.id === match.player1);
+                        const player2 = profiles.find(p => p.id === match.player2);
                         const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
                         
                         return (
@@ -2797,7 +2744,7 @@ const App = () => {
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{match.date}</div>
                                 <div className="text-sm text-gray-600">
-                                  {setsLineFor(match, selectedPlayer.id)}
+                                  {match.player1_games_won}-{match.player2_games_won}
                                 </div>
                               </div>
                             </div>
@@ -2839,8 +2786,8 @@ const App = () => {
                               onClick={() => {
                                 // Schedule a match with this opponent
                                 setNewMatch({
-                                  player1: selectedPlayer.id,
-                                  player2: opponent.id,
+                                  player1: selectedPlayer.name,
+                                  player2: opponent.name,
                                   sets: [{ score1: '', score2: '' }],
                                   division: selectedDivision.name,
                                   tournament: selectedTournament.name,
@@ -2850,7 +2797,6 @@ const App = () => {
                                   date: '',
                                   time: ''
                                 });
-                                setSelectedPlayer(null)
                                 setSelectedDivision(null);
                                 setSelectedTournament(null);
                               }}
@@ -2872,8 +2818,8 @@ const App = () => {
                     <div className="space-y-6">
                       {divisionPlayers.filter(p => p.id !== selectedPlayer.id).map(opponent => {
                         const h2hMatches = playerMatches.played.filter(match => 
-                          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-                          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+                          (match.player1 === selectedPlayer.id && match.player2 === opponent.id) ||
+                          (match.player1 === opponent.id && match.player2 === selectedPlayer.id)
                         );
                         
                         if (h2hMatches.length === 0) return null;
@@ -2885,7 +2831,7 @@ const App = () => {
                         let totalSetsLost = 0;
                         
                         h2hMatches.forEach(match => {
-                          if (match.home_player_id === selectedPlayer.id) {
+                          if (match.player1 === selectedPlayer.id) {
                             totalSetsWon += match.player1_sets_won;
                             totalSetsLost += match.player2_sets_won;
                             if (match.player1_sets_won > match.player2_sets_won) wins++;
@@ -2917,8 +2863,8 @@ const App = () => {
                             
                             <div className="space-y-2">
                               {h2hMatches.map((match, index) => {
-                                const player1 = profiles.find(p => p.id === match.home_player_id);
-                                const player2 = profiles.find(p => p.id === match.away_player_id);
+                                const player1 = profiles.find(p => p.id === match.player1);
+                                const player2 = profiles.find(p => p.id === match.player2);
                                 
                                 return (
                                   <div key={index} className="border-t pt-2">
@@ -2929,7 +2875,7 @@ const App = () => {
                                       </div>
                                       <div className="text-right">
                                         <p className="text-sm font-medium">
-                                          {setsLineFor(match)}
+                                          {match.player1_games_won}-{match.player2_games_won}
                                         </p>
                                         {(match.player1_had_pint || match.player2_had_pint) && (
                                           <p className="text-xs text-purple-600 flex items-center justify-end">
@@ -3007,7 +2953,7 @@ const App = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Partidos Jugados:</span>
-                    <span className="font-bold text-green-600">{playedMatches.length}</span>
+                    <span className="font-bold text-green-600">{confirmedMatches.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Partidos Pendientes:</span>
@@ -3015,15 +2961,11 @@ const App = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Partidos Confirmados:</span>
-                    <span className="font-bold text-green-600">{scheduledMatches.length}</span>
+                    <span className="font-bold text-green-600">{confirmedMatches.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Pintas:</span>
-                    <span className="font-bold text-purple-600">
-                      {matches
-                        .filter(m => m.division_id === selectedDivision.id)
-                        .reduce((sum, match) => sum + match.player1_pints + match.player2_pints, 0)}
-                    </span>
+                    <span className="font-bold text-purple-600">{divisionStandings.reduce((sum, s) => sum + s.pints, 0)}</span>
                   </div>
                 </div>
 
@@ -3266,7 +3208,109 @@ const App = () => {
             {/* Schedule Match */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Programar un Partido</h3>
-              <form onSubmit={handleScheduleMatch} className="space-y-4">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+
+                // Validaciones mínimas
+                if (!newMatch.player1) {
+                  alert('Please select Player 1');
+                  return;
+                }
+                if (!newMatch.location) {
+                  alert('Please enter a location');
+                  return;
+                }
+                if (!newMatch.date) {
+                  alert('Please select a date');
+                  return;
+                }
+                if (!newMatch.time) {
+                  alert('Please select a time');
+                  return;
+                }
+
+                // Evitar duplicados programados entre los mismos jugadores
+                const duplicate = matches.some(m => {
+                  const samePlayers =
+                    (m.player1 === newMatch.player1 && m.player2 === newMatch.player2) ||
+                    (m.player1 === newMatch.player2 && m.player2 === newMatch.player1);
+
+                  return samePlayers &&
+                        m.division_id === selectedDivision!.id &&
+                        m.tournament_id === selectedTournament!.id &&
+                        m.status === 'scheduled';
+                });
+                if (duplicate) {
+                  alert('A match between these players is already scheduled in this division.');
+                  return;
+                }
+
+                // Resolver location_id por nombre
+                const locationId = locations.find(l => l.name === newMatch.location)?.id || null;
+
+                // Status según haya segundo jugador o no
+                const status = newMatch.player2 ? 'scheduled' : 'pending';
+
+                try {
+                  setLoading(true);
+
+                  const { data: inserted, error } = await supabase
+                    .from('matches')
+                    .insert({
+                      tournament_id: selectedTournament!.id,
+                      division_id: selectedDivision!.id,
+                      date: newMatch.date,
+                      time: newMatch.time,
+                      location_id: locationId,
+                      status,
+                      // usar columnas reales de tu tabla
+                      home_player_id: newMatch.player1,
+                      away_player_id: newMatch.player2 || null,
+                      // iniciales
+                      player1_sets_won: 0,
+                      player2_sets_won: 0,
+                      player1_games_won: 0,
+                      player2_games_won: 0,
+                      player1_had_pint: false,
+                      player2_had_pint: false,
+                      player1_pints: 0,
+                      player2_pints: 0,
+                      created_by: session?.user.id,
+                      created_at: new Date().toISOString(),
+                    })
+                    .select()
+                    .single();
+
+                  if (error) throw error;
+
+                  // Refrescar todo para que el resto vea el partido
+                  await loadInitialData(session?.user.id);
+
+                  alert(
+                    status === 'scheduled'
+                      ? '¡Partido programado! Ambos jugadores confirmaron.'
+                      : '¡Partido publicado! Queda pendiente para que otro jugador se una.'
+                  );
+
+                  // Reset del formulario (conserva div/tournament en estado global)
+                  setNewMatch(prev => ({
+                    ...prev,
+                    player1: '',
+                    player2: '',
+                    sets: [{ score1: '', score2: '' }],
+                    hadPint: false,
+                    pintsCount: '1',
+                    location: '',
+                    date: '',
+                    time: ''
+                  }));
+                } catch (err: any) {
+                  console.error('schedule match error:', err);
+                  alert(`Error scheduling match: ${err.message}`);
+                } finally {
+                  setLoading(false);
+                }
+              }} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 1</label>
                   {/* Jugador 1 */}
@@ -3300,29 +3344,16 @@ const App = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-                  <select
-                    value={newMatch.location}
-                    onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select a location</option>
-                    {locations.map(loc => (
-                      <option key={loc.id} value={loc.name}>{loc.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name (Optional)</label>
                   <input
                     type="text"
-                    placeholder="E.g., Court 3, Parliament Hill"
-                    value={newMatch.location_details || ''} // <-- Necesitarás añadir `location_details` a tu estado `newMatch`
-                    onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                    value={newMatch.location}
+                    onChange={(e) => setNewMatch({...newMatch, location: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                    placeholder="Enter court location"
                   />
                 </div>
-
+                
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
@@ -3369,7 +3400,7 @@ const App = () => {
               
               <div className="space-y-4">
                 {pendingMatches.map(match => {
-                  const player1 = profiles.find(p => p.id === match.home_player_id);
+                  const player1 = profiles.find(p => p.id === match.player1);
                   
                   return (
                     <div key={match.id} className="border rounded-lg p-4">
@@ -3386,40 +3417,24 @@ const App = () => {
                       <div className="text-sm text-gray-600">
                         <span className="font-medium">Location:</span> {locations.find(l => l.id === match.location_id)?.name || ''}
                       </div>
-                      {currentUser?.id !== match.home_player_id && (
+                      {currentUser?.id !== match.player1 && (
                         <button 
                           type="button"
                           className="mt-2 w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition duration-200 text-sm"
-                          onClick={async () => {
-                            if (!currentUser?.id) {
-                              alert('Debes iniciar sesión.');
-                              return;
-                            }
-                            try {
-                              setLoading(true);
-                              const { data, error } = await supabase
-                                .from('matches')
-                                .update({
-                                  away_player_id: currentUser.id,
-                                  status: 'scheduled'
-                                })
-                                .eq('id', match.id)
-                                .select()
-                                .single();
-                              if (error) throw error;
-
-                              // refresca desde DB para que todos lo vean
-                              await loadInitialData(session?.user.id);
-
-                              alert(`You have joined ${player1?.name}'s match! The match is now confirmed.`);
-                            } catch (e:any) {
-                              console.error('join match error', e);
-                              alert(`Error joining match: ${e.message}`);
-                            } finally {
-                              setLoading(false);
-                            }
+                          onClick={() => {
+                            // Confirm match with current user
+                            const updatedMatch = {
+                              ...match,
+                              player2: currentUser?.id,
+                              status: 'scheduled'
+                            };
+                            
+                            setMatches(prev => prev.map(m => 
+                              m.id === match.id ? updatedMatch : m
+                            ));
+                            
+                            alert(`You have joined ${player1?.name}'s match! The match is now confirmed.`);
                           }}
-
                         >
                           Unirse al Partido
                         </button>
@@ -3460,18 +3475,19 @@ const App = () => {
             </div>
             
             {/* Grouped matches by date */}
-            {scheduledMatches.length > 0 ? (
+            {confirmedMatches.length > 0 ? (
               <div className="space-y-6">
                 {Object.entries(
-                  scheduledMatches.reduce((acc, match) => {
-                    const key = dateKey(match.date);
-                    (acc[key] ??= []).push(match);
+                  confirmedMatches.reduce((acc, match) => {
+                    const date = match.date;
+                    if (!acc[date]) acc[date] = [];
+                    acc[date].push(match);
                     return acc;
                   }, {} as Record<string, Match[]>)
                 ).sort(([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime()).map(([date, matchesForDate]) => (
                   <div key={date} className="border rounded-lg overflow-hidden">
                     <div className="bg-gray-50 px-4 py-2 font-semibold text-lg">
-                      {tituloFechaEs(date)}
+                      {new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </div>
                     
                     <div className="divide-y divide-gray-200">
@@ -3487,8 +3503,8 @@ const App = () => {
                             <h4 className="font-medium text-gray-700 mb-3">{timeSlot}</h4>
                             <div className="space-y-3">
                               {matchesForTime.map(match => {
-                                const player1 = profiles.find(p => p.id === match.home_player_id);
-                                const player2 = profiles.find(p => p.id === match.away_player_id);
+                                const player1 = profiles.find(p => p.id === match.player1);
+                                const player2 = profiles.find(p => p.id === match.player2);
                                 const location = locations.find(l => l.id === match.location_id);
                                 
                                 return (
