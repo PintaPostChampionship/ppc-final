@@ -63,7 +63,6 @@ interface Match {
   date: string;
   time?: string;
   location_id?: string;
-  location_details?: string;
   status: string;
   home_player_id: string;
   away_player_id: string | null;
@@ -193,8 +192,8 @@ const App = () => {
     email: '', 
     password: '', 
     profilePic: '',
-    locations: [] as string[],
-  availability: {} as Record<string, string[]>,  
+    tournaments: [] as string[],
+    division: ''
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -568,13 +567,6 @@ const App = () => {
     }
   };
 
-  const timeOptions = [];
-  for (let i = 0; i < 24; i++) {
-    const hour = i.toString().padStart(2, '0');
-    timeOptions.push(`${hour}:00`);
-    timeOptions.push(`${hour}:30`);
-  }
-
   const handleAvatarSelectDuringSignup = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const f = e.target.files?.[0];
@@ -589,28 +581,6 @@ const App = () => {
       setNewUser(prev => ({ ...prev, profilePic: dataUrl })); // <-- asegura preview y validación
     };
     reader.readAsDataURL(f);
-  };
-
-  const handleEditToggleLocation = (location: string) => {
-    setEditUser(prev => ({
-      ...prev,
-      locations: prev.locations.includes(location)
-        ? prev.locations.filter(loc => loc !== location)
-        : [...prev.locations, location]
-    }));
-  };
-
-  const handleEditToggleAvailability = (day: string, timeSlot: string) => {
-    setEditUser(prev => {
-      const newAvailability = { ...prev.availability };
-      const daySlots = newAvailability[day] || [];
-      if (daySlots.includes(timeSlot)) {
-        newAvailability[day] = daySlots.filter(slot => slot !== timeSlot);
-      } else {
-        newAvailability[day] = [...daySlots, timeSlot];
-      }
-      return { ...prev, availability: newAvailability };
-    });
   };
 
   const handlePasswordReset = async () => {
@@ -914,115 +884,81 @@ const App = () => {
     setEditProfile(false);
   };
 
-  const openEditProfile = async () => {
+  function openEditProfile() {
     if (!currentUser) return;
-
-    setLoading(true);
-    try {
-      // Cargamos la disponibilidad y locaciones actuales del usuario
-      const [availRes, locsRes] = await Promise.all([
-        supabase.from('availability').select('*').eq('profile_id', currentUser.id),
-        supabase.from('profile_locations').select('locations(name)').eq('profile_id', currentUser.id)
-      ]);
-
-      if (availRes.error) throw availRes.error;
-      if (locsRes.error) throw locsRes.error;
-
-      // Mapeamos los datos de disponibilidad
-      const availabilityMap = (availRes.data || []).reduce((acc, slot) => {
-        const day = days[slot.day_of_week];
-        const timeSlotLabel = timeSlots.find(ts => ts.includes(slot.start_time.slice(0, 5)));
-        if (day && timeSlotLabel) {
-          (acc[day] ||= []).push(timeSlotLabel);
-        }
-        return acc;
-      }, {} as Record<string, string[]>);
-
-      // Le decimos a TypeScript que trate cada 'item' como 'any' para evitar el error de tipo.
-      const locationNames = (locsRes.data || [])
-        .map((item: any) => item.locations?.name)
-        .filter(Boolean) as string[];
-
-      // Llenamos el estado de edición con toda la información
-      setEditUser({
-        name: currentUser.name ?? '',
-        email: session?.user?.email ?? currentUser.email ?? '',
-        password: '',
-        profilePic: currentUser.avatar_url || '',
-        availability: availabilityMap,
-        locations: locationNames,
-      });
-
-      setPendingAvatarFile(null);
-      setEditProfile(true);
-
-    } catch (err: any) {
-      console.error("Error opening profile for edit:", err);
-      alert(`Could not load profile data: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fallback = supabase.storage.from('avatars').getPublicUrl(`${currentUser.id}.jpg`).data.publicUrl;
+    const pic = currentUser.avatar_url || fallback || '';
+    setEditUser({
+      name: currentUser.name ?? '',
+      email: currentUser.email ?? '',
+      password: '',
+      profilePic: pic,
+      tournaments: [],
+      division: ''
+    });
+    setPendingAvatarFile(null);
+    setPendingAvatarPreview(currentUser?.avatar_url ?? null);
+    setEditProfile(true);
+  }
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingProfile(true);
     setProfileError(null);
 
+
+
     try {
       const uid = session?.user?.id;
-      if (!uid) throw new Error('No active session.');
-
-      // --- LÓGICA DE GUARDADO DE PREFERENCIAS AÑADIDA ---
-      
-      // 1. Guardar Availability
-      const availabilityRows = buildAvailabilityRowsFromObject(editUser.availability, uid);
-      await supabase.from('availability').delete().eq('profile_id', uid);
-      if (availabilityRows.length > 0) {
-        const { error: avErr } = await supabase.from('availability').insert(availabilityRows);
-        if (avErr) throw avErr;
+      if (!uid) {
+        setProfileError('No active session.');
+        setSavingProfile(false);
+        return;
       }
 
-      // 2. Guardar Locations
-      await supabase.from('profile_locations').delete().eq('profile_id', uid);
-      if (editUser.locations.length > 0) {
-        for (const areaName of editUser.locations) {
-          const { data: loc } = await supabase.from('locations').select('id').eq('name', areaName).maybeSingle();
-          if (loc?.id) {
-            await supabase.from('profile_locations').insert({ profile_id: uid, location_id: loc.id });
-          }
-        }
-      }
-      // --- FIN DE LA LÓGICA AÑADIDA ---
-
-      // 3. Subir avatar si se seleccionó un archivo nuevo
+      // 1) Subir avatar si el usuario seleccionó archivo
       let newAvatarUrl: string | undefined;
       if (pendingAvatarFile) {
         const path = `${uid}.jpg`;
-        const { error: uploadError } = await supabase.storage.from('avatars').upload(path, pendingAvatarFile, { upsert: true });
-        if (uploadError) throw uploadError;
+        const up = await supabase.storage
+          .from('avatars')
+          .upload(path, pendingAvatarFile, { upsert: true });
+        if (up.error) throw up.error;
+
         const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
         newAvatarUrl = pub.publicUrl;
       }
 
-      // 4. Actualizar perfil (nombre y avatar_url)
-      const { error: upErr } = await supabase.from('profiles').update({
+      // 2) Actualizar perfil (nombre + avatar_url)
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .update({
           name: editUser.name,
-          avatar_url: newAvatarUrl ?? currentUser?.avatar_url ?? undefined,
-        }).eq('id', uid);
+          avatar_url: newAvatarUrl ?? currentUser?.avatar_url ?? null,
+        })
+        .eq('id', uid);
       if (upErr) throw upErr;
 
-      // 5. Cambiar contraseña si se escribió una
-      if (editUser.password.trim()) {
-        const { error: pwErr } = await supabase.auth.updateUser({ password: editUser.password });
+      // 3) (Opcional) Cambiar contraseña si el usuario escribió una
+      if (editUser.password && editUser.password.trim().length > 0) {
+        const { error: pwErr } = await supabase.auth.updateUser({
+          password: editUser.password,
+        });
         if (pwErr) throw pwErr;
       }
 
-      // 6. Refrescar todos los datos y cerrar el modal
-      await fetchData(uid);
-      setEditProfile(false);
-      alert('Profile updated successfully!');
+      // 4) Refrescar datos del usuario actual y cerrar modal
+      const { data: fresh } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .single();
+      if (fresh) setCurrentUser(fresh as Profile);
 
+      setPendingAvatarFile(null);
+      setPendingAvatarPreview(null);
+      setEditProfile(false);
+      setProfileError(null);
     } catch (err: any) {
       console.error('save profile error:', err);
       setProfileError(err?.message ?? 'Failed to save profile');
@@ -1283,24 +1219,12 @@ const App = () => {
 
   const handleScheduleMatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!newMatch.player1 || !newMatch.location_details || !newMatch.date || !newMatch.time) {
+    // ... (toda la lógica que tenías en el onSubmit, desde las validaciones hasta el setLoading)
+    if (!newMatch.player1 || !newMatch.location || !newMatch.date || !newMatch.time) {
       return alert('Please fill all required fields.');
     }
 
     const locationId = locations.find(l => l.name === newMatch.location)?.id || null;
-    // --- Lógica añadida para determinar el bloque horario ---
-    const hour = parseInt(newMatch.time.split(':')[0], 10);
-    let timeBlock = null;
-    if (hour >= 7 && hour < 12) {
-      timeBlock = 'Morning';
-    } else if (hour >= 12 && hour < 18) {
-      timeBlock = 'Afternoon';
-    } else if (hour >= 18 && hour < 23) {
-      timeBlock = 'Evening';
-    }
-    // --- Fin de la lógica añadida ---
-
     const status = newMatch.player2 ? 'scheduled' : 'pending';
 
     try {
@@ -1309,21 +1233,21 @@ const App = () => {
         tournament_id: selectedTournament!.id,
         division_id: selectedDivision!.id,
         date: newMatch.date,
-        time: newMatch.time, // Guarda la hora manual (ej: "19:30")
-        time_block: timeBlock, // Guarda el bloque calculado (ej: "Evening")
+        time: newMatch.time,
         location_id: locationId,
         location_details: newMatch.location_details,
         status,
         home_player_id: newMatch.player1,
         away_player_id: newMatch.player2 || null,
         created_by: session?.user.id,
+        // ... valores iniciales para scores y pintas
       });
       if (error) throw error;
 
-      await fetchData(session?.user.id);
+      await loadInitialData(session?.user.id);
       alert(status === 'scheduled' ? 'Match scheduled!' : 'Match published as pending!');
-      
-      setNewMatch(prev => ({ ...prev, player1: '', player2: '', location_details: '', date: '', time: '' }));
+      // Reset form
+      setNewMatch(prev => ({ ...prev, player1: '', player2: '', location: '', location_details: '', date: '', time: '' }));
     } catch (err: any) {
       alert(`Error scheduling match: ${err.message}`);
     } finally {
@@ -1552,6 +1476,27 @@ const App = () => {
   };
 
 
+
+
+  const handleEditProfile = () => {
+    if (!currentUser) return;
+
+    const { data: { publicUrl } } =
+      supabase.storage.from('avatars').getPublicUrl(`${currentUser.id}.jpg`);
+
+    setEditUser({
+      name: currentUser.name,
+      email: currentUser.email ?? '',
+      password: '',
+      profilePic: publicUrl || '',
+      tournaments: [],
+      division: ''
+    });
+    setEditProfile(true);
+    
+  };
+
+
   const saveProfileChanges = async () => {
     if (editUser.name) {
       try {
@@ -1581,29 +1526,13 @@ const App = () => {
 
   const isAdmin = currentUser?.role === 'admin';
 
+  // Loading state
   if (loading) {
     return (
-      // Contenedor principal que centra todo en la pantalla
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700 flex items-center justify-center p-4">
-        
-        {/* Contenedor interno:
-          - Se quita el fondo blanco ('bg-white') y la sombra para hacerlo transparente.
-          - Se añade 'flex flex-col items-center' para centrar la imagen y el texto.
-        */}
-        <div className="w-full max-w-md text-center flex flex-col items-center">
-          
-          <img
-            src="/loading-beer.gif" // Asegúrate que este sea el nombre de tu GIF en la carpeta 'public'
-            alt="Cargando..."
-            // Se aumenta el tamaño de la imagen. Puedes cambiar 'h-40 w-40' al tamaño que prefieras.
-            className="h-40 w-40" 
-          />
-          
-          {/* Se cambia el color del texto a blanco para que se vea sobre el fondo verde */}
-          <p className="mt-4 text-white font-semibold text-lg">
-            Cargando tu pinta...
-          </p>
-
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading application data...</p>
         </div>
       </div>
     );
@@ -1990,57 +1919,6 @@ const App = () => {
                 </div>
               </div>
             </div>
-            {/* Preferred Locations */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Locations</label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {locationsList.map(location => (
-                  <label key={location} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={editUser.locations.includes(location)}
-                      onChange={() => handleEditToggleLocation(location)}
-                      className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">{location}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {/* Availability */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Availability</label>
-              <div className="border rounded-lg overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Day</th>
-                      {timeSlots.map(slot => (
-                        <th key={slot} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">{slot}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {days.map(day => (
-                      <tr key={day}>
-                        <td className="px-4 py-2 text-sm font-medium text-gray-900">{day}</td>
-                        {timeSlots.map(slot => (
-                          <td key={slot} className="px-4 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={editUser.availability[day]?.includes(slot) || false}
-                              onChange={() => handleEditToggleAvailability(day, slot)}
-                              className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
             {/* Submit */}
             <button
@@ -2425,11 +2303,7 @@ const App = () => {
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
               <div className="space-y-4">
                 {divisionsData.map(d => (
-                  <div
-                    key={d.division.id}
-                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" // <-- ESTILOS AÑADIDOS
-                    onClick={() => setSelectedDivision(d.division)} // <-- LÓGICA AÑADIDA
-                  >
+                  <div key={d.division.id} className="border rounded-lg p-3">
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-800">{d.division.name}</span>
                       <span className="text-sm text-gray-600">Líder: {d.leader ? d.leader.name : 'N/A'}</span>
@@ -2507,7 +2381,7 @@ const App = () => {
                         <tbody className="divide-y divide-gray-200">
                           {divisionsData
                             .find(d => d.division.id === division.id)
-                            ?.playerStats // .slice(0, 3) - Mostramos solo el top 3
+                            ?.playerStats.slice(0, 3) // Mostramos solo el top 3
                             .map(stats => (
                               <tr key={stats.id} className="text-sm">
                                 <td className="px-4 py-2 font-medium text-gray-900">{stats.name}</td>
@@ -2580,7 +2454,7 @@ const App = () => {
                         <tr key={match.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.date}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time && match.time.slice(0, 5)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{location}</td>
                         </tr>
@@ -2954,15 +2828,9 @@ const App = () => {
                                 </div>
                               </div>
                             </div>
-                              <div className="text-sm text-gray-600">
-                                <span className="font-medium">Location :</span> 
-                                {
-                                  [
-                                    locations.find(l => l.id === match.location_id)?.name,
-                                    match.location_details
-                                  ].filter(Boolean).join(' - ') || 'TBD'
-                                }
-                              </div>
+                            <div className="text-sm text-gray-600">
+                              <span className="font-medium">Location:</span> {locations.find(l => l.id === match.location_id)?.name || ''}
+                            </div>
                             {(match.player1_had_pint || match.player2_had_pint) && (
                               <div className="mt-1 text-sm text-purple-600 flex items-center">
                                 <span className="text-lg">🍻</span>
@@ -3130,7 +2998,7 @@ const App = () => {
                   ← Back to {selectedTournament.name}
                 </button>
                 <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                <p className="text-gray-600">Division Details</p>
+                <p className="text-gray-600">{getDivisionHighlights(selectedDivision.name, selectedTournament.name)}</p>
               </div>
               {currentUser && (
                 <div className="flex items-center space-x-4">
@@ -3165,12 +3033,6 @@ const App = () => {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-white mb-2">División {selectedDivision.name}</h2>
-            <p className="text-white text-lg opacity-90">
-              {getDivisionHighlights(selectedDivision.name, selectedTournament.name)}
-            </p>
-          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Division Summary */}
             <div className="lg:col-span-1">
@@ -3490,14 +3352,13 @@ const App = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name (Optional)</label>
                   <input
                     type="text"
-                    placeholder="E.g., Parliament Hill, Court 3"
-                    value={newMatch.location_details || ''}
+                    placeholder="E.g., Court 3, Parliament Hill"
+                    value={newMatch.location_details || ''} // <-- Necesitarás añadir `location_details` a tu estado `newMatch`
                     onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                    required // Hacemos que el nombre del lugar sea requerido
                   />
                 </div>
 
@@ -3517,13 +3378,14 @@ const App = () => {
                     <select
                       value={newMatch.time}
                       onChange={(e) => setNewMatch({...newMatch, time: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
                     >
-                      <option value="">Select a time</option>
-                      {timeOptions.map(time => (
-                        <option key={time} value={time}>{time}</option>
-                      ))}
+                      <option value="">Select Time</option>
+                      <option value="Morning (07:00-12:00)">Morning (07:00-12:00)</option>
+                      <option value="Afternoon (12:00-18:00)">Afternoon (12:00-18:00)</option>
+                      <option value="Evening (18:00-22:00)">Evening (18:00-22:00)</option>
+                      <option value="To Be Confirmed">To Be Confirmed</option>
                     </select>
                   </div>
                 </div>
@@ -3556,20 +3418,12 @@ const App = () => {
                           <p className="text-sm text-gray-600">{selectedDivision.name}</p>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-semibold text-blue-600">
-                            {new Date(match.date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}
-                          </div>
+                          <div className="text-sm font-semibold text-blue-600">{match.date}</div>
                           <div className="text-sm text-gray-600">{match.time}</div>
                         </div>
                       </div>
                       <div className="text-sm text-gray-600">
-                        <span className="font-medium">Location: </span> 
-                        {
-                          [
-                            locations.find(l => l.id === match.location_id)?.name,
-                            match.location_details
-                          ].filter(Boolean).join(' - ') || 'TBD'
-                        }
+                        <span className="font-medium">Location:</span> {locations.find(l => l.id === match.location_id)?.name || ''}
                       </div>
                       {currentUser?.id !== match.home_player_id && (
                         <button 
@@ -3609,37 +3463,6 @@ const App = () => {
                           Unirse al Partido
                         </button>
                       )}
-                      {/* Cancelar Partido */}
-                      {currentUser?.id === match.created_by && (
-                        <button 
-                          type="button"
-                          className="mt-2 w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition duration-200 text-sm"
-                          onClick={async () => {
-                            if (window.confirm('Are you sure you want to cancel this pending match?')) {
-                              try {
-                                setLoading(true);
-                                const { error } = await supabase
-                                  .from('matches')
-                                  .delete()
-                                  .eq('id', match.id);
-                                
-                                if (error) throw error;
-                                
-                                // Recargamos los datos para que el partido eliminado desaparezca de la lista
-                                await fetchData(session?.user.id);
-                                alert('Pending match cancelled.');
-
-                              } catch (e:any) {
-                                alert(`Error cancelling match: ${e.message}`);
-                              } finally {
-                                setLoading(false);
-                              }
-                            }
-                          }}
-                        >
-                          Cancel Match
-                        </button>
-                      )}                      
                     </div>
                   );
                 })}

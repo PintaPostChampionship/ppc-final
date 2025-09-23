@@ -2425,11 +2425,7 @@ const App = () => {
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
               <div className="space-y-4">
                 {divisionsData.map(d => (
-                  <div
-                    key={d.division.id}
-                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" // <-- ESTILOS AÑADIDOS
-                    onClick={() => setSelectedDivision(d.division)} // <-- LÓGICA AÑADIDA
-                  >
+                  <div key={d.division.id} className="border rounded-lg p-3">
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-800">{d.division.name}</span>
                       <span className="text-sm text-gray-600">Líder: {d.leader ? d.leader.name : 'N/A'}</span>
@@ -2507,7 +2503,7 @@ const App = () => {
                         <tbody className="divide-y divide-gray-200">
                           {divisionsData
                             .find(d => d.division.id === division.id)
-                            ?.playerStats // .slice(0, 3) - Mostramos solo el top 3
+                            ?.playerStats.slice(0, 3) // Mostramos solo el top 3
                             .map(stats => (
                               <tr key={stats.id} className="text-sm">
                                 <td className="px-4 py-2 font-medium text-gray-900">{stats.name}</td>
@@ -3130,7 +3126,7 @@ const App = () => {
                   ← Back to {selectedTournament.name}
                 </button>
                 <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                <p className="text-gray-600">Division Details</p>
+                <p className="text-gray-600">{getDivisionHighlights(selectedDivision.name, selectedTournament.name)}</p>
               </div>
               {currentUser && (
                 <div className="flex items-center space-x-4">
@@ -3165,12 +3161,6 @@ const App = () => {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-white mb-2">División {selectedDivision.name}</h2>
-            <p className="text-white text-lg opacity-90">
-              {getDivisionHighlights(selectedDivision.name, selectedTournament.name)}
-            </p>
-          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Division Summary */}
             <div className="lg:col-span-1">
