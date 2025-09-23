@@ -1054,16 +1054,39 @@ const App = () => {
   };
 
   function safeShareOnWhatsApp(message: string) {
-    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    // Si existe Web Share API intentamos compartir el texto
-    if (typeof navigator !== 'undefined' && (navigator as any).share) {
-      (navigator as any)
-        .share({ text: message })
-        .catch(() => {
-          if (typeof window !== 'undefined') window.open(url, '_blank');
+    const MAX_LENGTH = 4000; // Límite seguro para la mayoría de las plataformas
+
+    // 1. Si el mensaje es muy largo, lo copiamos y avisamos al usuario.
+    if (message.length > MAX_LENGTH) {
+      navigator.clipboard.writeText(message).then(() => {
+        alert('The match list is too long to share directly. It has been copied to your clipboard. Please paste it into WhatsApp.');
+      }).catch(() => {
+        alert('The match list is too long to share directly and could not be copied. Please try copying it manually.');
+      });
+      return;
+    }
+
+    // 2. Si el mensaje es corto, intentamos usar la API moderna para compartir.
+    const shareData = {
+      title: 'PPC Scheduled Matches', // <-- AÑADIDO: Título para el diálogo de compartir.
+      text: message,
+      url: window.location.href // <-- AÑADIDO: URL de la página actual.
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      // Intentamos compartir los datos enriquecidos.
+      navigator.share(shareData)
+        .then(() => console.log('Successful share'))
+        .catch((error) => {
+          console.error('Web Share API failed:', error);
+          // Si la Web Share API falla, abrimos el enlace de WhatsApp como respaldo.
+          const fallbackUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+          window.open(fallbackUrl, '_blank');
         });
     } else {
-      if (typeof window !== 'undefined') window.open(url, '_blank');
+      // Si la Web Share API no existe (ej. en un PC), abrimos el enlace directamente.
+      const fallbackUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+      window.open(fallbackUrl, '_blank');
     }
   }
 
