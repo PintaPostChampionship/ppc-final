@@ -3231,7 +3231,10 @@ const App = () => {
             <div className="flex justify-between items-center">
               <div>
                 <button
-                  onClick={() => setSelectedDivision(null)}
+                  onClick={() => {
+                    setSelectedDivision(null);
+                    setSelectedPlayer(null); 
+                  }}
                   className="text-green-600 hover:text-green-800 font-semibold mb-2"
                 >
                   ← Back to {selectedTournament.name}
@@ -3239,29 +3242,31 @@ const App = () => {
                 <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
                 <p className="text-gray-600">Division Details</p>
               </div>
+
               {currentUser && (
                 <div className="flex items-center space-x-4">
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
-                      Division: {(() => {
-                        // Buscamos el registro del usuario en el torneo que se está viendo
-                        const registration = registrations.find(r => 
-                          r.profile_id === currentUser.id && r.tournament_id === selectedTournament?.id
-                        );
-                        // Si lo encontramos, buscamos el nombre de la división
-                        if (registration) {
-                          const division = divisions.find(d => d.id === registration.division_id);
-                          return division?.name || 'N/A';
-                        }
-                        return 'N/A';
-                      })()}
-                      {currentUser.role === 'admin' && ' (Admin)'}
+                      Division: {selectedDivision.name} 
                     </p>
                   </div>
+                  
+                  <img
+                    src={currentUser.avatar_url || '/default-avatar.png'}
+                    alt="Profile"
+                    className="h-10 w-10 rounded-full object-cover"
+                  />
+                  <button
+                    onClick={openEditProfile}
+                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+                  >
+                    Edit Profile
+                  </button>
+                  
                   <button
                     onClick={handleLogout}
-                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
                   >
                     Logout
                   </button>
