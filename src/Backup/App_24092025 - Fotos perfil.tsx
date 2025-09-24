@@ -291,13 +291,6 @@ const App = () => {
     const d = parseDateSafe(val);
     return d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
   }
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '';
-    // La 'T' indica que la fecha puede tener hora, la cortamos para evitar problemas de zona horaria
-    const date = new Date(dateString.split('T')[0] + 'T00:00:00');
-    return date.toLocaleDateString('es-CL', { timeZone: 'UTC' });
-  };  
  
   function setsLineFor(m: Match, perspectiveId?: string) {
     const sets = matchSets
@@ -2228,7 +2221,6 @@ const App = () => {
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
-                      {/* Muestra todos los torneos en los que está inscrito */}
                       {registrations
                         .filter(r => r.profile_id === currentUser.id)
                         .map(r => tournaments.find(t => t.id === r.tournament_id)?.name)
@@ -2236,20 +2228,9 @@ const App = () => {
                         .join(', ') || 'No tournaments'}
                     </p>
                   </div>
-                  <img
-                    src={currentUser.avatar_url || '/default-avatar.png'}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
-                  >
-                    Edit Profile
-                  </button>
                   <button
                     onClick={handleLogout}
-                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
                   >
                     Logout
                   </button>
@@ -2671,20 +2652,11 @@ const App = () => {
                       
                       return (
                         <tr key={match.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(match.date)}
-                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.date}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time && match.time.slice(0, 5)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {
-                              [
-                                locations.find(l => l.id === match.location_id)?.name,
-                                match.location_details
-                              ].filter(Boolean).join(' - ') || 'TBD'
-                            }
-                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{location}</td>
                         </tr>
                       );
                     })}
@@ -2814,40 +2786,35 @@ const App = () => {
               <div className="flex justify-between items-center">
                 <div>
                   <button
-                    onClick={() => {
-                      setSelectedDivision(null);
-                      setSelectedPlayer(null); 
-                    }}
+                    onClick={() => setSelectedPlayer(null)}
                     className="text-green-600 hover:text-green-800 font-semibold mb-2"
                   >
-                    ← Back to {selectedTournament.name}
+                    ← Back to {selectedDivision.name} Division
                   </button>
-                  <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                  <p className="text-gray-600">Division Details</p>
+                  <h1 className="text-4xl font-bold text-gray-800">{selectedPlayer.name}</h1>
+                  <p className="text-gray-600">Player Profile</p>
                 </div>
-
                 {currentUser && (
                   <div className="flex items-center space-x-4">
                     <div className="text-right">
                       <p className="font-semibold text-gray-800">{currentUser.name}</p>
                       <p className="text-sm text-gray-600">
-                        Division: {selectedDivision.name}
+                        Division: {(() => {
+                          const registration = registrations.find(r => 
+                            r.profile_id === currentUser.id && r.tournament_id === selectedTournament?.id
+                          );
+                          if (registration) {
+                            const division = divisions.find(d => d.id === registration.division_id);
+                            return division?.name || 'N/A';
+                          }
+                          return 'N/A';
+                        })()}
+                        {currentUser.role === 'admin' && ' (Admin)'}
                       </p>
                     </div>
-                    <img
-                      src={currentUser.avatar_url || '/default-avatar.png'}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover"
-                    />
-                    <button
-                      onClick={openEditProfile}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
-                    >
-                      Edit Profile
-                    </button>
                     <button
                       onClick={handleLogout}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
                     >
                       Logout
                     </button>
@@ -2985,7 +2952,7 @@ const App = () => {
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MP</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">W</th>
@@ -3055,7 +3022,7 @@ const App = () => {
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
                               <div className="text-right">
-                                <div className="text-sm font-semibold text-blue-600">{formatDate(match.date)}</div>
+                                <div className="text-sm font-semibold text-blue-600">{match.date}</div>
                                 <div className="text-sm text-gray-600">
                                   {setsLineFor(match, selectedPlayer.id)}
                                 </div>
@@ -3189,7 +3156,7 @@ const App = () => {
                                     <div className="flex justify-between">
                                       <div>
                                         <p className="text-sm font-medium">{player1?.name} vs {player2?.name}</p>
-                                        <p className="text-xs text-gray-500">{formatDate(match.date)} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
+                                        <p className="text-xs text-gray-500">{match.date} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
                                       </div>
                                       <div className="text-right">
                                         <p className="text-sm font-medium">
