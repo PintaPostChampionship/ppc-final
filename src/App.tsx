@@ -230,6 +230,12 @@ const App = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [editedMatchData, setEditedMatchData] = useState({
+    sets: [{ score1: '', score2: '' }],
+    hadPint: false,
+    pintsCount: 1,
+  });
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -650,6 +656,42 @@ const App = () => {
       }
       return { ...prev, availability: newAvailability };
     });
+  };
+
+  const handleSaveEditedMatch = async () => {
+    if (!editingMatch) return;
+    setLoading(true);
+    try {
+      const setsForRPC = editedMatchData.sets
+        .filter(s => s.score1 !== '' && s.score2 !== '')
+        .map((s, idx) => ({
+          set_number: idx + 1,
+          p1_games: parseInt(s.score1),
+          p2_games: parseInt(s.score2),
+        }));
+
+      const { error } = await supabase.rpc('update_match_result', {
+        p_match_id: editingMatch.id,
+        p_sets: setsForRPC,
+        p_had_pint: editedMatchData.hadPint,
+        p_pints_count: editedMatchData.pintsCount,
+      });
+      if (error) throw error;
+      
+      alert('Match result updated successfully!');
+      setEditingMatch(null);
+      await fetchData(session?.user.id);
+    } catch (err: any) {
+      alert(`Error updating match: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateEditedSetScore = (index: number, field: 'score1' | 'score2', value: string) => {
+    const newSets = [...editedMatchData.sets];
+    newSets[index][field] = value;
+    setEditedMatchData(prev => ({ ...prev, sets: newSets }));
   };
 
   const handlePasswordReset = async () => {
@@ -1287,6 +1329,7 @@ const App = () => {
           date: newMatch.date || new Date().toISOString().split('T')[0],
           time: newMatch.time,
           location_id: locationId,
+          location_details: newMatch.location_details,
           status: 'played',
           home_player_id: player1Id,
           away_player_id: player2Id,
@@ -1991,18 +2034,11 @@ const App = () => {
   if (editProfile) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6">
+        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-semibold text-gray-800">Edit Profile</h2>
-            <button
-              onClick={() => setEditProfile(false)}
-              className="text-gray-500 hover:text-gray-700"
-              aria-label="Close"
-            >
-              ✕
-            </button>
+            <button onClick={() => setEditProfile(false)} className="text-gray-500 hover:text-gray-700" aria-label="Close">✕</button>
           </div>
-
           <form onSubmit={handleSaveProfile} className="space-y-6">
             {/* Nombre */}
             <div>
@@ -2138,13 +2174,54 @@ const App = () => {
     );
   }
 
+  if (editingMatch) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-8">
+          <h3 className="text-2xl font-bold text-gray-800 mb-6">Edit Match Result</h3>
+          
+          {/* Formulario de Sets */}
+          <div className="border rounded-lg p-4 space-y-3">
+            {editedMatchData.sets.map((set, index) => (
+              <div key={index} className="flex items-center space-x-4">
+                <span className="text-sm font-medium text-gray-700 w-8">Set {index + 1}</span>
+                <input type="number" value={set.score1} onChange={(e) => updateEditedSetScore(index, 'score1', e.target.value)} className="w-16 px-3 py-2 border border-gray-300 rounded text-center"/>
+                <span>-</span>
+                <input type="number" value={set.score2} onChange={(e) => updateEditedSetScore(index, 'score2', e.target.value)} className="w-16 px-3 py-2 border border-gray-300 rounded text-center"/>
+              </div>
+            ))}
+          </div>
+
+          {/* Formulario de Pintas */}
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center">
+              <input type="checkbox" id="editHadPint" checked={editedMatchData.hadPint} onChange={(e) => setEditedMatchData({...editedMatchData, hadPint: e.target.checked})} className="w-4 h-4 text-green-600"/>
+              <label htmlFor="editHadPint" className="ml-2 text-sm text-gray-700">¿Se tomaron una Pinta post?</label>
+            </div>
+            {editedMatchData.hadPint && (
+              <div className="ml-6">
+                <label className="text-sm font-medium text-gray-700">¿Cuántas cada uno?</label>
+                <input type="number" min="1" value={editedMatchData.pintsCount} onChange={(e) => setEditedMatchData({...editedMatchData, pintsCount: parseInt(e.target.value) || 1})} className="w-20 px-3 py-2 border border-gray-300 rounded text-center ml-2"/>
+              </div>
+            )}
+          </div>
+
+          {/* Botones de Acción */}
+          <div className="flex justify-end space-x-4 mt-8">
+            <button onClick={() => setEditingMatch(null)} className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-semibold hover:bg-gray-300">Cancel</button>
+            <button onClick={handleSaveEditedMatch} className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700">Save Changes</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (showMap) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div>
                 <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
                 <p className="text-gray-600">Find Nearby Tennis Courts</p>
@@ -2218,13 +2295,13 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div>
                 <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
                 <p className="text-gray-600">Tennis League</p>
               </div>
               {currentUser && (
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
@@ -2440,7 +2517,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div>
                 <button
                   onClick={() => setSelectedTournament(null)}
@@ -2453,7 +2530,7 @@ const App = () => {
               </div>
               
               {currentUser && (
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
@@ -2534,7 +2611,7 @@ const App = () => {
           </div>
 
           {/* Division Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
             {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
               <div 
                 key={division.id} 
@@ -2621,7 +2698,7 @@ const App = () => {
           <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold text-gray-800">Partidos Programados - {selectedTournament.name}</h3>
-              <div className="flex space-x-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
@@ -2640,7 +2717,7 @@ const App = () => {
                   <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
                   </svg>
-                  Compartir todo
+                  Compartir en WhatsApp
                 </button>
               </div>
             </div>
@@ -2811,23 +2888,22 @@ const App = () => {
         <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
           <header className="bg-white shadow-lg">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
                 <div>
                   <button
                     onClick={() => {
-                      setSelectedDivision(null);
                       setSelectedPlayer(null); 
                     }}
                     className="text-green-600 hover:text-green-800 font-semibold mb-2"
                   >
-                    ← Back to {selectedTournament.name}
+                    ← Back to {selectedDivision.name} Division
                   </button>
                   <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
                   <p className="text-gray-600">Division Details</p>
                 </div>
 
                 {currentUser && (
-                  <div className="flex items-center space-x-4">
+                  <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                     <div className="text-right">
                       <p className="font-semibold text-gray-800">{currentUser.name}</p>
                       <p className="text-sm text-gray-600">
@@ -3049,31 +3125,47 @@ const App = () => {
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
-                                <h4 className="font-semibold text-gray-800">
-                                  {opponent?.name}
-                                </h4>
+                                <h4 className="font-semibold text-gray-800">{opponent?.name}</h4>
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDate(match.date)}</div>
-                                <div className="text-sm text-gray-600">
-                                  {setsLineFor(match, selectedPlayer.id)}
-                                </div>
+                                <div className="text-sm text-gray-600">{setsLineFor(match, selectedPlayer.id)}</div>
                               </div>
                             </div>
-                              <div className="text-sm text-gray-600">
-                                <span className="font-medium">Location :</span> 
-                                {
-                                  [
-                                    locations.find(l => l.id === match.location_id)?.name,
-                                    match.location_details
-                                  ].filter(Boolean).join(' - ') || 'TBD'
-                                }
-                              </div>
+                            <div className="text-sm text-gray-600">
+                              <span className="font-medium">Location:</span>
+                              {/* Esta lógica prioriza el detalle y solo muestra TBD si ambos campos están vacíos */}
+                              {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
+                            </div>
                             {(match.player1_had_pint || match.player2_had_pint) && (
                               <div className="mt-1 text-sm text-purple-600 flex items-center">
                                 <span className="text-lg">🍻</span>
                                 <span className="ml-1">Tomaron {match.player1_pints} pintas cada uno</span>
+                              </div>
+                            )}
+
+                            {/* --- BOTÓN AÑADIDO AQUÍ --- */}
+                            {(currentUser?.id === match.home_player_id || currentUser?.id === match.away_player_id) && (
+                              <div className="mt-2 text-right">
+                                <button
+                                  onClick={() => {
+                                    const currentSets = matchSets
+                                      .filter(s => s.match_id === match.id)
+                                      .sort((a, b) => a.set_number - b.set_number)
+                                      .map(s => ({ score1: String(s.p1_games), score2: String(s.p2_games) }));
+
+                                    setEditedMatchData({
+                                      sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
+                                      hadPint: match.player1_had_pint,
+                                      pintsCount: match.player1_pints || 1,
+                                    });
+                                    setEditingMatch(match);
+                                  }}
+                                  className="text-sm font-medium text-blue-600 hover:underline focus:outline-none"
+                                >
+                                  Edit Result
+                                </button>
                               </div>
                             )}
                           </div>
@@ -3095,7 +3187,7 @@ const App = () => {
                     <div className="space-y-4">
                       {upcomingMatches.map((opponent, index) => (
                         <div key={index} className="border rounded-lg p-4">
-                          <div className="flex justify-between items-center">
+                          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
                             <div>
                               <h4 className="font-semibold text-gray-800">{opponent.name}</h4>
                               <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
@@ -3228,7 +3320,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div>
                 <button
                   onClick={() => {
@@ -3244,7 +3336,7 @@ const App = () => {
               </div>
 
               {currentUser && (
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
@@ -3452,6 +3544,7 @@ const App = () => {
                       ))}
                     </select>
                   </div>
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2</label>
                     <select
@@ -3469,7 +3562,31 @@ const App = () => {
                     </select>
                   </div>
                 </div>
-                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Location (General Area)</label>
+                  <select
+                    value={newMatch.location}
+                    onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                    required
+                  >
+                    <option value="">Select an area</option>
+                    {locations.map(loc => (
+                      <option key={loc.id} value={loc.name}>{loc.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name (Specific)</label>
+                  <input
+                    type="text"
+                    placeholder="E.g., Club Manquehue, Court 3"
+                    value={newMatch.location_details || ''}
+                    onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                  />
+                </div>               
                 <div className="border rounded-lg p-4">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="font-semibold text-gray-800">Sets del Partido</h4>
@@ -3776,7 +3893,7 @@ const App = () => {
           <div className="bg-white rounded-xl shadow-lg p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold text-gray-800">Todos los Partidos Programados</h3>
-              <div className="flex space-x-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
@@ -3795,7 +3912,7 @@ const App = () => {
                   <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
                   </svg>
-                  Compartir todo
+                  Compartir en WhatsApp
                 </button>
               </div>
             </div>
