@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 
@@ -328,6 +328,9 @@ const App = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  type PPCNotif = { id: string; text: string; matchId?: string; at: number };
+  const [notifs, setNotifs] = useState<PPCNotif[]>([]);
+  const seenPendingIdsRef = useRef<Set<string>>(new Set())  
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [editedMatchData, setEditedMatchData] = useState({
     sets: [{ score1: '', score2: '' }],
@@ -572,13 +575,59 @@ const App = () => {
 
   // EFECTO 3: Carga los datos cuando la sesión cambia o al inicio
   useEffect(() => {
-    // Carga todos los datos públicos al inicio.
-    // Si ya hay una sesión, también carga los datos específicos del usuario.
     fetchData(session?.user.id);
-  }, [session]); // Se ejecuta al inicio y cada vez que la sesión cambia.
+  }, [session]); 
 
-  // --- FIN DEL BLOQUE DE CÓDIGO DEFINITIVO ---
-  
+  useEffect(() => {
+    if (!selectedDivision || !selectedTournament) return;
+
+    // 1) Realtime: INSERT/UPDATE en 'matches' de esta división
+    const channel = supabase
+      .channel(`pending-matches-${selectedDivision.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'matches',
+        filter: `division_id=eq.${selectedDivision.id}`,
+      }, (payload) => {
+        const m = payload.new as Match;
+        if (m.status === 'pending' && !seenPendingIdsRef.current.has(m.id)) {
+          seenPendingIdsRef.current.add(m.id);
+          pushNotif(formatPendingShare(m), m.id);
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matches',
+        filter: `division_id=eq.${selectedDivision.id}`,
+      }, (payload) => {
+        const m = payload.new as Match;
+        if (m.status === 'pending' && !seenPendingIdsRef.current.has(m.id)) {
+          seenPendingIdsRef.current.add(m.id);
+          pushNotif(formatPendingShare(m), m.id);
+        }
+      })
+      .subscribe();
+
+    // 2) Siembra inicial: pendings ya existentes en mi división/torneo
+    const pendingNow = matches.filter(m =>
+      m.tournament_id === selectedTournament.id &&
+      m.division_id === selectedDivision.id &&
+      m.status === 'pending'
+    );
+    pendingNow.forEach(m => {
+      if (!seenPendingIdsRef.current.has(m.id)) {
+        seenPendingIdsRef.current.add(m.id);
+        pushNotif(formatPendingShare(m), m.id);
+      }
+    });
+
+    return () => { supabase.removeChannel(channel); };
+    // Nota: dependencias por id, no por objetos completos
+  }, [selectedDivision?.id, selectedTournament?.id]);
+
+
   // Load all initial data from Supabase
   const loadInitialData = async (userId: string) => {
     try {
@@ -1437,6 +1486,96 @@ const App = () => {
     };
     return map[name] || '/ppc-logo.png';
   }
+
+  function formatPendingShare(m: Match) {
+    const creator = profiles.find(p => p.id === m.created_by)?.name || 'Alguien';
+    const divName = divisions.find(d => d.id === m.division_id)?.name || '';
+    const tName = tournaments.find(t => t.id === m.tournament_id)?.name || '';
+    const dayStr = tituloFechaEs(m.date);
+    const timeStr = m.time || '';
+    const loc = m.location_details || locations.find(l => l.id === m.location_id)?.name || '';
+    return `🎾 *${tName} – ${divName}*\n${creator} busca rival.\n📅 ${dayStr}\n🕒 ${timeStr}\n📍 ${loc}\n\n¿Te apuntas?`;
+  }
+
+  function sharePendingMatch(m: Match) {
+    const msg = formatPendingShare(m);
+    safeShareOnWhatsApp(msg); // reutiliza tu helper existente
+  }
+
+  async function joinPendingMatch(m: Match) {
+    if (!currentUser) return alert('Please log in.');
+
+    setLoading(true);
+    try {
+      // Concurrencia segura: solo se agenda si sigue "pending" y sin away_player
+      const { data, error } = await supabase
+        .from('matches')
+        .update({ away_player_id: currentUser.id, status: 'scheduled' })
+        .eq('id', m.id)
+        .is('away_player_id', null)
+        .eq('status', 'pending')
+        .select()
+        .single();
+
+      if (error) throw error;
+      await fetchData(session?.user.id);
+      alert('¡Te uniste al partido!');
+    } catch (e: any) {
+      // Si otro se adelantó, este update no encuentra filas
+      const msg = String(e.message || e);
+      alert(msg.includes('0 rows') ? 'Lo siento, alguien ya se unió a ese partido.' : `Error: ${msg}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function pushNotif(text: string, matchId?: string) {
+    setNotifs(prev => [
+      { id: `${Date.now()}_${Math.random().toString(36).slice(2,7)}`, text, matchId, at: Date.now() },
+      ...prev
+    ].slice(0, 5)); // máximo 5
+  }
+
+  function renderNotifs() {
+    return (
+      <div className="fixed right-4 bottom-4 z-[9999] space-y-2">
+        {notifs.map(n => {
+          const m = matches.find(mm => mm.id === n.matchId);
+          return (
+            <div key={n.id} className="relative bg-white shadow-xl rounded-xl p-4 w-80 border">
+              <button
+                className="absolute top-2 right-2 text-gray-500"
+                onClick={() => setNotifs(prev => prev.filter(x => x.id !== n.id))}
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+              <div className="font-semibold mb-2">Nuevo partido “busco rival”</div>
+              <div className="text-sm text-gray-700 whitespace-pre-line">{n.text}</div>
+              {m && (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => joinPendingMatch(m)}
+                    className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
+                  >
+                    Unirme
+                  </button>
+                  <button
+                    onClick={() => sharePendingMatch(m)}
+                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700"
+                  >
+                    Compartir
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+ 
 
   function tituloFechaEs(iso?: string | null) {
     if (!iso) return 'Fecha por definir';
@@ -2574,6 +2713,7 @@ const App = () => {
             </div>
           </div>
         </div>
+        {renderNotifs()}
       </div>
     );
   }
@@ -2585,7 +2725,7 @@ const App = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div className="flex items-center gap-3">
-                <img src="/ppc-logo.png" alt="PPC Logo" className="h-12 w-auto md:h-16" />
+                <img src="/ppc-logo.png" alt="PPC Logo" className="h-16 w-auto md:h-16" />
                 <div>
                   <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
                   <p className="text-gray-600">Tennis League</p>
@@ -2752,6 +2892,7 @@ const App = () => {
             </button>
           </div>
         </div>
+        {renderNotifs()}
       </div>
     );
   }
@@ -2817,7 +2958,7 @@ const App = () => {
                   ← Back to Tournaments
                 </button>
                 <div className="flex items-center gap-3 mt-1">
-                  <img src="/ppc-logo.png" alt="PPC Logo" className="h-10 w-auto md:h-16" />
+                  <img src="/ppc-logo.png" alt="PPC Logo" className="h-16 w-auto md:h-16" />
                   <div>
                     <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
                     <p className="text-gray-600">All divisions and player details</p>
@@ -3082,6 +3223,7 @@ const App = () => {
             </button>
           </div>
         </div>
+        {renderNotifs()}
       </div>
     );
   }
@@ -3231,6 +3373,7 @@ const App = () => {
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
               {/* Player Profile */}
               <div className="lg:col-span-1">
                 <div className="bg-white rounded-xl shadow-lg p-6">
@@ -3667,6 +3810,7 @@ const App = () => {
               </div>
             </div>
           </div>
+          {renderNotifs()}
         </div>
       );
     }
@@ -3729,7 +3873,7 @@ const App = () => {
             <img
               src={divisionLogoSrc(selectedDivision.name)}
               alt={`Logo ${selectedDivision.name}`}
-              className="mx-auto mt-4 h-18 w-auto md:h-28"
+              className="mx-auto mt-4 h-12 w-auto md:h-28"
               onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ppc-logo.png'; }}
             />
             <h2 className="text-3xl font-bold text-white mb-2">División {selectedDivision.name}</h2>
@@ -3737,6 +3881,44 @@ const App = () => {
               {getDivisionHighlights(selectedDivision.name, selectedTournament.name)}
             </p>
           </div>
+          {/* Panel fijo “Buscando rival” */}
+          {selectedDivision && selectedTournament && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+              <div className="font-semibold mb-2">Partidos buscando rival</div>
+              <div className="space-y-2">
+                {matches
+                  .filter(m =>
+                    m.tournament_id === selectedTournament.id &&
+                    m.division_id === selectedDivision.id &&
+                    m.status === 'pending'
+                  )
+                  .map(m => (
+                    <div key={m.id} className="flex items-center justify-between text-sm">
+                      <span>
+                        {tituloFechaEs(m.date)} · {m.time} · {profiles.find(p => p.id === m.created_by)?.name || 'Alguien'} · {m.location_details || locations.find(l => l.id === m.location_id)?.name || ''}
+                      </span>
+                      <div className="flex gap-2">
+                        <button onClick={() => joinPendingMatch(m)} className="px-2 py-1 bg-green-600 text-white rounded">
+                          Unirme
+                        </button>
+                        <button onClick={() => sharePendingMatch(m)} className="px-2 py-1 bg-blue-600 text-white rounded">
+                          Compartir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                {matches.filter(m =>
+                  m.tournament_id === selectedTournament.id &&
+                  m.division_id === selectedDivision.id &&
+                  m.status === 'pending'
+                ).length === 0 && (
+                  <div className="text-gray-600 text-sm">No hay pendientes ahora.</div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Division Summary */}
             <div className="lg:col-span-1">
@@ -4346,6 +4528,7 @@ const App = () => {
             )}
           </div>
         </div>
+        {renderNotifs()}
       </div>
     );
   }
