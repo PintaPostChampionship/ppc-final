@@ -3,33 +3,6 @@ import React, { useState, useEffect } from "react";
 import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 
-// --- LocalStorage namespaced por usuario (evita mezclar cuentas) ---
-const LS = {
-  key: (uid: string, k: string) => `ppc:${uid}:${k}`,
-  read<T>(uid: string, k: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(this.key(uid, k));
-      return raw ? (JSON.parse(raw) as T) : fallback;
-    } catch {
-      return fallback;
-    }
-  },
-  write(uid: string, k: string, val: any) {
-    localStorage.setItem(this.key(uid, k), JSON.stringify(val));
-  },
-  remove(uid: string, k: string) {
-    localStorage.removeItem(this.key(uid, k));
-  },
-  clearUser(uid: string) {
-    for (const k of Object.keys(localStorage)) {
-      if (k.startsWith(`ppc:${uid}:`)) localStorage.removeItem(k);
-    }
-  },
-};
-
-// --- Canal para sincronizar sesión/estado entre pestañas ---
-const authChannel = new BroadcastChannel('ppc-auth');
-
 
 // Define TypeScript interfaces based on the database schema
 interface Profile {
@@ -347,27 +320,6 @@ const App = () => {
       .join(' ');
     }
 
-  function homeAwayBadge(match: Match, playerId: string) {
-    const isHome = match.home_player_id === playerId;
-    return {
-      text: isHome ? 'Local' : 'Visita',
-      cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-    };
-  }
-
-  // Determinístico: para un par (a,b) siempre decide quién es Home en esa división/torneo
-  function computeHomeForPair(divisionId: string, tournamentId: string, a: string, b: string) {
-    function hash(s: string) {
-      let h = 0;
-      for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
-      return Math.abs(h);
-    }
-    const [x, y] = a < b ? [a, b] : [b, a];
-    const h = hash(`${divisionId}|${tournamentId}|${x}|${y}`);
-    // si h es par, el "menor" es home; si es impar, el "mayor" es home (balancea 50/50)
-    return (h % 2 === 0) ? x : y;
-  }
-
 
   // Esta es nuestra ÚNICA función para cargar todos los datos.
   const fetchData = async (userId?: string) => {
@@ -422,14 +374,6 @@ const App = () => {
       }
     });
     return () => subscription.unsubscribe();
-  }, []);
-
-  // EFECTO 1.5: Hidrata sesión al cargar (útil en pestaña de verificación)
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-      setSessionUser(data.session?.user ?? null);
-    }).catch(() => {});
   }, []);
 
   // EFECTO 2: Sincroniza el currentUser con los datos cargados
@@ -618,20 +562,9 @@ const App = () => {
           password: password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: {
-              name: name.trim(),
-              // 👇 nuevo: hint liviano que sí viaja con la sesión en la pestaña de verificación
-              onboarding_hint: {
-                tournament_id: tournamentId,
-                division_id: divisionId,
-                locations: (locations || []).slice(0, 9), // cortito
-                has_pic: Boolean(profilePic),
-                has_av: Object.keys(availability || {}).length > 0
-              }
-            }
+            data: { name: name.trim() }
           }
         });
-
 
         if (error) throw error;
         
@@ -974,29 +907,14 @@ const App = () => {
   }
 
   async function ensurePendingOnboarding(userId: string, sessionUser: User) {
-    // 1) Intento normal: localStorage
+    // Busca los datos guardados en el navegador durante el registro
     const rawOnboarding = localStorage.getItem('pending_onboarding');
+    if (!rawOnboarding) return; // Si no hay nada pendiente, no hace nada.
 
-    // 2) Fallback: si no hay LS, uso el hint que viene en user_metadata
-    const metaHint = (sessionUser?.user_metadata as any)?.onboarding_hint;
-
-    // Construyo un objeto "onboarding" mínimo si no hay localStorage
-    const fallback = metaHint && metaHint.tournament_id && metaHint.division_id ? {
-      name: (sessionUser?.user_metadata as any)?.name || (sessionUser.email ?? 'Player'),
-      email: sessionUser.email ?? '',
-      profilePicDataUrl: undefined,  // no viaja por metadata
-      locations: Array.isArray(metaHint.locations) ? metaHint.locations : [],
-      availability: {},               // muy pesado para metadata, lo saltamos
-      tournament_id: metaHint.tournament_id,
-      division_id: metaHint.division_id,
-    } : null;
-
-    const onboarding = rawOnboarding ? JSON.parse(rawOnboarding) : fallback;
-    if (!onboarding) return; // nada que hacer
-
-    console.log("Onboarding pendiente (LS o hint) para:", userId);
+    console.log("Onboarding pendiente encontrado, completando perfil para el usuario:", userId);
     setLoading(true);
     try {
+      const onboarding = JSON.parse(rawOnboarding);
 
       // 1. Aseguramos que el perfil exista (lo crea si el trigger falló, o lo actualiza).
       // Esto no rompe nada, solo se asegura de que los datos básicos estén ahí.
@@ -1051,12 +969,7 @@ const App = () => {
       }
       
       // 5. Limpiamos localStorage y recargamos datos para que la UI se actualice.
-      localStorage.removeItem('pending_onboarding');  
-      // Limpio el hint de user_metadata para no reintentar siempre
-      try {
-        await supabase.auth.updateUser({ data: { onboarding_hint: null } });
-      } catch {}
-
+      localStorage.removeItem('pending_onboarding');
       console.log("Onboarding completado.");
       
       // Usamos TU función `loadInitialData` para recargar todo, asegurando consistencia.
@@ -1270,19 +1183,6 @@ const App = () => {
       'Elite': '⭐',
     };
     return map[name] || '🎾';
-  }
-
-  function divisionLogoSrc(name: string) {
-    const map: Record<string, string> = {
-      'Bronce': '/ppc-bronce.png',
-      'Oro': '/ppc-oro.png',
-      'Plata': '/ppc-plata.png',
-      'Cobre': '/ppc-cobre.png',
-      'Hierro': '/ppc-hierro.png',
-      'Diamante': '/ppc-diamante.png',
-      'Elite': '/ppc-elite.png',
-    };
-    return map[name] || '/ppc-logo.png';
   }
 
   function tituloFechaEs(iso?: string | null) {
@@ -1853,12 +1753,6 @@ const App = () => {
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-gray-800 mb-2">Pinta Post Championship</h1>
             <p className="text-gray-600">Tennis League</p>
-            {/* LOGO PPC: centrado, tamaño responsive */}
-            <img
-              src="/ppc-logo.png"
-              alt="PPC Logo"
-              className="mx-auto mt-4 h-24 w-auto md:h-32"
-            />
           </div>
 
           {registrationStep === 1 ? (
@@ -2402,12 +2296,9 @@ const App = () => {
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
-                <img src="/ppc-logo.png" alt="PPC Logo" className="h-12 w-auto md:h-16" />
-                <div>
-                  <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                  <p className="text-gray-600">Tennis League</p>
-                </div>
+              <div>
+                <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
+                <p className="text-gray-600">Tennis League</p>
               </div>
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
@@ -2634,13 +2525,8 @@ const App = () => {
                 >
                   ← Back to Tournaments
                 </button>
-                <div className="flex items-center gap-3 mt-1">
-                  <img src="/ppc-logo.png" alt="PPC Logo" className="h-10 w-auto md:h-16" />
-                  <div>
-                    <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
-                    <p className="text-gray-600">All divisions and player details</p>
-                  </div>
-                </div>
+                <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
+                <p className="text-gray-600">All divisions and player details</p>
               </div>
               
               {currentUser && (
@@ -3239,17 +3125,7 @@ const App = () => {
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
-                                <h4 className="font-semibold text-gray-800">
-                                  {opponent?.name}
-                                  {(() => {
-                                    const b = homeAwayBadge(match, selectedPlayer.id);
-                                    return (
-                                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${b.cls}`}>
-                                        {b.text}
-                                      </span>
-                                    );
-                                  })()}
-                                </h4>
+                                <h4 className="font-semibold text-gray-800">{opponent?.name}</h4>
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
                               <div className="text-right">
@@ -3303,95 +3179,46 @@ const App = () => {
                   )}
                 </div>
 
-                {playerMatches.scheduled.length > 0 && (
-                  <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Scheduled Matches</h2>
-                    <div className="space-y-4">
-                      {playerMatches.scheduled.map((match, idx) => {
-                        const isHome = match.home_player_id === selectedPlayer.id;
-                        const opponent = isHome
-                          ? profiles.find(p => p.id === match.away_player_id)
-                          : profiles.find(p => p.id === match.home_player_id);
-                        const b = homeAwayBadge(match, selectedPlayer.id);
-                        return (
-                          <div key={idx} className="border rounded-lg p-4">
-                            <div className="flex justify-between items-start mb-2">
-                              <div>
-                                <h4 className="font-semibold text-gray-800">
-                                  {opponent?.name}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${b.cls}`}>
-                                    {b.text}
-                                  </span>
-                                </h4>
-                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm font-semibold text-blue-600">{formatDate(match.date)}</div>
-                                <div className="text-sm text-gray-600">{match.time && match.time.slice(0,5)}</div>
-                              </div>
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium">Location:</span>{' '}
-                              {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-
                 {/* Upcoming Matches */}
                 {upcomingMatches.length > 0 && (
                   <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
                     <h2 className="text-2xl font-bold text-gray-800 mb-6">Upcoming Matches</h2>
+                    
                     <div className="space-y-4">
-                      {upcomingMatches.map((opponent, index) => {
-                        // 1) Calculamos Home/Visita de forma estable ANTES de agendar
-                        const homeId = computeHomeForPair(selectedDivision.id, selectedTournament.id, selectedPlayer.id, opponent.id);
-                        const isHome = homeId === selectedPlayer.id;
-
-                        return (
-                          <div key={index} className="border rounded-lg p-4">
-                            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                              <div>
-                                <h4 className="font-semibold text-gray-800">
-                                  {opponent.name}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                                    {isHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </h4>
-                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
-                              </div>
-
-                              <button
-                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
-                                onClick={() => {
-                                  // 2) Pre-llenamos el formulario respetando quién es Home
-                                  const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
-                                  setNewMatch(prev => ({
-                                    ...prev,
-                                    player1: homeId,     // SIEMPRE el Home va en player1 (home_player_id)
-                                    player2: awayId,     // Away en player2
-                                    location: '',
-                                    location_details: '',
-                                    date: '',
-                                    time: '',
-                                  }));
-                                  setSelectedPlayer(null);
-                                }}
-                              >
-                                Schedule Match
-                              </button>
+                      {upcomingMatches.map((opponent, index) => (
+                        <div key={index} className="border rounded-lg p-4">
+                          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{opponent.name}</h4>
+                              <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                             </div>
+                            <button 
+                              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
+                              // Reemplaza el onClick completo del botón "Schedule Match"
+                              onClick={() => {
+                                // Guarda los IDs de los jugadores, no los nombres
+                                setNewMatch(prev => ({
+                                  ...prev,
+                                  player1: selectedPlayer.id,
+                                  player2: opponent.id,
+                                  // Reseteamos campos específicos del partido anterior
+                                  location: '',
+                                  location_details: '',
+                                  date: '',
+                                  time: '',
+                                }));
+                                // Vuelve a la vista de la división para ver el formulario pre-llenado
+                                setSelectedPlayer(null); 
+                              }}
+                            >
+                              Schedule Match
+                            </button>
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
-
                 
                 {/* Head-to-Head Matches */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
@@ -3543,13 +3370,6 @@ const App = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center mb-8">
-            {/* LOGO DE DIVISIÓN: centrado y responsive */}
-            <img
-              src={divisionLogoSrc(selectedDivision.name)}
-              alt={`Logo ${selectedDivision.name}`}
-              className="mx-auto mt-4 h-18 w-auto md:h-28"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ppc-logo.png'; }}
-            />
             <h2 className="text-3xl font-bold text-white mb-2">División {selectedDivision.name}</h2>
             <p className="text-white text-lg opacity-90">
               {getDivisionHighlights(selectedDivision.name, selectedTournament.name)}

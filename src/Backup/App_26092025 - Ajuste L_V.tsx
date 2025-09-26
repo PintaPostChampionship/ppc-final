@@ -424,14 +424,6 @@ const App = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // EFECTO 1.5: Hidrata sesión al cargar (útil en pestaña de verificación)
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-      setSessionUser(data.session?.user ?? null);
-    }).catch(() => {});
-  }, []);
-
   // EFECTO 2: Sincroniza el currentUser con los datos cargados
   useEffect(() => {
     if (sessionUser && profiles.length > 0) {
@@ -618,20 +610,9 @@ const App = () => {
           password: password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: {
-              name: name.trim(),
-              // 👇 nuevo: hint liviano que sí viaja con la sesión en la pestaña de verificación
-              onboarding_hint: {
-                tournament_id: tournamentId,
-                division_id: divisionId,
-                locations: (locations || []).slice(0, 9), // cortito
-                has_pic: Boolean(profilePic),
-                has_av: Object.keys(availability || {}).length > 0
-              }
-            }
+            data: { name: name.trim() }
           }
         });
-
 
         if (error) throw error;
         
@@ -974,29 +955,14 @@ const App = () => {
   }
 
   async function ensurePendingOnboarding(userId: string, sessionUser: User) {
-    // 1) Intento normal: localStorage
+    // Busca los datos guardados en el navegador durante el registro
     const rawOnboarding = localStorage.getItem('pending_onboarding');
+    if (!rawOnboarding) return; // Si no hay nada pendiente, no hace nada.
 
-    // 2) Fallback: si no hay LS, uso el hint que viene en user_metadata
-    const metaHint = (sessionUser?.user_metadata as any)?.onboarding_hint;
-
-    // Construyo un objeto "onboarding" mínimo si no hay localStorage
-    const fallback = metaHint && metaHint.tournament_id && metaHint.division_id ? {
-      name: (sessionUser?.user_metadata as any)?.name || (sessionUser.email ?? 'Player'),
-      email: sessionUser.email ?? '',
-      profilePicDataUrl: undefined,  // no viaja por metadata
-      locations: Array.isArray(metaHint.locations) ? metaHint.locations : [],
-      availability: {},               // muy pesado para metadata, lo saltamos
-      tournament_id: metaHint.tournament_id,
-      division_id: metaHint.division_id,
-    } : null;
-
-    const onboarding = rawOnboarding ? JSON.parse(rawOnboarding) : fallback;
-    if (!onboarding) return; // nada que hacer
-
-    console.log("Onboarding pendiente (LS o hint) para:", userId);
+    console.log("Onboarding pendiente encontrado, completando perfil para el usuario:", userId);
     setLoading(true);
     try {
+      const onboarding = JSON.parse(rawOnboarding);
 
       // 1. Aseguramos que el perfil exista (lo crea si el trigger falló, o lo actualiza).
       // Esto no rompe nada, solo se asegura de que los datos básicos estén ahí.
@@ -1051,12 +1017,7 @@ const App = () => {
       }
       
       // 5. Limpiamos localStorage y recargamos datos para que la UI se actualice.
-      localStorage.removeItem('pending_onboarding');  
-      // Limpio el hint de user_metadata para no reintentar siempre
-      try {
-        await supabase.auth.updateUser({ data: { onboarding_hint: null } });
-      } catch {}
-
+      localStorage.removeItem('pending_onboarding');
       console.log("Onboarding completado.");
       
       // Usamos TU función `loadInitialData` para recargar todo, asegurando consistencia.
@@ -1270,19 +1231,6 @@ const App = () => {
       'Elite': '⭐',
     };
     return map[name] || '🎾';
-  }
-
-  function divisionLogoSrc(name: string) {
-    const map: Record<string, string> = {
-      'Bronce': '/ppc-bronce.png',
-      'Oro': '/ppc-oro.png',
-      'Plata': '/ppc-plata.png',
-      'Cobre': '/ppc-cobre.png',
-      'Hierro': '/ppc-hierro.png',
-      'Diamante': '/ppc-diamante.png',
-      'Elite': '/ppc-elite.png',
-    };
-    return map[name] || '/ppc-logo.png';
   }
 
   function tituloFechaEs(iso?: string | null) {
@@ -1853,12 +1801,6 @@ const App = () => {
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-gray-800 mb-2">Pinta Post Championship</h1>
             <p className="text-gray-600">Tennis League</p>
-            {/* LOGO PPC: centrado, tamaño responsive */}
-            <img
-              src="/ppc-logo.png"
-              alt="PPC Logo"
-              className="mx-auto mt-4 h-24 w-auto md:h-32"
-            />
           </div>
 
           {registrationStep === 1 ? (
@@ -2402,12 +2344,9 @@ const App = () => {
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
-                <img src="/ppc-logo.png" alt="PPC Logo" className="h-12 w-auto md:h-16" />
-                <div>
-                  <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                  <p className="text-gray-600">Tennis League</p>
-                </div>
+              <div>
+                <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
+                <p className="text-gray-600">Tennis League</p>
               </div>
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
@@ -2634,13 +2573,8 @@ const App = () => {
                 >
                   ← Back to Tournaments
                 </button>
-                <div className="flex items-center gap-3 mt-1">
-                  <img src="/ppc-logo.png" alt="PPC Logo" className="h-10 w-auto md:h-16" />
-                  <div>
-                    <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
-                    <p className="text-gray-600">All divisions and player details</p>
-                  </div>
-                </div>
+                <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
+                <p className="text-gray-600">All divisions and player details</p>
               </div>
               
               {currentUser && (
@@ -3543,13 +3477,6 @@ const App = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center mb-8">
-            {/* LOGO DE DIVISIÓN: centrado y responsive */}
-            <img
-              src={divisionLogoSrc(selectedDivision.name)}
-              alt={`Logo ${selectedDivision.name}`}
-              className="mx-auto mt-4 h-18 w-auto md:h-28"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ppc-logo.png'; }}
-            />
             <h2 className="text-3xl font-bold text-white mb-2">División {selectedDivision.name}</h2>
             <p className="text-white text-lg opacity-90">
               {getDivisionHighlights(selectedDivision.name, selectedTournament.name)}
