@@ -3,29 +3,102 @@ import React, { useState, useEffect } from "react";
 import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 
-// --- LocalStorage namespaced por usuario (evita mezclar cuentas) ---
-const LS = {
-  key: (uid: string, k: string) => `ppc:${uid}:${k}`,
-  read<T>(uid: string, k: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(this.key(uid, k));
-      return raw ? (JSON.parse(raw) as T) : fallback;
-    } catch {
-      return fallback;
+// ---------- Onboarding storage helpers (sessionStorage + tamaño mínimo) ----------
+const PENDING_KEY = 'pending_onboarding';
+
+// Comprime availability a forma compacta: { Mon:["M","A"], Tue:["E"] ... }
+function compressAvailability(av?: Record<string, string[]> | undefined) {
+  if (!av) return null;
+  const map: Record<string, string[]> = {};
+  Object.entries(av).forEach(([day, slots]) => {
+    if (Array.isArray(slots) && slots.length) {
+      // Usa inicial del bloque: M=Morning, A=Afternoon, E=Evening
+      map[day] = slots.map(s => s.startsWith('Morning') ? 'M' : s.startsWith('Afternoon') ? 'A' : 'E');
     }
-  },
-  write(uid: string, k: string, val: any) {
-    localStorage.setItem(this.key(uid, k), JSON.stringify(val));
-  },
-  remove(uid: string, k: string) {
-    localStorage.removeItem(this.key(uid, k));
-  },
-  clearUser(uid: string) {
-    for (const k of Object.keys(localStorage)) {
-      if (k.startsWith(`ppc:${uid}:`)) localStorage.removeItem(k);
-    }
-  },
+  });
+  return map;
+}
+
+function decompressAvailability(comp?: Record<string, string[]> | null) {
+  if (!comp) return {};
+  const decode = (c: string) => c === 'M' ? 'Morning (07:00-12:00)'
+                          : c === 'A' ? 'Afternoon (12:00-18:00)'
+                                      : 'Evening (18:00-22:00)';
+  const out: Record<string, string[]> = {};
+  Object.entries(comp).forEach(([day, codes]) => {
+    out[day] = codes.map(decode);
+  });
+  return out;
+}
+
+type PendingOnboarding = {
+  name?: string;
+  email?: string;
+  profilePic?: string;            // solo dataURL (preview) si ya lo usabas, si pesa mucho, preferible omitir
+  locations?: string[];           // ["West","SE",...]
+  availability_comp?: Record<string, string[]> | null; // comprimido
+  tournament?: string | null;
+  division?: string | null;
 };
+
+// Escribe en sessionStorage con try/catch
+function savePending(p: PendingOnboarding) {
+  try {
+    const safe: PendingOnboarding = { ...p };
+    // Comprimir availability si vino “larga”
+    if ((p as any).availability) {
+      // @ts-ignore
+      safe.availability_comp = compressAvailability((p as any).availability);
+      // @ts-ignore
+      delete (safe as any).availability;
+    }
+    // 1) Sesión actual (permite recuperar avatar y availability completos)
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify(safe));
+
+    // 2) Copia “light” en localStorage para que la vea la pestaña de verificación (sin foto)
+    const lite: PendingOnboarding = { ...safe };
+    delete (lite as any).profilePic;      // << NO guardamos la foto en localStorage
+    localStorage.setItem(PENDING_KEY, JSON.stringify(lite));
+  } catch (e) {
+    console.warn('Pending onboarding not persisted.', e);
+  }
+}
+
+
+
+function loadPending(): PendingOnboarding | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as PendingOnboarding;
+    // reconstruye availability para tu UI si la usas
+    // @ts-ignore
+    if (!('availability' in p) && p.availability_comp) {
+      // @ts-ignore
+      p.availability = decompressAvailability(p.availability_comp);
+    }
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+function clearPending() {
+  try { sessionStorage.removeItem(PENDING_KEY); } catch {}
+  try { localStorage.removeItem(PENDING_KEY); } catch {}
+}
+
+
+// Migra (una sola vez) si todavía hay algo viejo en localStorage
+function migrateLocalToSession() {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (raw) {
+      sessionStorage.setItem(PENDING_KEY, raw);
+      localStorage.removeItem(PENDING_KEY);
+    }
+  } catch {}
+}
 
 // --- Canal para sincronizar sesión/estado entre pestañas ---
 const authChannel = new BroadcastChannel('ppc-auth');
@@ -145,15 +218,12 @@ const dataURItoBlob = (dataURI: string) => {
 };
 
 function dataURLtoFile(dataurl: string, filename: string): File {
-    const arr = dataurl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1];
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while(n--){
-        u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, {type:mime});
+  const arr = dataurl.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const bstr = atob(arr[1]);
+  const u8arr = new Uint8Array(bstr.length);
+  for (let i = 0; i < bstr.length; i++) u8arr[i] = bstr.charCodeAt(i);
+  return new File([u8arr], filename, { type: mime });
 }
 
 async function resizeImage(dataUrl: string, maxWidth: number = 400): Promise<string> {
@@ -224,6 +294,7 @@ const App = () => {
     tournaments: [] as string[],
     division: ''
   });
+  const [hasCommitted, setHasCommitted] = useState(false);
 
   const [newMatch, setNewMatch] = useState({ 
     player1: '', 
@@ -282,6 +353,54 @@ const App = () => {
     };
     return abbreviations[location] || location;
   };
+
+  // 1) Migrar cualquier dato viejo y precargar pending para esta pestaña
+  useEffect(() => {
+    migrateLocalToSession();
+
+    // Si tenías lógica que re-hidrata newUser al abrir la página, úsala aquí:
+    const p = loadPending();
+    if (p) {
+      // Solo setea lo que realmente uses en el formulario:
+      setNewUser(n => ({
+        ...n,
+        name: p.name ?? n.name,
+        email: p.email ?? n.email,
+        // @ts-ignore si usas preview
+        profilePic: p.profilePic ?? n.profilePic,
+        locations: p.locations ?? n.locations,
+        // @ts-ignore availability si la manejas en UI
+        availability: (p as any).availability ?? n.availability,
+        division: p.division ?? n.division,
+        tournaments: p.tournament ? [p.tournament] : n.tournaments,
+      }));
+    }
+
+    // 2) Sincronizar entre pestañas:
+    const onStorage = (ev: StorageEvent) => {
+      // a) si cambia el token de Supabase en otra pestaña, recarga sesión aquí
+      if (ev.key && ev.key.startsWith('sb-') && ev.key.includes('auth-token')) {
+        // fuerza una recarga suave de la sesión
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          if (session?.user) {
+            loadInitialData(session.user.id);
+          }
+        });
+      }
+      // b) si otra pestaña limpió/actualizó el pending, refleja el cambio
+      if (ev.key === PENDING_KEY) {
+        const p2 = loadPending();
+        if (!p2) {
+          // otra pestaña completó el onboarding -> limpia aquí
+          // (opcional) reset de newUser si quieres
+        }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
 
   useEffect(() => {
     const map: Record<string, Division[]> = {};
@@ -411,18 +530,25 @@ const App = () => {
 
   // EFECTO 1: Maneja la sesión y el "onboarding"
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setSession(session ?? null);
       setSessionUser(session?.user ?? null);
-      
-      if (_event === 'SIGNED_IN' && session?.user) {
-        // Pasamos el objeto User completo a ensurePendingOnboarding
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Completa el alta usando lo que haya (sessionStorage/localStorage/metadata)
         await ensurePendingOnboarding(session.user.id, session.user);
-        // fetchData ya no es necesario aquí porque el Efecto 3 lo manejará
+        // Limpia “pending” solo después de persistir
+        clearPending();
+      }
+
+      if (event === 'SIGNED_OUT') {
+        clearPending();
       }
     });
     return () => subscription.unsubscribe();
   }, []);
+
+
 
   // EFECTO 1.5: Hidrata sesión al cargar (útil en pestaña de verificación)
   useEffect(() => {
@@ -611,7 +737,24 @@ const App = () => {
           profilePicDataUrl: profilePic 
         };
 
-        localStorage.setItem('pending_onboarding', JSON.stringify(onboardingData));
+        savePending({
+          name: newUser.name,
+          email: newUser.email,
+          // Foto en dataURL para que la otra pestaña la suba al bucket:
+          profilePic: newUser.profilePic || undefined,
+          // Zonas preferidas:
+          locations: newUser.locations || [],
+          // 🔑 IMPORTANTE: pasa availability para que el helper lo comprima (availability_comp)
+          // @ts-ignore
+          availability: newUser.availability || {},
+          // 🔑 IMPORTANTE: guarda los IDs que espera ensurePendingOnboarding
+          // (además de tus nombres si los quieres seguir mostrando en UI)
+          // @ts-ignore
+          tournament_id: pickedTournamentId,
+          // @ts-ignore
+          division_id: pickedDivisionId,
+        });
+
 
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
@@ -645,7 +788,7 @@ const App = () => {
       } catch (err: any) {
         console.error("Registration failed:", err);
         alert(`Registration failed: ${err.message}`);
-        localStorage.removeItem('pending_onboarding');
+        clearPending();
       } finally {
         setLoading(false);
       }
@@ -863,24 +1006,22 @@ const App = () => {
   };
 
   // --- helpers de onboarding post-signup ---
-  function buildAvailabilityRowsFromObject(availability: Record<string,string[]>, uid: string) {
+  function buildAvailabilityRowsFromObject(
+    availability: Record<string, string[]> | undefined,
+    uid: string
+  ) {
     const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
     const out: any[] = [];
     days.forEach((day, idx) => {
-      const slots = availability[day] || [];
+      const slots = availability?.[day] || [];
       slots.forEach(label => {
-        const { start, end } = slotToTimes(label);
-        out.push({
-          profile_id: uid,
-          day_of_week: idx,   // Monday=0 ... Sunday=6
-          start_time: start,  // '07:00' | '12:00' | '18:00'
-          end_time: end,      // '12:00' | '18:00' | '22:00'
-          location_id: null
-        });
+        const { start, end } = slotToTimes(label); // tu helper existente
+        out.push({ profile_id: uid, day_of_week: idx, start_time: start, end_time: end, location_id: null });
       });
     });
     return out;
   }
+
 
   // === Helper para cargar torneos y divisiones ===
   async function fetchTournamentsAndDivisions() {
@@ -974,97 +1115,109 @@ const App = () => {
   }
 
   async function ensurePendingOnboarding(userId: string, sessionUser: User) {
-    // 1) Intento normal: localStorage
-    const rawOnboarding = localStorage.getItem('pending_onboarding');
+    // 1) Carga lo pendiente guardado en navegador
+    const raw = sessionStorage.getItem(PENDING_KEY) ?? localStorage.getItem(PENDING_KEY);
+    if (!raw) return;
 
-    // 2) Fallback: si no hay LS, uso el hint que viene en user_metadata
-    const metaHint = (sessionUser?.user_metadata as any)?.onboarding_hint;
-
-    // Construyo un objeto "onboarding" mínimo si no hay localStorage
-    const fallback = metaHint && metaHint.tournament_id && metaHint.division_id ? {
-      name: (sessionUser?.user_metadata as any)?.name || (sessionUser.email ?? 'Player'),
-      email: sessionUser.email ?? '',
-      profilePicDataUrl: undefined,  // no viaja por metadata
-      locations: Array.isArray(metaHint.locations) ? metaHint.locations : [],
-      availability: {},               // muy pesado para metadata, lo saltamos
-      tournament_id: metaHint.tournament_id,
-      division_id: metaHint.division_id,
-    } : null;
-
-    const onboarding = rawOnboarding ? JSON.parse(rawOnboarding) : fallback;
-    if (!onboarding) return; // nada que hacer
-
-    console.log("Onboarding pendiente (LS o hint) para:", userId);
     setLoading(true);
     try {
+      const onboarding = JSON.parse(raw) || {};
 
-      // 1. Aseguramos que el perfil exista (lo crea si el trigger falló, o lo actualiza).
-      // Esto no rompe nada, solo se asegura de que los datos básicos estén ahí.
+      // --- A. PERFIL (upsert básico) ---
       const { error: profileErr } = await supabase.from('profiles').upsert({
         id: userId,
-        name: onboarding.name,
-        email: sessionUser.email,
+        name: onboarding.name ?? sessionUser?.user_metadata?.name ?? '',
+        email: onboarding.email ?? sessionUser?.email ?? '',
         role: 'player',
       });
       if (profileErr) throw profileErr;
 
-      // 2. Subimos el avatar y actualizamos el perfil con la URL.
-      if (onboarding.profilePicDataUrl) {
-        const file = dataURLtoFile(onboarding.profilePicDataUrl, `${userId}.jpg`);
-        const { error: uploadError } = await supabase.storage.from('avatars').upload(`${userId}.jpg`, file, { upsert: true });
-        if (uploadError) throw uploadError;
+      // --- B. FOTO DE PERFIL (opcional si viene) ---
+      const picDataUrl: string | undefined =
+        onboarding.profilePicDataUrl || onboarding.profilePic;
 
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(`${userId}.jpg`);
+      if (picDataUrl) {
+        const file = dataURLtoFile(picDataUrl, `${userId}.jpg`);
+        const { error: uploadErr } = await supabase.storage
+          .from('avatars')
+          .upload(`${userId}.jpg`, file, { upsert: true });
+        if (uploadErr) throw uploadErr;
+
+        const { data: urlData } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(`${userId}.jpg`);
         await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', userId);
       }
 
-      // 3. Inscribimos en el torneo usando la función RPC (robusto y seguro).
+      // --- C. TORNEO + DIVISIÓN ---
+      // Preferimos RPC si existe:
       if (onboarding.tournament_id && onboarding.division_id) {
-        const { error: rpcError } = await supabase.rpc('register_player_for_tournament', {
+        // Opción RPC (dejar este bloque; si tu proyecto no tiene la función, se usa el fallback)
+        const { error: rpcErr } = await supabase.rpc('register_player_for_tournament', {
           p_tournament_id: onboarding.tournament_id,
           p_division_id: onboarding.division_id,
         });
-        if (rpcError) throw rpcError;
+        if (rpcErr) {
+          // Fallback directo a tabla intermedia si el RPC no existe en tu BBDD
+          const { error: directErr } = await supabase
+            .from('tournament_players')
+            .upsert({
+              tournament_id: onboarding.tournament_id,
+              division_id: onboarding.division_id,
+              profile_id: userId,
+              status: 'active',
+            }, { onConflict: 'tournament_id,profile_id' });
+          if (directErr) throw directErr;
+        }
       }
-      
-      // 4. --- LÓGICA QUE FALTABA: GUARDAR DISPONIBILIDAD Y UBICACIONES ---
-      
-      // Guardar Disponibilidad (Availability)
-      const availabilityRows = buildAvailabilityRowsFromObject(onboarding.availability, userId);
-      await supabase.from('availability').delete().eq('profile_id', userId); // Limpiamos datos viejos
+
+      // --- D. AVAILABILITY ---
+      // Acepta objeto expandido o comprimido (availability_comp)
+      let availabilityExpanded: Record<string, string[]> = {};
+      if (onboarding.availability && typeof onboarding.availability === 'object') {
+        availabilityExpanded = onboarding.availability;
+      } else if (onboarding.availability_comp && typeof decompressAvailability === 'function') {
+        availabilityExpanded = decompressAvailability(onboarding.availability_comp) || {};
+      }
+
+      // buildAvailabilityRowsFromObject DEBE aceptar undefined y usar ?.[day]
+      const availabilityRows = buildAvailabilityRowsFromObject(availabilityExpanded, userId);
+
+      await supabase.from('availability').delete().eq('profile_id', userId);
       if (availabilityRows.length > 0) {
-        const { error: availabilityError } = await supabase.from('availability').insert(availabilityRows);
-        if (availabilityError) throw availabilityError;
-        console.log("Disponibilidad del usuario guardada.");
+        const { error: avErr } = await supabase.from('availability').insert(availabilityRows);
+        if (avErr) throw avErr;
       }
-      
-      // Guardar Ubicaciones (Locations)
-      await supabase.from('profile_locations').delete().eq('profile_id', userId); // Limpiamos datos viejos
-      if (onboarding.locations && onboarding.locations.length > 0) {
-        for (const areaName of onboarding.locations) {
-          const { data: loc } = await supabase.from('locations').select('id').eq('name', areaName).maybeSingle();
+
+      // --- E. PREFERRED LOCATIONS ---
+      const locations: string[] = Array.isArray(onboarding.locations) ? onboarding.locations : [];
+      await supabase.from('profile_locations').delete().eq('profile_id', userId);
+      if (locations.length > 0) {
+        for (const areaName of locations) {
+          const { data: loc, error: locErr } = await supabase
+            .from('locations')
+            .select('id')
+            .eq('name', areaName)
+            .maybeSingle();
+          if (locErr) throw locErr;
           if (loc?.id) {
-            await supabase.from('profile_locations').insert({ profile_id: userId, location_id: loc.id });
+            const { error: linkErr } = await supabase.from('profile_locations').insert({
+              profile_id: userId,
+              location_id: loc.id,
+            });
+            if (linkErr) throw linkErr;
           }
         }
-        console.log("Ubicaciones del usuario guardadas.");
       }
-      
-      // 5. Limpiamos localStorage y recargamos datos para que la UI se actualice.
-      localStorage.removeItem('pending_onboarding');  
-      // Limpio el hint de user_metadata para no reintentar siempre
-      try {
-        await supabase.auth.updateUser({ data: { onboarding_hint: null } });
-      } catch {}
 
-      console.log("Onboarding completado.");
-      
-      // Usamos TU función `loadInitialData` para recargar todo, asegurando consistencia.
-      await loadInitialData(userId);
-
-    } catch (e: any) {
-      console.error('Fallo en ensurePendingOnboarding:', e);
-      alert(`No pudimos finalizar la configuración de tu perfil. Error: ${e.message}`);
+      // --- F. Limpieza y recarga ---
+      sessionStorage.removeItem(PENDING_KEY);
+      localStorage.removeItem(PENDING_KEY);
+      await loadInitialData?.(userId);
+      console.log('Onboarding completado correctamente.');
+    } catch (err) {
+      console.error('Error completando onboarding:', err);
+      alert(`No pudimos finalizar la configuración de tu perfil. Error: ${String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -1716,25 +1869,30 @@ const App = () => {
 
 
   // FUNCIÓN PARA EL FORMULARIO DE REGISTRO
-  const handleProfilePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const target = e.target; // 1. Guardamos e.target en una constante
-    if (!target || !target.files) { // 2. Hacemos la comprobación sobre la constante
-      return;
-    }
-
-    const file = target.files[0]; // 3. Ahora usamos la constante segura
+  const handleProfilePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const target = e.target;
+    if (!target || !target.files) return;
+    const file = target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        const dataUrl = event.target.result as string;
-        setPendingAvatarPreview(dataUrl);
-        setNewUser(prev => ({ ...prev, profilePic: dataUrl }));
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      // Redimensiona para reducir drásticamente el tamaño antes de guardar en storage
+      const original = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result as string);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+
+      const resized = await resizeImage(original, 400); // ~ancho 400px, muy liviano
+      setPendingAvatarPreview(resized);
+      setNewUser(prev => ({ ...prev, profilePic: resized }));
+    } catch (err) {
+      console.error('Image resize error:', err);
+      alert('No se pudo procesar la imagen.');
+    }
   };
+
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const target = e.target;
@@ -2113,20 +2271,44 @@ const App = () => {
                       <p>Utiliza una clave simple con más de 6 caracteres</p>
                     </div>
 
-                  <div className="flex space-x-4">
-                    <button
-                      type="button"
-                      onClick={() => setRegistrationStep(2)}
-                      className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition duration-200"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
-                    >
-                      Complete Registration
-                    </button>
+                  {/* Nueva casilla de verificación */}
+                  <div className="flex items-start mt-4">
+                      <div className="flex items-center h-5">
+                      <input
+                          id="commitment"
+                          name="commitment"
+                          type="checkbox"
+                          checked={hasCommitted}
+                          onChange={(e) => setHasCommitted(e.target.checked)}
+                          className="focus:ring-green-500 h-4 w-4 text-green-600 border-gray-300 rounded"
+                      />
+                      </div>
+                      <div className="ml-3 text-sm">
+                      <label htmlFor="commitment" className="font-medium text-gray-700">
+                          Me comprometo a jugar todos mis partidos e ir por una Pinta Post
+                      </label>
+                      </div>
+                  </div>
+
+                  {/* Botones de acción */}
+                  <div className="flex space-x-4 mt-6">
+                      <button
+                          type="button"
+                          onClick={() => setRegistrationStep(2)}
+                          className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition duration-200"
+                      >
+                          Back
+                      </button>
+                      
+                      {/* El botón de registro ahora solo aparece si la casilla está marcada */}
+                      {hasCommitted && (
+                      <button
+                          type="submit"
+                          className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
+                      >
+                          Complete Registration
+                      </button>
+                      )}
                   </div>
                 </div>
               </form>
