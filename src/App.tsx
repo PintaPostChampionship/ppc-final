@@ -1057,6 +1057,26 @@ const App = () => {
     if (regs) setRegistrations(regs as Registration[]);
   };
 
+  async function ensureLocationIdByName(areaName: string): Promise<string> {
+    const { data: loc, error: selErr } = await supabase
+      .from('locations')
+      .select('id')
+      .eq('name', areaName)
+      .maybeSingle();
+    if (selErr) throw selErr;
+    if (loc?.id) return loc.id as string;
+
+    const { data: created, error: insErr } = await supabase
+      .from('locations')
+      .insert({ name: areaName })
+      .select('id')
+      .single();
+    if (insErr) throw insErr;
+
+    return created.id as string;
+  }
+
+
   // --- helpers de onboarding post-signup ---
   function buildAvailabilityRowsFromObject(
     availability: Record<string, string[]> | undefined,
@@ -1243,25 +1263,18 @@ const App = () => {
       }
 
       // --- E. PREFERRED LOCATIONS ---
-      const locations: string[] = Array.isArray(onboarding.locations) ? onboarding.locations : [];
+      const locationsArr: string[] = Array.isArray(onboarding.locations) ? onboarding.locations : [];
       await supabase.from('profile_locations').delete().eq('profile_id', userId);
-      if (locations.length > 0) {
-        for (const areaName of locations) {
-          const { data: loc, error: locErr } = await supabase
-            .from('locations')
-            .select('id')
-            .eq('name', areaName)
-            .maybeSingle();
-          if (locErr) throw locErr;
-          if (loc?.id) {
-            const { error: linkErr } = await supabase.from('profile_locations').insert({
-              profile_id: userId,
-              location_id: loc.id,
-            });
-            if (linkErr) throw linkErr;
-          }
+      if (locationsArr.length > 0) {
+        for (const areaName of locationsArr) {
+          const locId = await ensureLocationIdByName(areaName);
+          const { error: linkErr } = await supabase
+            .from('profile_locations')
+            .insert({ profile_id: userId, location_id: locId });
+          if (linkErr) throw linkErr;
         }
       }
+
 
       // --- F. Limpieza y recarga ---
       sessionStorage.removeItem(PENDING_KEY);
@@ -1302,15 +1315,22 @@ const App = () => {
       if (availRes.error) throw availRes.error;
       if (locsRes.error) throw locsRes.error;
 
-      // Mapeamos los datos de disponibilidad
-      const availabilityMap = (availRes.data || []).reduce((acc, slot) => {
-        const day = days[slot.day_of_week];
-        const timeSlotLabel = timeSlots.find(ts => ts.includes(slot.start_time.slice(0, 5)));
+      // Mapeamos los datos de disponibilidad (sin colisiones por includes)
+      const availabilityMap = (availRes.data || []).reduce((acc, slot: any) => {
+        const day = days[slot.day_of_week]; // Monday=0 ... Sunday=6
+        const start = String(slot.start_time || '').slice(0, 5); // 'HH:MM'
+        let timeSlotLabel: string | null = null;
+
+        if (start === '07:00') timeSlotLabel = 'Morning (07:00-12:00)';
+        else if (start === '12:00') timeSlotLabel = 'Afternoon (12:00-18:00)';
+        else if (start === '18:00') timeSlotLabel = 'Evening (18:00-22:00)';
+
         if (day && timeSlotLabel) {
           (acc[day] ||= []).push(timeSlotLabel);
         }
         return acc;
       }, {} as Record<string, string[]>);
+
 
       // Le decimos a TypeScript que trate cada 'item' como 'any' para evitar el error de tipo.
       const locationNames = (locsRes.data || [])
@@ -1358,17 +1378,18 @@ const App = () => {
         if (avErr) throw avErr;
       }
 
-      // 2. Guardar Locations
+      // 2. Guardar Locations (crea si falta)
       await supabase.from('profile_locations').delete().eq('profile_id', uid);
       if (editUser.locations.length > 0) {
         for (const areaName of editUser.locations) {
-          const { data: loc } = await supabase.from('locations').select('id').eq('name', areaName).maybeSingle();
-          if (loc?.id) {
-            await supabase.from('profile_locations').insert({ profile_id: uid, location_id: loc.id });
-          }
+          const locId = await ensureLocationIdByName(areaName);
+          const { error: linkErr } = await supabase
+            .from('profile_locations')
+            .insert({ profile_id: uid, location_id: locId });
+          if (linkErr) throw linkErr;
         }
       }
-      // --- FIN DE LA LÓGICA AÑADIDA ---
+
 
       // 3. Subir avatar si se seleccionó un archivo nuevo
       let newAvatarUrl: string | undefined;
@@ -1396,6 +1417,23 @@ const App = () => {
 
       // 6. Refrescar todos los datos y cerrar el modal
       await fetchData(uid);
+      
+      // Refrescar vista del perfil seleccionado si es el propio
+      if (selectedPlayer?.id === uid) {
+        const [{ data: av }, { data: pls }] = await Promise.all([
+          supabase.from('availability').select('*').eq('profile_id', uid),
+          supabase.from('profile_locations').select('location_id').eq('profile_id', uid),
+        ]);
+
+        setSelectedPlayerAvailability(av || []);
+        if (pls && Array.isArray(pls)) {
+          const names = pls
+            .map(pl => locations.find(l => l.id === pl.location_id)?.name)
+            .filter((n): n is string => Boolean(n));
+          setSelectedPlayerAreas(names);
+        }
+      }
+
       setEditProfile(false);
       alert('Profile updated successfully!');
 
@@ -2745,7 +2783,7 @@ const App = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div className="flex items-center gap-3">
-                <img src="/ppc-logo.png" alt="PPC Logo" className="h-16 w-auto md:h-16" />
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
                 <div>
                   <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
                   <p className="text-gray-600">Tennis League</p>
@@ -2978,7 +3016,7 @@ const App = () => {
                   ← Back to Tournaments
                 </button>
                 <div className="flex items-center gap-3 mt-1">
-                  <img src="/ppc-logo.png" alt="PPC Logo" className="h-16 w-auto md:h-16" />
+                  <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
                   <div>
                     <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
                     <p className="text-gray-600">All divisions and player details</p>
@@ -3902,7 +3940,7 @@ const App = () => {
             <img
               src={divisionLogoSrc(selectedDivision.name)}
               alt={`Logo ${selectedDivision.name}`}
-              className="mx-auto mt-4 h-12 w-auto md:h-28"
+              className="mx-auto mt-4 w-auto h-16 sm:h-20 md:h-24 lg:h-28 object-contain"
               onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ppc-logo.png'; }}
             />
             <h2 className="text-3xl font-bold text-white mb-2">División {selectedDivision.name}</h2>
