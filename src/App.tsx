@@ -112,6 +112,7 @@ interface Profile {
   created_at: string;
   email?: string;
   avatar_url?: string;
+  postal_code?: string;
 }
 
 interface Location {
@@ -292,7 +293,8 @@ const App = () => {
     locations: [] as string[], 
     availability: {} as Record<string, string[]>,
     tournaments: [] as string[],
-    division: ''
+    division: '',
+    postal_code: '',
   });
   const [hasCommitted, setHasCommitted] = useState(false);
 
@@ -324,7 +326,8 @@ const App = () => {
     password: '', 
     profilePic: '',
     locations: [] as string[],
-  availability: {} as Record<string, string[]>,  
+    availability: {} as Record<string, string[]>,
+    postal_code: '',  
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -376,6 +379,7 @@ const App = () => {
         availability: (p as any).availability ?? n.availability,
         division: p.division ?? n.division,
         tournaments: p.tournament ? [p.tournament] : n.tournaments,
+        postal_code: (p as any).postal_code ?? n.postal_code,
       }));
     }
 
@@ -789,9 +793,7 @@ const App = () => {
         savePending({
           name: newUser.name,
           email: newUser.email,
-          // Foto en dataURL para que la otra pestaña la suba al bucket:
           profilePic: newUser.profilePic || undefined,
-          // Zonas preferidas:
           locations: newUser.locations || [],
           // 🔑 IMPORTANTE: pasa availability para que el helper lo comprima (availability_comp)
           // @ts-ignore
@@ -802,6 +804,7 @@ const App = () => {
           tournament_id: pickedTournamentId,
           // @ts-ignore
           division_id: pickedDivisionId,
+          postal_code: newUser.postal_code || undefined,
         });
 
 
@@ -830,7 +833,7 @@ const App = () => {
         alert('Registration successful! Please check your email to verify your account, then log in.');
         setLoginView(true);
         setRegistrationStep(1);
-        setNewUser({ name: '', email: '', password: '', profilePic: '', locations: [], availability: {}, tournaments: [], division: '' });
+        setNewUser({ name: '', email: '', password: '', profilePic: '', locations: [], availability: {}, tournaments: [], division: '', postal_code: '' });
         setPickedTournamentId('');
         setPickedDivisionId('');
 
@@ -1178,6 +1181,7 @@ const App = () => {
         name: onboarding.name ?? sessionUser?.user_metadata?.name ?? '',
         email: onboarding.email ?? sessionUser?.email ?? '',
         role: 'player',
+        postal_code: onboarding.postal_code ?? null,
       });
       if (profileErr) throw profileErr;
 
@@ -1321,6 +1325,7 @@ const App = () => {
         profilePic: currentUser.avatar_url || '',
         availability: availabilityMap,
         locations: locationNames,
+        postal_code: currentUser.postal_code ?? '',
       });
 
       setPendingAvatarFile(null);
@@ -1379,6 +1384,7 @@ const App = () => {
       const { error: upErr } = await supabase.from('profiles').update({
           name: editUser.name,
           avatar_url: newAvatarUrl ?? currentUser?.avatar_url ?? undefined,
+          postal_code: editUser.postal_code || null,
         }).eq('id', uid);
       if (upErr) throw upErr;
 
@@ -2546,7 +2552,21 @@ const App = () => {
                 ))}
               </div>
             </div>
-
+            {/* Postcode */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Postcode</label>
+              <input
+                type="text"
+                value={editUser.postal_code || ''}
+                onChange={(e) => {
+                  const v = e.target.value.toUpperCase().trim();
+                  setEditUser(prev => ({ ...prev, postal_code: v }));
+                }}
+                placeholder="SW1A 1AA"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+              <p className="mt-1 text-xs text-gray-500">Opcional. Ayuda a encontrar canchas cerca tuyo.</p>
+            </div>
             {/* Availability */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Availability</label>
@@ -3443,9 +3463,18 @@ const App = () => {
                           <span className="text-sm text-gray-500">No preferred areas yet</span>
                         )}
                       </div>
+
+                      {/* Postcode debajo de Locations */}
+                      <div className="mt-3 text-sm text-gray-700">
+                        <span className="font-medium">Postcode:</span>{' '}
+                        {selectedPlayer?.postal_code ? (
+                          <span>{selectedPlayer.postal_code}</span>
+                        ) : (
+                          <span className="text-gray-500">—</span>
+                        )}
+                      </div>
                     </div>
 
-                 
                     <div className="bg-yellow-50 p-4 rounded-lg">
                       <h3 className="font-semibold text-yellow-800 mb-2">Tournaments & Division</h3>
                       <div className="space-y-2">
