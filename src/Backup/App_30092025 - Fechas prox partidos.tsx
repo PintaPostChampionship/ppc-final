@@ -502,82 +502,6 @@ const App = () => {
     };
   }
 
-  function wins(s: any) { return Number(s.wins || s.w || 0); }
-  function setRatio(s: any) {
-    const sw = Number(s.sets_won || s.sw || 0);
-    const sl = Number(s.sets_lost || s.sl || 0);
-    const tot = sw + sl;
-    return tot === 0 ? 0 : sw / tot;
-  }
-  function gameRatio(s: any) {
-    const gw = Number(s.games_won || s.gw || 0);
-    const gl = Number(s.games_lost || s.gl || 0);
-    const tot = gw + gl;
-    return tot === 0 ? 0 : gw / tot;
-  }
-
-  // ganador del partido usando sets del propio match (set1_home/away, set2_..., set3_...)
-  function winnerOfMatchBySets(m: any) {
-    const sets: Array<[number|null, number|null]> = [
-      [m.set1_home ?? null, m.set1_away ?? null],
-      [m.set2_home ?? null, m.set2_away ?? null],
-      [m.set3_home ?? null, m.set3_away ?? null],
-    ];
-    let home = 0, away = 0;
-    for (const [h, a] of sets) {
-      if (h == null || a == null) continue;
-      if (h > a) home++; else if (a > h) away++;
-    }
-    if (home > away) return m.home_player_id;
-    if (away > home) return m.away_player_id;
-    return null;
-  }
-
-  // head-to-head sólo cuando es un empate de 2 jugadores
-  function headToHead(aId: string, bId: string, divisionId: string, tournamentId: string, matches: any[]) {
-    const pair = matches.filter(m =>
-      m.tournament_id === tournamentId &&
-      m.division_id === divisionId &&
-      ((m.home_player_id === aId && m.away_player_id === bId) ||
-      (m.home_player_id === bId && m.away_player_id === aId))
-    );
-    let aWins = 0, bWins = 0;
-    for (const m of pair) {
-      const w = winnerOfMatchBySets(m);
-      if (w === aId) aWins++;
-      else if (w === bId) bWins++;
-    }
-    if (aWins > bWins) return -1; // a por delante
-    if (bWins > aWins) return 1;  // b por delante
-    return 0; // sin desempate
-  }
-
-  function compareStandings(a: any, b: any, divisionId: string, tournamentId: string, matches: any[]) {
-    // 1) victorias
-    const aw = wins(a), bw = wins(b);
-    if (bw !== aw) return bw - aw;
-
-    // 2) h2h si el empate es de 2 (este comparator se llama par a par)
-    const h2h = headToHead(a.profile_id, b.profile_id, divisionId, tournamentId, matches);
-    if (h2h !== 0) return h2h;
-
-    // 3) ratio de sets
-    const asr = setRatio(a), bsr = setRatio(b);
-    if (bsr !== asr) return (bsr - asr) * 1000000; // evita flotantes casi iguales
-
-    // 4) ratio de games
-    const agr = gameRatio(a), bgr = gameRatio(b);
-    if (bgr !== agr) return (bgr - agr) * 1000000;
-
-    // 5) fallback: puntos y nombre
-    const ap = Number(a.points || 0), bp = Number(b.points || 0);
-    if (bp !== ap) return bp - ap;
-    const an = (a.player_name || a.name || '').toString();
-    const bn = (b.player_name || b.name || '').toString();
-    return an.localeCompare(bn, 'es');
-  }
-
-
   function canEditSchedule(m: Match) {
     if (!currentUser) return false;
     const isPlayer = currentUser.id === m.home_player_id || currentUser.id === (m.away_player_id ?? '');
@@ -2251,41 +2175,6 @@ const App = () => {
     };
   };
 
-  function compareByRules(
-    a: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
-    b: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
-    divisionId: string,
-    tournamentId: string
-  ) {
-    // 1) Puntos
-    if (b.points !== a.points) return b.points - a.points;
-
-    // 2) Head-to-Head (si hay al menos un partido entre ellos)
-    const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
-    if (h2h && h2h.playerAWins !== h2h.playerBWins) {
-      return h2h.winner === a.profile_id ? -1 : 1;
-    }
-
-    // 3) Ratio de sets
-    const aSetsTotal = a.sets_won + a.sets_lost;
-    const bSetsTotal = b.sets_won + b.sets_lost;
-    const aSetRatio = aSetsTotal > 0 ? a.sets_won / aSetsTotal : 0;
-    const bSetRatio = bSetsTotal > 0 ? b.sets_won / bSetsTotal : 0;
-    if (bSetRatio !== aSetRatio) return bSetRatio - aSetRatio;
-
-    // 4) Ratio de games
-    const aGamesTotal = a.games_won + a.games_lost;
-    const bGamesTotal = b.games_won + b.games_lost;
-    const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
-    const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
-    if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
-
-    // 5) Nombre (estable)
-    const aName = profiles.find(p => p.id === a.profile_id)?.name || '';
-    const bName = profiles.find(p => p.id === b.profile_id)?.name || '';
-    return aName.localeCompare(bName);
-  }
-
   const getPlayerMatches = (divisionId: string, tournamentId: string, playerId: string) => {
     if (!divisionId || !tournamentId || !playerId) {
       return { played: [] as Match[], scheduled: [] as Match[], upcoming: [] as Profile[] };
@@ -3462,22 +3351,15 @@ const App = () => {
 
       const divisionStandings = standings.filter(
         s => s.division_id === division.id && s.tournament_id === selectedTournament.id
-      );     
-
-      // partidos jugados de ESTA división (para head-to-head)
-      const playedInThisDiv = matches.filter(
-        m => m.tournament_id === selectedTournament.id &&
-            m.division_id === division.id &&
-            m.status === 'played'
       );
 
-      // Stats por jugador (incluye wins/sets/games para los desempates)
-      const playerRows = players.map(player => {
-        const s = divisionStandings.find(st => st.profile_id === player.id);
-        const played = (s?.wins || 0) + (s?.losses || 0);
+      // Mapeamos las estadísticas de cada jugador en la división
+      const playerStats = players.map(player => {
+        const standing = divisionStandings.find(s => s.profile_id === player.id);
+        const played = (standing?.wins || 0) + (standing?.losses || 0);
         const scheduled = matches.filter(m =>
           m.division_id === division.id &&
-          (m.home_player_id === player.id || m.away_player_id === player.id) &&
+          (m.home_player_id === player.id || m.away_player_id === player.id) && // <-- CORREGIDO
           m.status === 'scheduled'
         ).length;
 
@@ -3487,46 +3369,25 @@ const App = () => {
           gamesPlayed: played,
           gamesScheduled: scheduled,
           gamesNotScheduled: totalPossibleMatches - played - scheduled,
-          pints: s?.pints || 0,
-          points: s?.points || 0,
-          sets_won: s?.sets_won || 0,
-          sets_lost: s?.sets_lost || 0,
-          games_won: s?.games_won || 0,
-          games_lost: s?.games_lost || 0,
+          pints: standing?.pints || 0,
+          points: standing?.points || 0,
         };
       });
-
-      const sortedForLeader = [...playerRows].sort((a, b) =>
-        compareByRules(
-          { profile_id: a.id, points: a.points, sets_won: a.sets_won, sets_lost: a.sets_lost, games_won: a.games_won, games_lost: a.games_lost },
-          { profile_id: b.id, points: b.points, sets_won: b.sets_won, sets_lost: b.sets_lost, games_won: b.games_won, games_lost: b.games_lost },
-          division.id,
-          selectedTournament.id
-        )
-      );
-
-      const sortedByPints = [...playerRows].sort((a, b) => b.pints - a.pints);
+      
+      // Ordenamos las estadísticas para encontrar al líder y al "top pintas"
+      const sortedByPoints = [...playerStats].sort((a, b) => b.points - a.points);
+      const sortedByPints = [...playerStats].sort((a, b) => b.pints - a.pints);
 
       return {
         division,
         players: players.length,
         gamesPlayed: matches.filter(m => m.division_id === division.id && m.status === 'played').length,
-        totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
-        leader: sortedForLeader.length ? {
-          id: sortedForLeader[0].id,
-          name: sortedForLeader[0].name,
-          gamesPlayed: sortedForLeader[0].gamesPlayed,
-          gamesScheduled: sortedForLeader[0].gamesScheduled,
-          gamesNotScheduled: sortedForLeader[0].gamesNotScheduled,
-          pints: sortedForLeader[0].pints,
-          points: sortedForLeader[0].points,
-        } : null,
+        totalPints: playerStats.reduce((sum, p) => sum + p.pints, 0), // <-- AÑADE ESTA LÍNEA
+        leader: sortedByPoints[0] || null,
         topPintsPlayer: sortedByPints[0] || null,
-        // Si quieres ver el panel “actividad” ordenado igual, deja 'sortedForLeader'; si no, usa 'playerRows'
-        playerStats: sortedForLeader,
+        playerStats: sortedByPoints,
       };
     });
-
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
@@ -3617,8 +3478,8 @@ const App = () => {
                 {divisionsData.map(d => (
                   <div
                     key={d.division.id}
-                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
-                    onClick={() => setSelectedDivision(d.division)} 
+                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" // <-- ESTILOS AÑADIDOS
+                    onClick={() => setSelectedDivision(d.division)} // <-- LÓGICA AÑADIDA
                   >
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-800">
@@ -3675,7 +3536,7 @@ const App = () => {
                       <div className="text-sm text-yellow-800">Líder Actual</div>
                       <div className="font-semibold text-yellow-900">{leader.name}</div>
                       <div className="text-sm text-yellow-700">
-                        {standings.find(s => s.profile_id === leader.profile_id && s.division_id === division.id)?.points || 0} puntos
+                        {standings.find(s => s.profile_id === leader.id && s.division_id === division.id)?.points || 0} puntos
                       </div>
                     </div>
                   )}
@@ -3766,7 +3627,7 @@ const App = () => {
                       match.status === 'scheduled' &&
                       isTodayOrFuture(match.date)
                     )
-                    .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
+                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                     .map(match => {
                       const player1 = profiles.find(p => p.id === match.home_player_id);
                       const player2 = profiles.find(p => p.id === match.away_player_id);
@@ -3800,7 +3661,7 @@ const App = () => {
                               </div>
                             )}
                           </td>
-                            
+
                             {
                               [
                                 locations.find(l => l.id === match.location_id)?.name,
@@ -3852,12 +3713,6 @@ const App = () => {
     // Mapa rápido por id para mezclar stats con el roster completo
     const statsById = new Map(divisionStats.map(s => [s.profile_id, s]));
 
-    const playedMatchesThisDivision = matches.filter(
-      m => m.tournament_id === selectedTournament.id &&
-          m.division_id === selectedDivision.id &&
-          m.status === 'played'
-    );
-
     // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
     const rosterRows = players.map(p => {
       const s = statsById.get(p.id);
@@ -3869,33 +3724,21 @@ const App = () => {
         losses: s?.losses ?? 0,
         sets_won: s?.sets_won ?? 0,
         sets_lost: s?.sets_lost ?? 0,
-        games_won: s?.games_won ?? 0,
-        games_lost: s?.games_lost ?? 0,
         set_diff: s?.set_diff ?? 0,
         pints: s?.pints ?? 0,
       };
-    }).sort((a, b) => compareByRules(
-      a, b,
-      selectedDivision.id,
-      selectedTournament.id
-    ));
+    })
+    // orden principal por puntos, secundario por nombre
+    .sort((a, b) => (b.points - a.points) || a.name.localeCompare(b.name));
 
-
-    // Usaremos el comparador único: victorias → H2H → ratio sets → ratio games
-    const rosterSorted = [...rosterRows].sort((a, b) =>
-      compareStandings(a, b, selectedDivision.id, selectedTournament.id, matches)
-    );
-
+    // Para compatibilidad con código más abajo
     const divisionStandings = divisionStats;
-    const divLeader = rosterRows[0] ?? null;
-    const divTopPintsPlayer = rosterRows.reduce(
+
+    // Líder y top pintas ahora salen del roster mezclado (incluye 0s)
+    const leader = rosterRows[0] ?? null;
+    const topPintsPlayer = rosterRows.reduce(
       (max, r) => (max == null || r.pints > max.pints ? r : max),
       null as null | typeof rosterRows[number]
-    );
-    const leader = rosterSorted[0] ?? null;
-    const topPintsPlayer = rosterSorted.reduce(
-      (max, r) => (max == null || r.pints > max.pints ? r : max),
-      null as null | typeof rosterSorted[number]
     );
 
 
@@ -3924,8 +3767,7 @@ const App = () => {
     // Player Profile View
     if (selectedPlayer) {
       const player = players.find(p => p.id === selectedPlayer.id);
-      const playerStats = (rosterRows.find(r => r.profile_id === selectedPlayer.id) ?? {
-        profile_id: selectedPlayer.id,
+      const playerStats = divisionStandings.find(s => s.profile_id === selectedPlayer.id) || {
         name: selectedPlayer.name,
         points: 0,
         wins: 0,
@@ -3933,8 +3775,8 @@ const App = () => {
         sets_won: 0,
         sets_lost: 0,
         set_diff: 0,
-        pints: 0,
-      });
+        pints: 0
+      };
       
       const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id);
       
@@ -4155,19 +3997,14 @@ const App = () => {
                         <tr className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
-                              {(() => {
-                                const rankIndex = rosterRows.findIndex(r => r.profile_id === selectedPlayer.id);
-                                const badgeCls =
-                                  rankIndex === 0 ? 'bg-yellow-400 text-yellow-800' :
-                                  rankIndex === 1 ? 'bg-gray-300 text-gray-800' :
-                                  rankIndex === 2 ? 'bg-orange-300 text-orange-800' :
-                                  'bg-gray-100 text-gray-800';
-                                return (
-                                  <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${badgeCls}`}>
-                                    {rankIndex + 1}
-                                  </span>
-                                );
-                              })()}
+                              <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                                playerStats.points === divisionStandings[0]?.points ? 'bg-yellow-400 text-yellow-800' :
+                                playerStats.points === divisionStandings[1]?.points ? 'bg-gray-300 text-gray-800' :
+                                playerStats.points === divisionStandings[2]?.points ? 'bg-orange-300 text-orange-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {divisionStandings.findIndex(s => s.profile_id === selectedPlayer.id) + 1}
+                              </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
@@ -4227,7 +4064,7 @@ const App = () => {
                               </div>
                             </div>
                             <div className="text-sm text-gray-600">
-                              <span className="font-medium">Location: </span>
+                              <span className="font-medium">Location:</span>
                               {/* Esta lógica prioriza el detalle y solo muestra TBD si ambos campos están vacíos */}
                               {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
                             </div>
@@ -4596,19 +4433,19 @@ const App = () => {
                   </div>
                 </div>
 
-                {divLeader && (
+                {leader && (
                   <div className="mt-6 bg-yellow-50 p-4 rounded-lg">
                     <div className="text-sm text-yellow-800">Líder Actual</div>
-                    <div className="font-semibold text-yellow-900">{divLeader.name}</div>
-                    <div className="text-sm text-yellow-700">{divLeader.points} puntos</div>
+                    <div className="font-semibold text-yellow-900">{leader.name}</div>
+                    <div className="text-sm text-yellow-700">{leader.points} puntos</div>
                   </div>
                 )}
 
-                {divTopPintsPlayer && (
+                {topPintsPlayer && (
                   <div className="mt-4 bg-blue-50 p-4 rounded-lg">
                     <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                    <div className="font-semibold text-blue-900">{divTopPintsPlayer.name}</div>
-                    <div className="text-sm text-blue-700">{divTopPintsPlayer.pints} pintas</div>
+                    <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
+                    <div className="text-sm text-blue-700">{topPintsPlayer.pints} pintas</div>
                   </div>
                 )}
               </div>
@@ -4640,8 +4477,8 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {rosterSorted.length > 0 ? (
-                        rosterSorted.map((stats, index) => {
+                      {rosterRows.length > 0 ? (
+                        rosterRows.map((stats, index) => {
                           const player = profiles.find(p => p.id === stats.profile_id);
                           if (!player) return null;
                           return (
