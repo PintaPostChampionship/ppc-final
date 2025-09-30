@@ -340,14 +340,6 @@ const App = () => {
     hadPint: false,
     pintsCount: 1,
   });
-  const [editingSchedule, setEditingSchedule] = useState<Match | null>(null);
-  const [editedSchedule, setEditedSchedule] = useState<{
-    date: string;
-    time: string;
-    locationName: string;      // nombre legible de locations[]
-    location_details: string;  // texto libre
-  }>({ date: '', time: '', locationName: '', location_details: '' });
-
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -487,15 +479,6 @@ const App = () => {
       text: isHome ? 'Local' : 'Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
     };
-  }
-
-  function canEditSchedule(m: Match) {
-    if (!currentUser) return false;
-    const isPlayer = currentUser.id === m.home_player_id || currentUser.id === (m.away_player_id ?? '');
-    const isCreator = currentUser.id === m.created_by;
-    const isAdmin = (currentUser as any).role === 'admin';
-    const editable = m.status === 'pending' || m.status === 'scheduled';
-    return editable && (isPlayer || isCreator || isAdmin);
   }
 
   // Determinístico: para un par (a,b) siempre decide quién es Home en esa división/torneo
@@ -966,112 +949,6 @@ const App = () => {
       setLoading(false);
     }
   };
-
-  function openEditSchedule(m: Match) {
-    const locName = locations.find(l => l.id === m.location_id)?.name || '';
-    setEditingSchedule(m);
-    setEditedSchedule({
-      date: (m.date || '').slice(0, 10),
-      time: (m.time || '').slice(0, 5),
-      locationName: locName,
-      location_details: m.location_details || ''
-    });
-  }
-
-  async function handleSaveEditedSchedule() {
-    if (!editingSchedule || !selectedTournament || !selectedDivision) return;
-
-    const hour = parseInt((editedSchedule.time || '00:00').split(':')[0], 10);
-    let timeBlock: 'Morning' | 'Afternoon' | 'Evening' | null = null;
-    if (hour >= 7 && hour < 12) timeBlock = 'Morning';
-    else if (hour >= 12 && hour < 18) timeBlock = 'Afternoon';
-    else if (hour >= 18 && hour < 23) timeBlock = 'Evening';
-
-    const newLocId = locations.find(l => l.name === editedSchedule.locationName)?.id ?? null;
-
-    try {
-      setLoading(true);
-
-      // Control básico de concurrencia: solo si sigue pending/scheduled
-      const { error, data } = await supabase
-        .from('matches')
-        .update({
-          date: editedSchedule.date,
-          time: editedSchedule.time,
-          time_block: timeBlock,
-          location_id: newLocId,
-          location_details: editedSchedule.location_details
-        })
-        .eq('id', editingSchedule.id)
-        .in('status', ['pending', 'scheduled'])
-        .select('id'); // para saber si afectó fila
-
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        alert('No se pudo guardar. Es posible que el partido haya cambiado de estado o fue editado por otra persona. Refresca la página.');
-        return;
-      }
-
-      alert('Partido actualizado.');
-      setEditingSchedule(null);
-      await fetchData(session?.user.id);
-    } catch (err: any) {
-      alert(`Error guardando cambios: ${err.message}`);
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDeleteScheduledMatch(mArg?: Match) {
-    // Si viene como parámetro, borramos ese; si no, usamos el que está abierto en el modal
-    const m = mArg ?? editingSchedule;
-    if (!m) return;
-
-    // mismos permisos que para editar
-    if (!canEditSchedule(m)) {
-      alert('Solo el creador, alguno de los jugadores o un admin pueden borrar este partido.');
-      return;
-    }
-
-    const ok = window.confirm('¿Estás seguro que quieres eliminar este partido?');
-    if (!ok) return;
-
-    setLoading(true);
-    try {
-      // 1) Borrar sets (por si existen)
-      const { error: setsErr } = await supabase
-        .from('match_sets')
-        .delete()
-        .eq('match_id', m.id);
-      if (setsErr) throw setsErr;
-
-      // 2) Borrar match solo si sigue pendiente/programado
-      const { data, error: matchErr } = await supabase
-        .from('matches')
-        .delete()
-        .eq('id', m.id)
-        .in('status', ['pending', 'scheduled'])
-        .select('id');
-
-      if (matchErr) throw matchErr;
-      if (!data || data.length === 0) {
-        alert('No se pudo borrar: es posible que el partido ya haya cambiado de estado. Refresca la página.');
-        return;
-      }
-
-      // 3) Cerrar modal si estaba abierto y refrescar
-      if (editingSchedule?.id === m.id) setEditingSchedule(null);
-      await fetchData(session?.user.id);
-      alert('Partido borrado correctamente.');
-    } catch (err: any) {
-      alert(`No se pudo borrar el partido: ${err.message || err}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-
 
   const handleDeleteMatch = async () => {
     if (!editingMatch) return;
@@ -2867,90 +2744,6 @@ const App = () => {
     );
   }
 
-  if (editingSchedule) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6">
-          <h3 className="text-2xl font-bold text-gray-800 mb-6">Editar partido programado</h3>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
-              <input
-                type="date"
-                value={editedSchedule.date}
-                onChange={(e) => setEditedSchedule(s => ({ ...s, date: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
-              <select
-                value={editedSchedule.time}
-                onChange={(e) => setEditedSchedule(s => ({ ...s, time: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded"
-              >
-                <option value="">Selecciona hora</option>
-                {timeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Location (zona)</label>
-              <select
-                value={editedSchedule.locationName}
-                onChange={(e) => setEditedSchedule(s => ({ ...s, locationName: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded"
-              >
-                <option value="">(sin zona)</option>
-                {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Lugar específico</label>
-              <input
-                type="text"
-                placeholder="Ej: Clapham Common Court 4"
-                value={editedSchedule.location_details}
-                onChange={(e) => setEditedSchedule(s => ({ ...s, location_details: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded"
-              />
-            </div>
-          </div>
-          {/* Acciones */}
-          <div className="flex items-center justify-between mt-8">
-            {/* Izquierda: borrar */}
-            <button
-              onClick={() => handleDeleteScheduledMatch()} 
-              className="px-5 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-            >
-              Borrar partido
-            </button>
-
-            {/* Derecha: cancelar / guardar */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setEditingSchedule(null)}
-                className="px-5 py-2 rounded bg-gray-200 hover:bg-gray-300"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSaveEditedSchedule}
-                className="px-5 py-2 rounded bg-green-600 text-white hover:bg-green-700"
-              >
-                Guardar cambios
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-
   if (editingMatch) {
     // Nombres para etiquetar inputs
     const p1Name = profiles.find(p => p.id === editingMatch.home_player_id)?.name || 'Player 1';
@@ -3469,15 +3262,8 @@ const App = () => {
                     onClick={() => setSelectedDivision(d.division)} // <-- LÓGICA AÑADIDA
                   >
                     <div className="flex justify-between">
-                      <span className="font-medium text-gray-800">
-                        {d.division.name}
-                        <span className="ml-2 text-sm text-purple-700">
-                          (Total Pintas: {Number(d.totalPints || 0)} 🍺)
-                        </span>
-                      </span>
-                      <span className="text-sm text-gray-600">
-                        Líder: {d.leader ? d.leader.name : 'N/A'}
-                      </span>
+                      <span className="font-medium text-gray-800">{d.division.name}</span>
+                      <span className="text-sm text-gray-600">Líder: {d.leader ? d.leader.name : 'N/A'}</span>
                     </div>
                   </div>
                 ))}
@@ -3518,6 +3304,15 @@ const App = () => {
                       <div className="text-sm text-gray-600">Pintas Máximas</div>
                     </div>
                   </div>
+
+                  {topPintsPlayer && (
+                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                      <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
+                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                    </div>
+                  )}
+                  
                   {leader && (
                     <div className="bg-yellow-50 p-3 rounded-lg mb-4">
                       <div className="text-sm text-yellow-800">Líder Actual</div>
@@ -3525,13 +3320,6 @@ const App = () => {
                       <div className="text-sm text-yellow-700">
                         {standings.find(s => s.profile_id === leader.id && s.division_id === division.id)?.points || 0} puntos
                       </div>
-                    </div>
-                  )}
-                  {topPintsPlayer && (
-                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                      <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
-                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
                     </div>
                   )}
                   
@@ -3604,7 +3392,6 @@ const App = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -3630,25 +3417,6 @@ const App = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time && match.time.slice(0, 5)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {canEditSchedule(match) && (
-                              <div className="space-x-2">
-                                <button
-                                  onClick={() => openEditSchedule(match)}
-                                  className="text-blue-600 hover:text-blue-800 underline"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteScheduledMatch(match)}
-                                  className="text-red-600 hover:text-red-800 underline"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </td>
-
                             {
                               [
                                 locations.find(l => l.id === match.location_id)?.name,
@@ -4935,15 +4703,13 @@ const App = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Players</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Division</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th> {/* <-- NUEVA */}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                     </tr>
                   </thead>
-
                   <tbody className="bg-white divide-y divide-gray-200">
                     {scheduledMatches
                       .filter(m => isTodayOrFuture(m.date))
@@ -4962,25 +4728,6 @@ const App = () => {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{selectedDivision.name}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{locationName}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              {canEditSchedule(m) && (
-                                <div className="space-x-2">
-                                  <button
-                                    onClick={() => openEditSchedule(m)}
-                                    className="text-blue-600 hover:text-blue-800 underline"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteScheduledMatch(m)}
-                                    className="text-red-600 hover:text-red-800 underline"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
-
-                            </td>
                           </tr>
                         );
                       })}
