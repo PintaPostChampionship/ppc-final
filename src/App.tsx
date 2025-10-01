@@ -3675,7 +3675,7 @@ const App = () => {
                       <div className="text-sm text-yellow-800">Líder Actual</div>
                       <div className="font-semibold text-yellow-900">{leader.name}</div>
                       <div className="text-sm text-yellow-700">
-                        {standings.find(s => s.profile_id === leader.profile_id && s.division_id === division.id)?.points || 0} puntos
+                        {leader.points} puntos
                       </div>
                     </div>
                   )}
