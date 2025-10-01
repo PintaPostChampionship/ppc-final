@@ -259,16 +259,6 @@ async function resizeImage(dataUrl: string, maxWidth: number = 400): Promise<str
   });
 }
 
-function avatarSrc(p?: Profile | null) {
-  if (!p) return '/default-avatar.png';
-  const direct = (p.avatar_url || '').trim();
-  if (direct) return direct;
-
-  // Fallback: URL pública del bucket "avatars/<id>.jpg"
-  const { data } = supabase.storage.from('avatars').getPublicUrl(`${p.id}.jpg`);
-  return data?.publicUrl || '/default-avatar.png';
-}
-
 const App = () => {
   // Initialize all state with proper types
   const [session, setSession] = useState<any>(null);
@@ -3310,33 +3300,21 @@ const App = () => {
                     </p>
                   </div>
                   <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                    src={currentUser.avatar_url || '/default-avatar.png'}
                     alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    className="h-10 w-10 rounded-full object-cover"
                   />
                   <button
                     onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
+                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
                   >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
+                    Edit Profile
                   </button>
-
                   <button
                     onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
                   >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
+                    Logout
                   </button>
                 </div>
               )}
@@ -3586,33 +3564,21 @@ const App = () => {
                     </p>
                   </div>
                   <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                    src={currentUser.avatar_url || '/default-avatar.png'}
                     alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    className="h-10 w-10 rounded-full object-cover"
                   />                  
                   <button
                     onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
+                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200"
                   >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
+                    Edit Profile
                   </button>
-
                   <button
                     onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
                   >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
+                    Logout
                   </button>
                 </div>
               )}
@@ -4013,33 +3979,21 @@ const App = () => {
                       </p>
                     </div>
                     <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      src={currentUser.avatar_url || '/default-avatar.png'}
                       alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                      className="h-10 w-10 rounded-full object-cover"
                     />
                     <button
                       onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
+                      className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
                     >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
+                      Edit Profile
                     </button>
-
                     <button
                       onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
                     >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                      </svg>
+                      Logout
                     </button>
                   </div>
                 )}
@@ -4056,11 +4010,15 @@ const App = () => {
                   <div className="text-center mb-6">
                     <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-green-100">
                       <img
-                        src={avatarSrc(selectedPlayer)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        src={
+                          selectedPlayer.avatar_url
+                            || supabase.storage.from('avatars').getPublicUrl(`${selectedPlayer.id}.jpg`).data.publicUrl
+                            || ''
+                        }
                         alt="Profile"
                         className="w-full h-full object-cover"
                       />
+
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800 mt-4">{selectedPlayer.name}</h2>
                     <p className="text-gray-600">{selectedDivision.name} Division</p>
@@ -4530,33 +4488,22 @@ const App = () => {
                   </div>
                   
                   <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                    src={currentUser.avatar_url || '/default-avatar.png'}
                     alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    className="h-10 w-10 rounded-full object-cover"
                   />
                   <button
                     onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
+                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
                   >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
+                    Edit Profile
                   </button>
-
+                  
                   <button
                     onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
                   >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
+                    Logout
                   </button>
                 </div>
               )}
@@ -4719,7 +4666,7 @@ const App = () => {
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
                                     <img 
-                                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                                      className="h-10 w-10 rounded-full object-cover" 
                                       src={player.avatar_url || '/default-avatar.png'} 
                                       alt="" 
                                     />
