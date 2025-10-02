@@ -3815,8 +3815,18 @@ const App = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time && match.time.slice(0, 5)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {/* Location */}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 align-middle">
+                            {
+                              [
+                                locations.find(l => l.id === match.location_id)?.name,
+                                match.location_details
+                              ].filter(Boolean).join(' - ') || 'TBD'
+                            }
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
                             {canEditSchedule(match) && (
                               <div className="space-x-2">
                                 <button
@@ -3833,14 +3843,6 @@ const App = () => {
                                 </button>
                               </div>
                             )}
-                          </td>
-                            
-                            {
-                              [
-                                locations.find(l => l.id === match.location_id)?.name,
-                                match.location_details
-                              ].filter(Boolean).join(' - ') || 'TBD'
-                            }
                           </td>
                         </tr>
                       );
