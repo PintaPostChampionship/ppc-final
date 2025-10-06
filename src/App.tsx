@@ -465,16 +465,14 @@ const App = () => {
   }
 
   function dateKey(val: string | Date) {
-    const d = parseDateSafe(val);
-    return d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const dt = typeof val === 'string' ? parseYMDLocal(val) : val;
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`; // YYYY-MM-DD (local)
   }
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '';
-    // La 'T' indica que la fecha puede tener hora, la cortamos para evitar problemas de zona horaria
-    const date = new Date(dateString.split('T')[0] + 'T00:00:00');
-    return date.toLocaleDateString('es-CL', { timeZone: 'UTC' });
-  };  
+  const formatDate = (dateString: string) => formatDateLocal(dateString);
 
   // Trata 'YYYY-MM-DD' como fecha LOCAL (sin zona)
   function parseYMDLocal(iso?: string | null) {
@@ -1767,9 +1765,8 @@ const App = () => {
 
     // 2. Si el mensaje es corto, intentamos usar la API moderna para compartir.
     const shareData = {
-      title: 'PPC Scheduled Matches', // <-- AÑADIDO: Título para el diálogo de compartir.
-      text: message,
-      url: window.location.href // <-- AÑADIDO: URL de la página actual.
+      title: 'PPC Scheduled Matches',
+      text: message
     };
 
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -1960,8 +1957,10 @@ const App = () => {
       });
       msg += '\n';
     });
-    
-    safeShareOnWhatsApp(msg.trim());
+    const siteUrl = window.location.origin; // o tu dominio fijo
+    msg = msg.trimEnd() + `\n\n${siteUrl}`;
+
+    safeShareOnWhatsApp(msg);
   };
 
   const copyTableToClipboard = () => {
@@ -3945,10 +3944,8 @@ const App = () => {
   const scheduledMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'scheduled' &&
-    isTodayOrFuture(m.date)
+    m.status === 'scheduled'
   );
-
 
   const playedMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
@@ -5042,7 +5039,7 @@ const App = () => {
                         </div>
                         <div className="text-right">
                           <div className="text-sm font-semibold text-blue-600">
-                            {new Date(match.date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}
+                            {formatDateLocal(match.date)}
                           </div>
                           <div className="text-sm text-gray-600">{match.time}</div>
                         </div>
@@ -5178,7 +5175,7 @@ const App = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {scheduledMatches
                       .filter(m => isTodayOrFuture(m.date))
-                      .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
+                      .sort((a,b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
                       .map(m => {
                         const p1 = profiles.find(p => p.id === m.home_player_id);
                         const p2 = profiles.find(p => p.id === m.away_player_id);
