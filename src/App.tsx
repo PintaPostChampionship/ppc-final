@@ -358,6 +358,19 @@ const App = () => {
     location_details: string;  // texto libre
   }>({ date: '', time: '', locationName: '', location_details: '' });
 
+  type SocialEvent = {
+    id: string;
+    title: string;
+    description: string | null;
+    date: string;        // YYYY-MM-DD
+    time: string | null; // "19:30", etc.
+    venue: string | null;
+    image_url: string | null;
+    rsvp_url: string | null;
+    is_active: boolean;
+  };
+  const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
+
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -644,10 +657,31 @@ const App = () => {
       }
     } catch (err: any) {
       setError(`Failed to load data: ${err.message}`);
+      // después de setMatchSets(...) y availability, dentro de fetchData
+      const todayYMD = (() => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        return `${y}-${m}-${dd}`; // LOCAL YYYY-MM-DD
+      })();
+      
+      const { data: ev, error: evErr } = await supabase
+        .from('social_events')
+        .select('*')
+        .eq('is_active', true) //cambiar a false para ocultar
+        .gte('date', todayYMD)
+        .order('date', { ascending: true })
+        .limit(5);
+      if (!evErr) setSocialEvents(ev || []);
     } finally {
       setLoading(false);
     }
   };
+//RSVP: usa rsvp_url con un Google Form o similar. Solo pega el link al crear el evento.
+//Ubicación: si quieres mostrar mapa o link, añade venue_url o maps_url (opcional) a la tabla.
+//En Supabase: Sube la imagen (ideal: events/2025-11-social.jpg). Recomendado: ancho 1200px, JPG/WebP, <300KB.
+//cont.. Copia el Public URL y guárdalo en social_events.image_url.
 
   // EFECTO 1: Maneja la sesión y el "onboarding"
   useEffect(() => {
@@ -3011,6 +3045,7 @@ const App = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
               <input
                 type="date"
+                lang="es-CL"
                 value={editedSchedule.date}
                 onChange={(e) => setEditedSchedule(s => ({ ...s, date: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded"
@@ -3467,6 +3502,59 @@ const App = () => {
               Find Tennis Courts
             </button>
           </div>
+
+          {/* Instagram footer */}
+          <div className="mt-4 text-center text-sm text-gray-700">
+            <span className="mr-2">Para más información, visita:</span>
+            <a
+              href="https://instagram.com/pintapostchampionship"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 font-medium text-pink-600 hover:text-pink-700"
+            >
+              {/* icono simple cámara/instagram */}
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/>
+              </svg>
+              <span className="align-middle">@pintapostchampionship</span>
+            </a>
+          </div>
+
+          {socialEvents.length > 0 && (
+            <div className="mt-6 mx-auto max-w-2xl">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📣</span>
+                  <div>
+                    <div className="font-semibold text-gray-900">
+                      Próximo evento: {socialEvents[0].title}
+                    </div>
+                    <div className="text-sm text-gray-700">
+                      {tituloFechaEs(socialEvents[0].date)}
+                      {socialEvents[0].time ? ` · ${socialEvents[0].time}` : ''} 
+                      {socialEvents[0].venue ? ` · ${socialEvents[0].venue}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  {socialEvents[0].rsvp_url && (
+                    <a
+                      href={socialEvents[0].rsvp_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                    >
+                      Confirmar asistencia
+                    </a>
+                  )}
+                  {socialEvents[0].image_url && (
+                    <img src={socialEvents[0].image_url} alt="Evento" className="h-12 w-auto rounded" />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
         {renderNotifs()}
       </div>
@@ -3866,6 +3954,58 @@ const App = () => {
               Find Tennis Courts
             </button>
           </div>
+          {/* Instagram footer */}
+          <div className="mt-4 text-center text-sm text-gray-700">
+            <span className="mr-2">Para más información, visita:</span>
+            <a
+              href="https://instagram.com/pintapostchampionship"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 font-medium text-pink-600 hover:text-pink-700"
+            >
+              {/* icono simple cámara/instagram */}
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/>
+              </svg>
+              <span className="align-middle">@pintapostchampionship</span>
+            </a>
+          </div>
+          {socialEvents.length > 0 && (
+            <div className="mt-6 mx-auto max-w-2xl">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📣</span>
+                  <div>
+                    <div className="font-semibold text-gray-900">
+                      Próximo evento: {socialEvents[0].title}
+                    </div>
+                    <div className="text-sm text-gray-700">
+                      {tituloFechaEs(socialEvents[0].date)}
+                      {socialEvents[0].time ? ` · ${socialEvents[0].time}` : ''} 
+                      {socialEvents[0].venue ? ` · ${socialEvents[0].venue}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  {socialEvents[0].rsvp_url && (
+                    <a
+                      href={socialEvents[0].rsvp_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                    >
+                      Confirmar asistencia
+                    </a>
+                  )}
+                  {socialEvents[0].image_url && (
+                    <img src={socialEvents[0].image_url} alt="Evento" className="h-12 w-auto rounded" />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+
         </div>
         {renderNotifs()}
       </div>
@@ -4988,6 +5128,7 @@ const App = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
                     <input
                       type="date"
+                      lang="es-CL"
                       value={newMatch.date}
                       onChange={(e) => setNewMatch({...newMatch, date: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
