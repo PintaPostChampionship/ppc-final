@@ -1110,7 +1110,7 @@ const App = () => {
   }
 
   async function handleSaveEditedSchedule() {
-    if (!editingSchedule || !selectedTournament || !selectedDivision) return;
+    if (!editingSchedule) return;
 
     const hour = parseInt((editedSchedule.time || '00:00').split(':')[0], 10);
     let timeBlock: 'Morning' | 'Afternoon' | 'Evening' | null = null;
@@ -3226,13 +3226,13 @@ const App = () => {
                 onClick={() => setEditingMatch(null)}
                 className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-semibold hover:bg-gray-300"
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 onClick={handleSaveEditedMatch}
                 className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700"
               >
-                Save Changes
+                Guardar cambios
               </button>
             </div>
           </div>
