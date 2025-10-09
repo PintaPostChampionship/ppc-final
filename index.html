@@ -2,14 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Favicons -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=5">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=5">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=5">
-    <link rel="icon" sizes="any" href="/favicon.ico?v=5"><!-- opcional -->
+    <!-- Favicons: adaptativos por tema -->
+    <link rel="icon" type="image/png" href="/favicon-dark.png" media="(prefers-color-scheme: light)">
+    <link rel="icon" type="image/png" href="/favicon-light.png" media="(prefers-color-scheme: dark)">
+    <!-- Fallback si el navegador no soporta media -->
+    <link rel="icon" type="image/png" href="/favicon-dark.png">
+
+    <!-- Apple Touch Icon (para iOS Home Screen) -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 
     <!-- Manifest PWA -->
-    <link rel="manifest" href="/site.webmanifest?v=5">
+    <link rel="manifest" href="/site.webmanifest">
+    <meta name="theme-color" content="#16a34a">
 
     <meta name="theme-color" content="#16a34a" />
     <!-- iOS: abrir en pantalla completa -->

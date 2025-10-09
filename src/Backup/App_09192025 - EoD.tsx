@@ -7,7 +7,7 @@ import type { Session, User } from '@supabase/supabase-js';
 const PENDING_KEY = 'pending_onboarding';
 
 // Comprime availability a forma compacta: { Mon:["M","A"], Tue:["E"] ... }
-function compressAvailability(av?: Record<string, string[]> | undefined): Record<string, string[]> | null {
+function compressAvailability(av?: Record<string, string[]> | undefined) {
   if (!av) return null;
   const map: Record<string, string[]> = {};
   Object.entries(av).forEach(([day, slots]) => {
@@ -16,7 +16,7 @@ function compressAvailability(av?: Record<string, string[]> | undefined): Record
       map[day] = slots.map(s => s.startsWith('Morning') ? 'M' : s.startsWith('Afternoon') ? 'A' : 'E');
     }
   });
-  return Object.keys(map).length ? map : null;
+  return map;
 }
 
 function decompressAvailability(comp?: Record<string, string[]> | null) {
@@ -113,7 +113,6 @@ interface Profile {
   email?: string;
   avatar_url?: string;
   postal_code?: string;
-  nickname?: string | null;
 }
 
 interface Location {
@@ -338,8 +337,7 @@ const App = () => {
     profilePic: '',
     locations: [] as string[],
     availability: {} as Record<string, string[]>,
-    postal_code: '',
-    nickname: '', 
+    postal_code: '',  
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1111,18 +1109,6 @@ const App = () => {
     });
   }
 
-  // ---- NOMBRES: visual solo ----
-  const toTitleCase = (s: string) =>
-    (s ?? '').toLowerCase().replace(/([\p{L}\p{M}])([\p{L}\p{M}]*)/gu, (_, a, b) => a.toUpperCase() + b);
-
-  const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
-
-  const displayNameForShare = (id: string) => {
-    const p = profiles.find(pp => pp.id === id);
-    const base = (p?.nickname && p.nickname.trim().length > 0) ? p.nickname! : (p?.name || '');
-    return uiName(base);
-  };
-
   async function handleSaveEditedSchedule() {
     if (!editingSchedule) return;
 
@@ -1564,11 +1550,12 @@ const App = () => {
         if (rpcErr) {
           // Fallback directo a tabla intermedia si el RPC no existe en tu BBDD
           const { error: directErr } = await supabase
-            .from('tournament_registrations')
+            .from('tournament_players')
             .upsert({
               tournament_id: onboarding.tournament_id,
               division_id: onboarding.division_id,
               profile_id: userId,
+              status: 'active',
             }, { onConflict: 'tournament_id,profile_id' });
           if (directErr) throw directErr;
         }
@@ -1676,7 +1663,6 @@ const App = () => {
         availability: availabilityMap,
         locations: locationNames,
         postal_code: currentUser.postal_code ?? '',
-        nickname: currentUser.nickname ?? '',
       });
 
       setPendingAvatarFile(null);
@@ -1737,7 +1723,6 @@ const App = () => {
           name: editUser.name,
           avatar_url: newAvatarUrl ?? currentUser?.avatar_url ?? undefined,
           postal_code: editUser.postal_code || null,
-          nickname: editUser.nickname?.trim() || null,
         }).eq('id', uid);
       if (upErr) throw upErr;
 
@@ -1997,8 +1982,8 @@ const App = () => {
     Object.keys(grouped).sort().forEach(date => {
       msg += `*${tituloFechaEs(date)}*\n`;
       grouped[date].forEach(m => {
-        const p1 = displayNameForShare(m.home_player_id);
-        const p2 = displayNameForShare(m.away_player_id ?? '');
+        const p1 = profiles.find(p => p.id === m.home_player_id)?.name || '';
+        const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         // MENSAJE SIMPLIFICADO
@@ -2036,8 +2021,8 @@ const App = () => {
     Object.keys(grouped).sort().forEach(date => {
       message += `*${tituloFechaEs(date)}*\n`;
       grouped[date].forEach(m => {
-        const p1 = displayNameForShare(m.home_player_id);
-        const p2 = displayNameForShare(m.away_player_id!);
+        const p1 = profiles.find(p => p.id === m.home_player_id)?.name || '';
+        const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         // MENSAJE SIMPLIFICADO
@@ -2911,15 +2896,7 @@ const App = () => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 required
               />
-              <label className="block text-sm font-medium text-gray-700 mt-4">Preferred name (nickname)</label>
-              <input
-                value={editUser.nickname}
-                onChange={e => setEditUser(v => ({ ...v, nickname: e.target.value }))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                placeholder="Ej: Pato, Nico, Koke..."
-              />
             </div>
-
 
             {/* Email */}
             <div>
@@ -3356,7 +3333,7 @@ const App = () => {
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
                       {/* Muestra todos los torneos en los que está inscrito */}
                       {registrations
@@ -3684,7 +3661,7 @@ const App = () => {
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
                       Division: {
                         registrations
@@ -3772,7 +3749,7 @@ const App = () => {
                         </span>
                       </span>
                       <span className="text-sm text-gray-600">
-                        Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                        Líder: {d.leader ? d.leader.name : 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -3826,7 +3803,7 @@ const App = () => {
                   {topPintsPlayer && (
                     <div className="bg-blue-50 p-3 rounded-lg mb-4">
                       <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                      <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
+                      <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
                       <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
                     </div>
                   )}
@@ -3849,7 +3826,7 @@ const App = () => {
                             ?.playerStats // .slice(0, 3) - Mostramos solo el top 3
                             .map(stats => (
                               <tr key={stats.id} className="text-sm">
-                                <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
+                                <td className="px-4 py-2 font-medium text-gray-900">{stats.name}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
@@ -3922,7 +3899,7 @@ const App = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {formatDateLocal(match.date)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(player1?.name)} vs {uiName(player2?.name)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time && match.time.slice(0, 5)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
                           {/* Location */}
@@ -4169,7 +4146,7 @@ const App = () => {
                 {currentUser && (
                   <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                     <div className="text-right">
-                      <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                      <p className="font-semibold text-gray-800">{currentUser.name}</p>
                       <p className="text-sm text-gray-600">
                         Division: {selectedDivision.name}
                       </p>
@@ -4224,7 +4201,7 @@ const App = () => {
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-800 mt-4">{uiName(selectedPlayer.name)}</h2>
+                    <h2 className="text-2xl font-bold text-gray-800 mt-4">{selectedPlayer.name}</h2>
                     <p className="text-gray-600">{selectedDivision.name} Division</p>
                   </div>
 
@@ -4375,7 +4352,7 @@ const App = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                            {uiName(selectedPlayer.name)}
+                            {selectedPlayer.name}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{playerStats.points}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{playerStats.wins + playerStats.losses}</td>
@@ -4626,7 +4603,7 @@ const App = () => {
                                   <div key={index} className="border-t pt-2">
                                     <div className="flex justify-between">
                                       <div>
-                                        <p className="text-sm font-medium">{uiName(player1?.name)} vs {uiName(player2?.name)}</p>
+                                        <p className="text-sm font-medium">{player1?.name} vs {player2?.name}</p>
                                         <p className="text-xs text-gray-500">{formatDate(match.date)} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
                                       </div>
                                       <div className="text-right">
@@ -4685,7 +4662,7 @@ const App = () => {
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="font-semibold text-gray-800">{currentUser.name}</p>
                     <p className="text-sm text-gray-600">
                       Division: {selectedDivision.name} 
                     </p>
@@ -4822,7 +4799,7 @@ const App = () => {
                 {divTopPintsPlayer && (
                   <div className="mt-4 bg-blue-50 p-4 rounded-lg">
                     <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                    <div className="font-semibold text-blue-900">{uiName(divTopPintsPlayer.name)}</div>
+                    <div className="font-semibold text-blue-900">{divTopPintsPlayer.name}</div>
                     <div className="text-sm text-blue-700">{divTopPintsPlayer.pints} pintas</div>
                   </div>
                 )}
@@ -4888,7 +4865,7 @@ const App = () => {
                                   </div>
                                   <div className="ml-4">
                                     <div className="text-sm font-medium text-gray-900 hover:text-green-700 cursor-pointer">
-                                      {uiName(player.name)}
+                                      {player.name}
                                     </div>
                                   </div>
                                 </div>
@@ -4943,7 +4920,7 @@ const App = () => {
                     >
                       <option value="">Select Player</option>
                       {players.map(player => (
-                        <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                        <option key={player.id} value={player.id}>{player.name}</option>
                       ))}
                     </select>
                   </div>
@@ -4960,7 +4937,7 @@ const App = () => {
                       <option value="">Select Player</option>
                       {/* El filtro ahora compara por ID, que es más seguro y correcto */}
                       {players.filter(p => p.id !== newMatch.player1).map(player => (
-                        <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                        <option key={player.id} value={player.id}>{player.name}</option>
                       ))}
                     </select>
                   </div>
@@ -5100,7 +5077,7 @@ const App = () => {
                   >
                     <option value="">Select Player</option>
                     {players.map(player => (
-                      <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                      <option key={player.id} value={player.id}>{player.name}</option>
                     ))}
                   </select>
                 </div>
@@ -5115,7 +5092,7 @@ const App = () => {
                   >
                     <option value="">Anyone can join (Pending)</option>
                     {players.filter(p => p.id !== newMatch.player1).map(player => (
-                      <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                      <option key={player.id} value={player.id}>{player.name}</option>
                     ))}
                   </select>
                 </div>
@@ -5198,7 +5175,7 @@ const App = () => {
                     <div key={match.id} className="border rounded-lg p-4">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <h4 className="font-semibold text-gray-800">{uiName(player1?.name)} is looking for a match</h4>
+                          <h4 className="font-semibold text-gray-800">{player1?.name} is looking for a match</h4>
                           <p className="text-sm text-gray-600">{selectedDivision.name}</p>
                         </div>
                         <div className="text-right">
@@ -5242,7 +5219,7 @@ const App = () => {
                               // refresca desde DB para que todos lo vean
                               await loadInitialData(session?.user.id);
 
-                              alert(`You have joined ${uiName(player1?.name)}'s match! The match is now confirmed.`);
+                              alert(`You have joined ${player1?.name}'s match! The match is now confirmed.`);
                             } catch (e:any) {
                               console.error('join match error', e);
                               alert(`Error joining match: ${e.message}`);
@@ -5350,7 +5327,7 @@ const App = () => {
                         return (
                           <tr key={m.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(m.date)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(p1?.name)} vs {uiName(p2?.name)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{p1?.name} vs {p2?.name}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{selectedDivision.name}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{locationName}</td>
