@@ -351,6 +351,7 @@ const App = () => {
     sets: [{ score1: '', score2: '' }],
     hadPint: false,
     pintsCount: 1,
+    anecdote : '',
   });
   const [editingSchedule, setEditingSchedule] = useState<Match | null>(null);
   const [editedSchedule, setEditedSchedule] = useState<{
@@ -488,6 +489,24 @@ const App = () => {
   }
 
   const formatDate = (dateString: string) => formatDateLocal(dateString);
+
+  function hasActiveMatchWith(
+    meId: string,
+    oppId: string,
+    tournamentId: string,
+    divisionId: string
+  ) {
+    return matches.some(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      (m.status === 'scheduled' || m.status === 'pending') &&
+      (
+        (m.home_player_id === meId && m.away_player_id === oppId) ||
+        (m.home_player_id === oppId && m.away_player_id === meId)
+      )
+    );
+  }
+
 
   // Trata 'YYYY-MM-DD' como fecha LOCAL (sin zona)
   function parseYMDLocal(iso?: string | null) {
@@ -1074,31 +1093,44 @@ const App = () => {
     if (!editingMatch) return;
     setLoading(true);
     try {
-      const setsForRPC = editedMatchData.sets
+      // 1) preparar sets para el RPC
+      const setsForRPC = (editedMatchData?.sets || [])
         .filter(s => s.score1 !== '' && s.score2 !== '')
         .map((s, idx) => ({
           set_number: idx + 1,
-          p1_games: parseInt(s.score1),
-          p2_games: parseInt(s.score2),
+          p1_games: parseInt(s.score1, 10),
+          p2_games: parseInt(s.score2, 10),
         }));
 
-      const { error } = await supabase.rpc('update_match_result', {
+      // 2) ejecutar tu RPC existente
+      const { error: rpcErr } = await supabase.rpc('update_match_result', {
         p_match_id: editingMatch.id,
         p_sets: setsForRPC,
         p_had_pint: editedMatchData.hadPint,
         p_pints_count: editedMatchData.pintsCount,
       });
-      if (error) throw error;
-      
-      alert('Match result updated successfully!');
+      if (rpcErr) throw rpcErr;
+
+      // 3) forzar status = 'played' (clave para que salga de "agendados" y cuente puntos)
+      const { error: upErr } = await supabase
+        .from('matches')
+        .update({ status: 'played', anecdote: editedMatchData.anecdote?.trim() || null, })
+        .eq('id', editingMatch.id)
+        .select('id')
+        .single();
+      if (upErr) throw upErr;
+
+      // 4) refrescar todo
+      await fetchData(session?.user?.id);
       setEditingMatch(null);
-      await fetchData(session?.user.id);
+      alert('Resultado guardado. El partido pasó a "Jugado".');
     } catch (err: any) {
-      alert(`Error updating match: ${err.message}`);
+      alert(`Error al guardar el resultado: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
   };
+
 
   function openEditSchedule(m: Match) {
     const locName = locations.find(l => l.id === m.location_id)?.name || '';
@@ -2179,7 +2211,7 @@ const App = () => {
   const handleScheduleMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMatch.player1 || !newMatch.location_details || !newMatch.date || !newMatch.time) {
+    if (!newMatch.player1 || !newMatch.date) {
       return alert('Please fill all required fields.');
     }
 
@@ -2204,10 +2236,10 @@ const App = () => {
         tournament_id: selectedTournament!.id,
         division_id: selectedDivision!.id,
         date: newMatch.date,
-        time: newMatch.time, // Guarda la hora manual (ej: "19:30")
+        time: newMatch.time || null, // Guarda la hora manual (ej: "19:30")
         time_block: timeBlock, // Guarda el bloque calculado (ej: "Evening")
-        location_id: locationId,
-        location_details: newMatch.location_details,
+        location_id: locationId || null,
+        location_details: newMatch.location_details || null,
         status,
         home_player_id: newMatch.player1,
         away_player_id: newMatch.player2 || null,
@@ -3232,6 +3264,26 @@ const App = () => {
               </div>
             )}
           </div>
+
+          {/* Anécdota del partido */}
+          <label className="block text-sm font-medium text-gray-700 mt-4">
+            Anécdota (opcional, máx. 50 palabras)
+          </label>
+          <textarea
+            value={editedMatchData.anecdote ?? ''}
+            onChange={(e) => {
+              const text = e.target.value ?? '';
+              const words = text.trim().split(/\s+/).filter(Boolean);
+              const limited = words.slice(0, 50).join(' ');
+              setEditedMatchData((prev) => ({ ...prev, anecdote: limited }));
+            }}
+            rows={3}
+            placeholder="Ej: Partido muy parejo, se definió 7-6 en el segundo set..."
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
+          </p>
 
           {/* Acciones */}
           <div className="flex items-center justify-between mt-8">
@@ -4413,7 +4465,7 @@ const App = () => {
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
-                                  {opponent?.name}
+                                  {uiName(opponent?.name)}
                                   {(() => {
                                     const b = homeAwayBadge(match, selectedPlayer.id);
                                     return (
@@ -4456,6 +4508,7 @@ const App = () => {
                                       sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
                                       hadPint: match.player1_had_pint,
                                       pintsCount: match.player1_pints || 1,
+                                      anecdote: '',
                                     });
                                     setEditingMatch(match);
                                   }}
@@ -4537,26 +4590,46 @@ const App = () => {
                                 </h4>
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
+                              {(() => {
+                                if (hasActiveMatchWith(
+                                  selectedPlayer.id,
+                                  opponent.id,
+                                  selectedTournament.id,
+                                  selectedDivision.id
+                                )) {
+                                  return (
+                                    <button
+                                      className="bg-gray-300 text-gray-600 px-4 py-2 rounded-lg cursor-not-allowed"
+                                      disabled
+                                      title="Ya existe un partido agendado entre ustedes"
+                                    >
+                                      Ya está agendado
+                                    </button>
+                                  );
+                                }
 
-                              <button
-                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
-                                onClick={() => {
-                                  // 2) Pre-llenamos el formulario respetando quién es Home
-                                  const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
-                                  setNewMatch(prev => ({
-                                    ...prev,
-                                    player1: homeId,     // SIEMPRE el Home va en player1 (home_player_id)
-                                    player2: awayId,     // Away en player2
-                                    location: '',
-                                    location_details: '',
-                                    date: '',
-                                    time: '',
-                                  }));
-                                  setSelectedPlayer(null);
-                                }}
-                              >
-                                Schedule Match
-                              </button>
+                                return (
+                                  <button
+                                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
+                                    onClick={() => {
+                                      const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
+                                      setNewMatch(prev => ({
+                                        ...prev,
+                                        player1: homeId,
+                                        player2: awayId,
+                                        location: '',
+                                        location_details: '',
+                                        date: '',
+                                        time: '',
+                                      }));
+                                      setSelectedPlayer(null);
+                                    }}
+                                  >
+                                    Agendar Partido
+                                  </button>
+                                );
+                              })()}
+
                             </div>
                           </div>
                         );
@@ -4603,7 +4676,7 @@ const App = () => {
                         return (
                           <div key={opponent.id} className="border rounded-lg p-4">
                             <div className="flex justify-between items-center mb-4">
-                              <h3 className="font-semibold text-gray-800 text-lg">{opponent.name}</h3>
+                              <h3 className="font-semibold text-gray-800 text-lg">{uiName(opponent.name)}</h3>
                               <div className="bg-gray-50 px-3 py-1 rounded-lg">
                                 <span className="text-green-600 font-medium">{wins}W</span> - 
                                 <span className="text-red-600 font-medium">{losses}L</span>
@@ -4655,6 +4728,108 @@ const App = () => {
                     </div>
                   )}
                 </div>
+                {/* Partidos agendados (todos) */}
+                {(() => {
+                  if (!selectedPlayer || !selectedTournament || !selectedDivision) return null;
+
+                  // Todos los partidos agendados del jugador (scheduled o pending), sin importar si son pasados o futuros
+                  const myScheduled = matches
+                    .filter(m =>
+                      m.tournament_id === selectedTournament.id &&
+                      m.division_id === selectedDivision.id &&
+                      (m.status === 'scheduled' || m.status === 'pending') &&
+                      (m.home_player_id === selectedPlayer.id || m.away_player_id === selectedPlayer.id || m.created_by === selectedPlayer.id)
+                    )
+                    .sort((a,b) =>
+                      (a.date || '').localeCompare(b.date || '') ||
+                      (a.time || '').localeCompare(b.time || '')
+                    );
+
+                  if (myScheduled.length === 0) return null;
+
+                  const nameById = (id?: string | null) =>
+                    (profiles.find(p => p.id === id)?.name || '').replace(/\b\w/g, c => c.toUpperCase());
+
+                  const divName = (id?: string | null) => divisions.find(d => d.id === id)?.name || '';
+
+                  return (
+                    <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
+                      <h2 className="text-2xl font-bold text-gray-800 mb-6">Partidos agendados</h2>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase ">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {myScheduled.map(m => {
+                              const loc =
+                                [locations.find(l => l.id === m.location_id)?.name, m.location_details]
+                                  .filter(Boolean).join(' - ') || 'Por definir';
+
+                              return (
+                                <tr key={m.id} className="hover:bg-gray-50">
+                                  <td className="px-4 py-2">
+                                    {formatDate(m.date)} {m.time ? `· ${m.time.slice(0,5)}` : ''}
+                                  </td>
+                                  <td className="px-4 py-2">
+                                    {nameById(m.home_player_id)} vs {nameById(m.away_player_id) || '(busca rival)'}
+                                  </td>
+                                  <td className="px-4 py-2">{loc}</td>
+                                  <td className="px-4 py-2">
+                                    <div className="flex gap-3">
+                                      <button
+                                        onClick={() => openEditSchedule(m)}   // reutiliza tu modal existente
+                                        className="text-blue-600 hover:underline"
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        className="text-green-600 hover:underline"
+                                        onClick={() => {
+                                          const currentSets = matchSets
+                                            .filter(s => s.match_id === m.id)
+                                            .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
+                                            .map(s => ({
+                                              score1: String(s.p1_games ?? ''),
+                                              score2: String(s.p2_games ?? ''),
+                                            }));
+
+                                          setEditedMatchData({
+                                            sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
+                                            hadPint: false,
+                                            pintsCount: 1,
+                                            anecdote: '',
+                                          });
+                                          setEditingMatch(m);
+                                        }}
+                                      >
+                                        Agregar resultados
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteScheduledMatch(m)} // reutiliza tu delete/cancel existente
+                                        className="text-red-600 hover:underline"
+                                      >
+                                        Eliminar
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-4">
+                        *Aquí ves todos tus partidos agendados (pendientes o programados). Puedes editarlos o eliminarlos.
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -4966,14 +5141,14 @@ const App = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Location (General Area)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Lugar (Parte de Londres)</label>
                   <select
                     value={newMatch.location}
                     onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                     required
                   >
-                    <option value="">Select an area</option>
+                    <option value="">Selecciona una zona</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.name}>{loc.name}</option>
                     ))}
@@ -4981,13 +5156,14 @@ const App = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name (Specific)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nombre del Club/Lugar</label>
                   <input
                     type="text"
                     placeholder="E.g., Parliament Hill, Court 3"
                     value={newMatch.location_details || ''}
                     onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                    required
                   />
                 </div>               
                 <div className="border rounded-lg p-4">
@@ -5076,6 +5252,26 @@ const App = () => {
                   )}
                 </div>
                 
+                {/* Anécdota del partido */}
+                <label className="block text-sm font-medium text-gray-700 mt-4">
+                  Anécdota (opcional, máx. 50 palabras)
+                </label>
+                <textarea
+                  value={editedMatchData.anecdote ?? ''}
+                  onChange={(e) => {
+                    const text = e.target.value ?? '';
+                    const words = text.trim().split(/\s+/).filter(Boolean);
+                    const limited = words.slice(0, 50).join(' ');
+                    setEditedMatchData((prev) => ({ ...prev, anecdote: limited }));
+                  }}
+                  rows={3}
+                  placeholder="Ej: Partido muy parejo, se definió 7-6 en el segundo set..."
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
+                </p>
+                
                 <button
                   type="submit"
                   className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
@@ -5106,49 +5302,47 @@ const App = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Jugador 2</label>
                   {/* Jugador 2 (Opcional) */}
                   <select
                     value={newMatch.player2}
                     onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
-                    <option value="">Anyone can join (Pending)</option>
+                    <option value="">Cualquiera se puede unir (Pendiente)</option>
                     {players.filter(p => p.id !== newMatch.player1).map(player => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
                 </div>
-                
+                {/* Lugar (opcional) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Lugar</label>
                   <select
                     value={newMatch.location}
                     onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    required
                   >
-                    <option value="">Select a location</option>
+                    <option value="">(Opcional) Selecciona un lugar</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.name}>{loc.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Nombre del Club / Cancha</label>
                   <input
                     type="text"
                     placeholder="E.g., Parliament Hill, Court 3"
                     value={newMatch.location_details || ''}
                     onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                    required // Hacemos que el nombre del lugar sea requerido
                   />
                 </div>
-
+                {/* Fecha (obligatoria) */}   
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
                     <input
                       type="date"
                       lang="es-CL"
@@ -5159,14 +5353,14 @@ const App = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
+                    {/* Horario (opcional) */}
+                    <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Horario</label>
                     <select
                       value={newMatch.time}
                       onChange={(e) => setNewMatch({...newMatch, time: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                      required
                     >
-                      <option value="">Select a time</option>
+                      <option value="">Selecciona una hora</option>
                       {timeOptions.map(time => (
                         <option key={time} value={time}>{time}</option>
                       ))}
