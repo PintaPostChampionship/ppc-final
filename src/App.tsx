@@ -3308,15 +3308,24 @@ const App = () => {
           <textarea
             value={editedMatchData.anecdote ?? ''}
             onChange={(e) => {
-              const text = e.target.value ?? '';
-              const words = text.trim().split(/\s+/).filter(Boolean);
-              const limited = words.slice(0, 50).join(' ');
-              setEditedMatchData((prev) => ({ ...prev, anecdote: limited }));
+              let text = e.target.value ?? '';
+
+              // Separar por espacios, contar palabras, pero sin eliminar los espacios del texto
+              const words = text.trim().split(/\s+/);
+              if (words.length > 50) {
+                // Cortar al número 50, pero manteniendo el resto del texto con espacios normales
+                text = words.slice(0, 50).join(' ');
+              }
+
+              setEditedMatchData(prev => ({ ...prev, anecdote: text }));
             }}
             rows={3}
-            placeholder="Ej: Partido muy parejo, se definió 7-6 en el segundo set..."
+            placeholder="Ej: se definió en tiebreak del 2° set..."
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
           />
+          <p className="text-xs text-gray-500 mt-1">
+            {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
+          </p>
           <p className="text-xs text-gray-500 mt-1">
             {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
           </p>
@@ -4554,6 +4563,16 @@ const App = () => {
                                 </button>
                               </div>
                             )}
+                            {(match as any).anecdote && (
+                              <details className="mt-2 text-left">
+                                <summary className="text-blue-600 hover:underline cursor-pointer select-none">
+                                  Ver anécdota
+                                </summary>
+                                <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+                                  {(match as any).anecdote}
+                                </p>
+                              </details>
+                            )}
                           </div>
                         );
                       })}
@@ -5295,15 +5314,24 @@ const App = () => {
                 <textarea
                   value={editedMatchData.anecdote ?? ''}
                   onChange={(e) => {
-                    const text = e.target.value ?? '';
-                    const words = text.trim().split(/\s+/).filter(Boolean);
-                    const limited = words.slice(0, 50).join(' ');
-                    setEditedMatchData((prev) => ({ ...prev, anecdote: limited }));
+                    let text = e.target.value ?? '';
+
+                    // Separar por espacios, contar palabras, pero sin eliminar los espacios del texto
+                    const words = text.trim().split(/\s+/);
+                    if (words.length > 50) {
+                      // Cortar al número 50, pero manteniendo el resto del texto con espacios normales
+                      text = words.slice(0, 50).join(' ');
+                    }
+
+                    setEditedMatchData(prev => ({ ...prev, anecdote: text }));
                   }}
                   rows={3}
-                  placeholder="Ej: Partido muy parejo, se definió 7-6 en el segundo set..."
+                  placeholder="Ej: se definió en tiebreak del 2° set..."
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
+                </p>
                 <p className="text-xs text-gray-500 mt-1">
                   {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
                 </p>
