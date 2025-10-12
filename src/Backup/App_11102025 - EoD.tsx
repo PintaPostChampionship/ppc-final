@@ -1144,14 +1144,8 @@ const App = () => {
   }
 
   // ---- NOMBRES: visual solo ----
-  const toTitleCase = (str: string) => {
-    if (!str) return '';
-
-    return str
-      .normalize('NFC') // <-- AÑADE ESTA LÍNEA
-      .toLowerCase()
-      .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
-  };
+  const toTitleCase = (s: string) =>
+    (s ?? '').toLowerCase().replace(/([\p{L}\p{M}])([\p{L}\p{M}]*)/gu, (_, a, b) => a.toUpperCase() + b);
 
   const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
 
@@ -2148,13 +2142,6 @@ const App = () => {
 
     setLoading(true);
     try {
-
-      const dup = await alreadyPlayedBetween(tournamentId, divisionId, player1Id, player2Id);
-      if (dup) {
-        alert('Ya existe un resultado entre estos dos jugadores en esta división/torneo. Edita el existente en lugar de crear uno nuevo.');
-        setLoading(false);
-        return;
-      }
       // 7) Insert del match
       const { data: matchData, error: matchError } = await supabase
         .from('matches')
@@ -2270,29 +2257,6 @@ const App = () => {
       setLoading(false);
     }
   };
-
-
-  async function alreadyPlayedBetween(
-    tournamentId: string,
-    divisionId: string,
-    p1: string,
-    p2: string
-  ): Promise<boolean> {
-    const { data, error } = await supabase
-      .from('matches')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq('division_id', divisionId)
-      .eq('status', 'played')
-      .or(
-        `and(home_player_id.eq.${p1},away_player_id.eq.${p2}),and(home_player_id.eq.${p2},away_player_id.eq.${p1})`
-      )
-      .limit(1);
-
-    if (error) throw error;
-    return (data?.length ?? 0) > 0;
-  }
-
 
   const addSet = () => {
     setNewMatch(prev => ({
@@ -4813,7 +4777,7 @@ const App = () => {
                                     {formatDate(m.date)} {m.time ? `· ${m.time.slice(0,5)}` : ''}
                                   </td>
                                   <td className="px-4 py-2">
-                                    {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
+                                    {nameById(m.home_player_id)} vs {nameById(m.away_player_id) || '(busca rival)'}
                                   </td>
                                   <td className="px-4 py-2">{loc}</td>
                                   <td className="px-4 py-2">
