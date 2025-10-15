@@ -3989,22 +3989,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="grid place-items-center w-11 h-11 rounded-xl bg-gray-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center justify-center"
                   aria-label="Copiar"
                   title="Copiar"
                 >
-                  <img src="/copy.svg" alt="" className="w-6 h-6" />
+                  <img src="/copy.svg" alt="" className="w-5 h-5" />
                 </button>
                 {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="grid place-items-center w-11 h-11 rounded-xl bg-green-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center justify-center"
                   aria-label="Compartir por WhatsApp"
                   title="Compartir por WhatsApp"
                 >
                   {/* Logo WhatsApp */}
-                  <img src="/whatsapp.svg" alt="" className="w-6 h-6" /> 
+                  <img src="/whatsapp.svg" alt="" className="w-5 h-5" /> 
                 </button>
               </div>
             </div>
@@ -5577,22 +5577,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="grid place-items-center w-11 h-11 rounded-xl bg-gray-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center justify-center"
                   aria-label="Copiar"
                   title="Copiar"
                 >
-                  <img src="/copy.svg" alt="" className="w-6 h-6" />
+                  <img src="/copy.svg" alt="" className="w-5 h-5" />
                 </button>
                 {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="grid place-items-center w-11 h-11 rounded-xl bg-green-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center justify-center"
                   aria-label="Compartir por WhatsApp"
                   title="Compartir por WhatsApp"
                 >
                   {/* Logo WhatsApp */}
-                  <img src="/whatsapp.svg" alt="" className="w-6 h-6" /> 
+                  <img src="/whatsapp.svg" alt="" className="w-5 h-5" />
                 </button>
               </div>
             </div>
