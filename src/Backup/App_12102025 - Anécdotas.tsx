@@ -1123,7 +1123,7 @@ const App = () => {
       // 4) refrescar todo
       await fetchData(session?.user?.id);
       setEditingMatch(null);
-      alert('Resultado guardado.');
+      alert('Resultado guardado. El partido pasó a "Jugado".');
     } catch (err: any) {
       alert(`Error al guardar el resultado: ${err.message || err}`);
     } finally {
@@ -1911,10 +1911,8 @@ const App = () => {
   }
 
   function sharePendingMatch(m: Match) {
-    let msg = formatPendingShare(m);
-    const siteUrl = window.location.origin;
-    msg = `${msg}\n\n${siteUrl}`;
-    safeShareOnWhatsApp(msg);
+    const msg = formatPendingShare(m);
+    safeShareOnWhatsApp(msg); // reutiliza tu helper existente
   }
 
   async function joinPendingMatch(m: Match) {
@@ -1969,41 +1967,19 @@ const App = () => {
               <div className="text-sm text-gray-700 whitespace-pre-line">{n.text}</div>
               {m && (
                 <div className="mt-3 flex gap-2">
-                  {/* Condición: no creador, mismo torneo/división, sigue pending y sin away */}
-                  {(() => {
-                    if (!m || !currentUser) return null;
-                    const sameDivision = registrations.some(r =>
-                      r.profile_id === currentUser.id &&
-                      r.tournament_id === m.tournament_id &&
-                      r.division_id === m.division_id
-                    );
-                    const canJoin = sameDivision &&
-                                    currentUser.id !== m.created_by &&
-                                    m.status === 'pending' &&
-                                    !m.away_player_id;
-                    return canJoin ? (
-                      <button
-                        onClick={() => joinPendingMatch(m)}
-                        className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
-                      >
-                        Unirme
-                      </button>
-                    ) : null;
-                  })()}
-
-                  {/* Compartir (icono WhatsApp solo) */}
+                  <button
+                    onClick={() => joinPendingMatch(m)}
+                    className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
+                  >
+                    Unirme
+                  </button>
                   <button
                     onClick={() => sharePendingMatch(m)}
-                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700 flex items-center justify-center"
-                    aria-label="Compartir por WhatsApp"
-                    title="Compartir por WhatsApp"
+                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700"
                   >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                      <path d="M20.52 3.48A11.9 11.9 0 0012.06 0C5.5 0 .18 5.32.18 11.89c0 2.09.55 4.12 1.6 5.93L0 24l6.36-1.72a11.77 11.77 0 005.7 1.47h.01c6.56 0 11.88-5.32 11.88-11.89 0-3.17-1.24-6.15-3.43-8.38zM12.06 21.3h-.01a9.4 9.4 0 01-4.8-1.32l-.34-.2-3.77 1.02 1.01-3.67-.22-.38a9.42 9.42 0 01-1.44-5.05c0-5.2 4.23-9.42 9.45-9.42 2.52 0 4.88.98 6.66 2.75a9.34 9.34 0 012.77 6.65c0 5.2-4.23 9.42-9.45 9.42zm5.49-7.06c-.3-.15-1.78-.88-2.06-.98-.28-.1-.48-.15-.68.15-.2.29-.78.96-1.18.93-1.18-.17-.3-.02-.46.13-.61.14-.14.29-.35.43-.52.14-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.68-1.63-.93-2.23-.25-.59-.5-.52-.69-.53-.18-.01-.38-.02-.58-.02-.2 0-.53.07-.8.39-.28.3-1.05 1.02-1.05 2.48 0 1.46 1.07 2.87 1.23 3.08.15.2 2.14 3.21 5.18 4.5.73.31 1.29.49 1.73.63.73.23 1.39.2 1.92.11.59-.09 1.78-.72 2.03-1.41.25-.69.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35z"/>
-                    </svg>
+                    Compartir
                   </button>
                 </div>
-
               )}
             </div>
           );
@@ -3289,7 +3265,7 @@ const App = () => {
                 onClick={addEditedSet}
                 className="text-sm px-3 py-2 rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
               >
-                + Agregar set
+                + Add set
               </button>
             </div>
           </div>
@@ -3349,6 +3325,9 @@ const App = () => {
           />
           <p className="text-xs text-gray-500 mt-1">
             {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
           </p>
 
           {/* Acciones */}
@@ -3989,22 +3968,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center justify-center"
-                  aria-label="Copiar"
-                  title="Copiar"
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center"
                 >
-                  <img src="/copy.svg" alt="" className="w-5 h-5" />
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 11h8" />
+                  </svg>
+                  Copy Table
                 </button>
-                {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center justify-center"
-                  aria-label="Compartir por WhatsApp"
-                  title="Compartir por WhatsApp"
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center"
                 >
-                  {/* Logo WhatsApp */}
-                  <img src="/whatsapp.svg" alt="" className="w-5 h-5" /> 
+                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
+                  </svg>
+                  Compartir en WhatsApp
                 </button>
               </div>
             </div>
@@ -5023,7 +5002,7 @@ const App = () => {
                   m.division_id === selectedDivision.id &&
                   m.status === 'pending'
                 ).length === 0 && (
-                  <div className="text-gray-600 text-sm">No quedan pendientes.</div>
+                  <div className="text-gray-600 text-sm">No hay pendientes ahora.</div>
                 )}
               </div>
             </div>
@@ -5251,7 +5230,7 @@ const App = () => {
                         onClick={addSet}
                         className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
                       >
-                        Agregar Set
+                        Add Set
                       </button>
                     </div>
                   </div>
@@ -5353,6 +5332,9 @@ const App = () => {
                 <p className="text-xs text-gray-500 mt-1">
                   {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
                 </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
+                </p>
                 
                 <button
                   type="submit"
@@ -5376,7 +5358,7 @@ const App = () => {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     required
                   >
-                    <option value="">Selecciona Jugador</option>
+                    <option value="">Select Player</option>
                     {players.map(player => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
@@ -5384,14 +5366,14 @@ const App = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Jugador 2</label>
                   {/* Jugador 2 (Opcional) */}
                   <select
                     value={newMatch.player2}
                     onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
-                    <option value="">Jugador Pendiente</option>
+                    <option value="">Cualquiera se puede unir (Pendiente)</option>
                     {players.filter(p => p.id !== newMatch.player1).map(player => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
@@ -5405,14 +5387,14 @@ const App = () => {
                     onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
-                    <option value="">(Opcional) Zona</option>
+                    <option value="">(Opcional) Selecciona un lugar</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.name}>{loc.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Club / Cancha (Opcional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Nombre del Club / Cancha</label>
                   <input
                     type="text"
                     placeholder="E.g., Parliament Hill, Court 3"
@@ -5436,13 +5418,13 @@ const App = () => {
                   </div>
                   <div>
                     {/* Horario (opcional) */}
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Horario (Opcional)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Horario</label>
                     <select
                       value={newMatch.time}
                       onChange={(e) => setNewMatch({...newMatch, time: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                     >
-                      <option value="">Elegir</option>
+                      <option value="">Selecciona una hora</option>
                       {timeOptions.map(time => (
                         <option key={time} value={time}>{time}</option>
                       ))}
@@ -5454,7 +5436,7 @@ const App = () => {
                   type="submit"
                   className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
                 >
-                  Programar
+                  Programar Partido
                 </button>
               </form>
             </div>
@@ -5577,22 +5559,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="bg-gray-600 text-white px-3 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center justify-center"
-                  aria-label="Copiar"
-                  title="Copiar"
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center"
                 >
-                  <img src="/copy.svg" alt="" className="w-5 h-5" />
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 11h8" />
+                  </svg>
+                  Copy Table
                 </button>
-                {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center justify-center"
-                  aria-label="Compartir por WhatsApp"
-                  title="Compartir por WhatsApp"
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center"
                 >
-                  {/* Logo WhatsApp */}
-                  <img src="/whatsapp.svg" alt="" className="w-5 h-5" />
+                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
+                  </svg>
+                  Compartir en WhatsApp
                 </button>
               </div>
             </div>
