@@ -7,7 +7,7 @@ import type { Session, User } from '@supabase/supabase-js';
 const PENDING_KEY = 'pending_onboarding';
 
 // Comprime availability a forma compacta: { Mon:["M","A"], Tue:["E"] ... }
-function compressAvailability(av?: Record<string, string[]> | undefined) {
+function compressAvailability(av?: Record<string, string[]> | undefined): Record<string, string[]> | null {
   if (!av) return null;
   const map: Record<string, string[]> = {};
   Object.entries(av).forEach(([day, slots]) => {
@@ -16,7 +16,7 @@ function compressAvailability(av?: Record<string, string[]> | undefined) {
       map[day] = slots.map(s => s.startsWith('Morning') ? 'M' : s.startsWith('Afternoon') ? 'A' : 'E');
     }
   });
-  return map;
+  return Object.keys(map).length ? map : null;
 }
 
 function decompressAvailability(comp?: Record<string, string[]> | null) {
@@ -113,6 +113,7 @@ interface Profile {
   email?: string;
   avatar_url?: string;
   postal_code?: string;
+  nickname?: string | null;
 }
 
 interface Location {
@@ -259,6 +260,16 @@ async function resizeImage(dataUrl: string, maxWidth: number = 400): Promise<str
   });
 }
 
+function avatarSrc(p?: Profile | null) {
+  if (!p) return '/default-avatar.png';
+  const direct = (p.avatar_url || '').trim();
+  if (direct) return direct;
+
+  // Fallback: URL pública del bucket "avatars/<id>.jpg"
+  const { data } = supabase.storage.from('avatars').getPublicUrl(`${p.id}.jpg`);
+  return data?.publicUrl || '/default-avatar.png';
+}
+
 const App = () => {
   // Initialize all state with proper types
   const [session, setSession] = useState<any>(null);
@@ -327,7 +338,8 @@ const App = () => {
     profilePic: '',
     locations: [] as string[],
     availability: {} as Record<string, string[]>,
-    postal_code: '',  
+    postal_code: '',
+    nickname: '', 
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -339,7 +351,29 @@ const App = () => {
     sets: [{ score1: '', score2: '' }],
     hadPint: false,
     pintsCount: 1,
+    anecdote : '',
   });
+  const [editingSchedule, setEditingSchedule] = useState<Match | null>(null);
+  const [editedSchedule, setEditedSchedule] = useState<{
+    date: string;
+    time: string;
+    locationName: string;      // nombre legible de locations[]
+    location_details: string;  // texto libre
+  }>({ date: '', time: '', locationName: '', location_details: '' });
+
+  type SocialEvent = {
+    id: string;
+    title: string;
+    description: string | null;
+    date: string;        // YYYY-MM-DD
+    time: string | null; // "19:30", etc.
+    venue: string | null;
+    image_url: string | null;
+    rsvp_url: string | null;
+    is_active: boolean;
+  };
+  const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
+
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -447,16 +481,45 @@ const App = () => {
   }
 
   function dateKey(val: string | Date) {
-    const d = parseDateSafe(val);
-    return d.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const dt = typeof val === 'string' ? parseYMDLocal(val) : val;
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`; // YYYY-MM-DD (local)
   }
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return '';
-    // La 'T' indica que la fecha puede tener hora, la cortamos para evitar problemas de zona horaria
-    const date = new Date(dateString.split('T')[0] + 'T00:00:00');
-    return date.toLocaleDateString('es-CL', { timeZone: 'UTC' });
-  };  
+  const formatDate = (dateString: string) => formatDateLocal(dateString);
+
+  function hasActiveMatchWith(
+    meId: string,
+    oppId: string,
+    tournamentId: string,
+    divisionId: string
+  ) {
+    return matches.some(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      (m.status === 'scheduled' || m.status === 'pending') &&
+      (
+        (m.home_player_id === meId && m.away_player_id === oppId) ||
+        (m.home_player_id === oppId && m.away_player_id === meId)
+      )
+    );
+  }
+
+
+  // Trata 'YYYY-MM-DD' como fecha LOCAL (sin zona)
+  function parseYMDLocal(iso?: string | null) {
+    if (!iso) return new Date(NaN);
+    const [y, m, d] = String(iso).split('-').map(n => parseInt(n, 10));
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+
+  function formatDateLocal(iso?: string | null) {
+    const dt = parseYMDLocal(iso);
+    return dt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
  
   function setsLineFor(m: Match, perspectiveId?: string) {
     const sets = matchSets
@@ -479,6 +542,91 @@ const App = () => {
       text: isHome ? 'Local' : 'Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
     };
+  }
+
+  function wins(s: any) { return Number(s.wins || s.w || 0); }
+  function setRatio(s: any) {
+    const sw = Number(s.sets_won || s.sw || 0);
+    const sl = Number(s.sets_lost || s.sl || 0);
+    const tot = sw + sl;
+    return tot === 0 ? 0 : sw / tot;
+  }
+  function gameRatio(s: any) {
+    const gw = Number(s.games_won || s.gw || 0);
+    const gl = Number(s.games_lost || s.gl || 0);
+    const tot = gw + gl;
+    return tot === 0 ? 0 : gw / tot;
+  }
+
+  // ganador del partido usando sets del propio match (set1_home/away, set2_..., set3_...)
+  function winnerOfMatchBySets(m: any) {
+    const sets: Array<[number|null, number|null]> = [
+      [m.set1_home ?? null, m.set1_away ?? null],
+      [m.set2_home ?? null, m.set2_away ?? null],
+      [m.set3_home ?? null, m.set3_away ?? null],
+    ];
+    let home = 0, away = 0;
+    for (const [h, a] of sets) {
+      if (h == null || a == null) continue;
+      if (h > a) home++; else if (a > h) away++;
+    }
+    if (home > away) return m.home_player_id;
+    if (away > home) return m.away_player_id;
+    return null;
+  }
+
+  // head-to-head sólo cuando es un empate de 2 jugadores
+  function headToHead(aId: string, bId: string, divisionId: string, tournamentId: string, matches: any[]) {
+    const pair = matches.filter(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      ((m.home_player_id === aId && m.away_player_id === bId) ||
+      (m.home_player_id === bId && m.away_player_id === aId))
+    );
+    let aWins = 0, bWins = 0;
+    for (const m of pair) {
+      const w = winnerOfMatchBySets(m);
+      if (w === aId) aWins++;
+      else if (w === bId) bWins++;
+    }
+    if (aWins > bWins) return -1; // a por delante
+    if (bWins > aWins) return 1;  // b por delante
+    return 0; // sin desempate
+  }
+
+  function compareStandings(a: any, b: any, divisionId: string, tournamentId: string, matches: any[]) {
+    // 1) victorias
+    const aw = wins(a), bw = wins(b);
+    if (bw !== aw) return bw - aw;
+
+    // 2) h2h si el empate es de 2 (este comparator se llama par a par)
+    const h2h = headToHead(a.profile_id, b.profile_id, divisionId, tournamentId, matches);
+    if (h2h !== 0) return h2h;
+
+    // 3) ratio de sets
+    const asr = setRatio(a), bsr = setRatio(b);
+    if (bsr !== asr) return (bsr - asr) * 1000000; // evita flotantes casi iguales
+
+    // 4) ratio de games
+    const agr = gameRatio(a), bgr = gameRatio(b);
+    if (bgr !== agr) return (bgr - agr) * 1000000;
+
+    // 5) fallback: puntos y nombre
+    const ap = Number(a.points || 0), bp = Number(b.points || 0);
+    if (bp !== ap) return bp - ap;
+    const an = (a.player_name || a.name || '').toString();
+    const bn = (b.player_name || b.name || '').toString();
+    return an.localeCompare(bn, 'es');
+  }
+
+
+  function canEditSchedule(m: Match) {
+    if (!currentUser) return false;
+    const isPlayer = currentUser.id === m.home_player_id || currentUser.id === (m.away_player_id ?? '');
+    const isCreator = currentUser.id === m.created_by;
+    const isAdmin = (currentUser as any).role === 'admin';
+    const editable = m.status === 'pending' || m.status === 'scheduled';
+    return editable && (isPlayer || isCreator || isAdmin);
   }
 
   // Determinístico: para un par (a,b) siempre decide quién es Home en esa división/torneo
@@ -530,10 +678,31 @@ const App = () => {
       }
     } catch (err: any) {
       setError(`Failed to load data: ${err.message}`);
+      // después de setMatchSets(...) y availability, dentro de fetchData
+      const todayYMD = (() => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        return `${y}-${m}-${dd}`; // LOCAL YYYY-MM-DD
+      })();
+      
+      const { data: ev, error: evErr } = await supabase
+        .from('social_events')
+        .select('*')
+        .eq('is_active', true) //cambiar a false para ocultar
+        .gte('date', todayYMD)
+        .order('date', { ascending: true })
+        .limit(5);
+      if (!evErr) setSocialEvents(ev || []);
     } finally {
       setLoading(false);
     }
   };
+//RSVP: usa rsvp_url con un Google Form o similar. Solo pega el link al crear el evento.
+//Ubicación: si quieres mostrar mapa o link, añade venue_url o maps_url (opcional) a la tabla.
+//En Supabase: Sube la imagen (ideal: events/2025-11-social.jpg). Recomendado: ancho 1200px, JPG/WebP, <300KB.
+//cont.. Copia el Public URL y guárdalo en social_events.image_url.
 
   // EFECTO 1: Maneja la sesión y el "onboarding"
   useEffect(() => {
@@ -924,31 +1093,168 @@ const App = () => {
     if (!editingMatch) return;
     setLoading(true);
     try {
-      const setsForRPC = editedMatchData.sets
+      // 1) preparar sets para el RPC
+      const setsForRPC = (editedMatchData?.sets || [])
         .filter(s => s.score1 !== '' && s.score2 !== '')
         .map((s, idx) => ({
           set_number: idx + 1,
-          p1_games: parseInt(s.score1),
-          p2_games: parseInt(s.score2),
+          p1_games: parseInt(s.score1, 10),
+          p2_games: parseInt(s.score2, 10),
         }));
 
-      const { error } = await supabase.rpc('update_match_result', {
+      // 2) ejecutar tu RPC existente
+      const { error: rpcErr } = await supabase.rpc('update_match_result', {
         p_match_id: editingMatch.id,
         p_sets: setsForRPC,
         p_had_pint: editedMatchData.hadPint,
         p_pints_count: editedMatchData.pintsCount,
       });
-      if (error) throw error;
-      
-      alert('Match result updated successfully!');
+      if (rpcErr) throw rpcErr;
+
+      // 3) forzar status = 'played' (clave para que salga de "agendados" y cuente puntos)
+      const { error: upErr } = await supabase
+        .from('matches')
+        .update({ status: 'played', anecdote: editedMatchData.anecdote?.trim() || null, })
+        .eq('id', editingMatch.id)
+        .select('id')
+        .single();
+      if (upErr) throw upErr;
+
+      // 4) refrescar todo
+      await fetchData(session?.user?.id);
       setEditingMatch(null);
-      await fetchData(session?.user.id);
+      alert('Resultado guardado.');
     } catch (err: any) {
-      alert(`Error updating match: ${err.message}`);
+      alert(`Error al guardar el resultado: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
   };
+
+
+  function openEditSchedule(m: Match) {
+    const locName = locations.find(l => l.id === m.location_id)?.name || '';
+    setEditingSchedule(m);
+    setEditedSchedule({
+      date: (m.date || '').slice(0, 10),
+      time: (m.time || '').slice(0, 5),
+      locationName: locName,
+      location_details: m.location_details || ''
+    });
+  }
+
+  // ---- NOMBRES: visual solo ----
+  const toTitleCase = (str: string) => {
+    if (!str) return '';
+
+    return str
+      .normalize('NFC') // <-- AÑADE ESTA LÍNEA
+      .toLowerCase()
+      .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
+  };
+
+  const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
+
+  const displayNameForShare = (id: string) => {
+    const p = profiles.find(pp => pp.id === id);
+    const base = (p?.nickname && p.nickname.trim().length > 0) ? p.nickname! : (p?.name || '');
+    return uiName(base);
+  };
+
+  async function handleSaveEditedSchedule() {
+    if (!editingSchedule) return;
+
+    const hour = parseInt((editedSchedule.time || '00:00').split(':')[0], 10);
+    let timeBlock: 'Morning' | 'Afternoon' | 'Evening' | null = null;
+    if (hour >= 7 && hour < 12) timeBlock = 'Morning';
+    else if (hour >= 12 && hour < 18) timeBlock = 'Afternoon';
+    else if (hour >= 18 && hour < 23) timeBlock = 'Evening';
+
+    const newLocId = locations.find(l => l.name === editedSchedule.locationName)?.id ?? null;
+
+    try {
+      setLoading(true);
+
+      // Control básico de concurrencia: solo si sigue pending/scheduled
+      const { error, data } = await supabase
+        .from('matches')
+        .update({
+          date: editedSchedule.date,
+          time: editedSchedule.time,
+          time_block: timeBlock,
+          location_id: newLocId,
+          location_details: editedSchedule.location_details
+        })
+        .eq('id', editingSchedule.id)
+        .in('status', ['pending', 'scheduled'])
+        .select('id'); // para saber si afectó fila
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        alert('No se pudo guardar. Es posible que el partido haya cambiado de estado o fue editado por otra persona. Refresca la página.');
+        return;
+      }
+
+      alert('Partido actualizado.');
+      setEditingSchedule(null);
+      await fetchData(session?.user.id);
+    } catch (err: any) {
+      alert(`Error guardando cambios: ${err.message}`);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteScheduledMatch(mArg?: Match) {
+    // Si viene como parámetro, borramos ese; si no, usamos el que está abierto en el modal
+    const m = mArg ?? editingSchedule;
+    if (!m) return;
+
+    // mismos permisos que para editar
+    if (!canEditSchedule(m)) {
+      alert('Solo el creador, alguno de los jugadores o un admin pueden borrar este partido.');
+      return;
+    }
+
+    const ok = window.confirm('¿Estás seguro que quieres eliminar este partido?');
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      // 1) Borrar sets (por si existen)
+      const { error: setsErr } = await supabase
+        .from('match_sets')
+        .delete()
+        .eq('match_id', m.id);
+      if (setsErr) throw setsErr;
+
+      // 2) Borrar match solo si sigue pendiente/programado
+      const { data, error: matchErr } = await supabase
+        .from('matches')
+        .delete()
+        .eq('id', m.id)
+        .in('status', ['pending', 'scheduled'])
+        .select('id');
+
+      if (matchErr) throw matchErr;
+      if (!data || data.length === 0) {
+        alert('No se pudo borrar: es posible que el partido ya haya cambiado de estado. Refresca la página.');
+        return;
+      }
+
+      // 3) Cerrar modal si estaba abierto y refrescar
+      if (editingSchedule?.id === m.id) setEditingSchedule(null);
+      await fetchData(session?.user.id);
+      alert('Partido borrado correctamente.');
+    } catch (err: any) {
+      alert(`No se pudo borrar el partido: ${err.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
 
   const handleDeleteMatch = async () => {
     if (!editingMatch) return;
@@ -1296,12 +1602,11 @@ const App = () => {
         if (rpcErr) {
           // Fallback directo a tabla intermedia si el RPC no existe en tu BBDD
           const { error: directErr } = await supabase
-            .from('tournament_players')
+            .from('tournament_registrations')
             .upsert({
               tournament_id: onboarding.tournament_id,
               division_id: onboarding.division_id,
               profile_id: userId,
-              status: 'active',
             }, { onConflict: 'tournament_id,profile_id' });
           if (directErr) throw directErr;
         }
@@ -1409,6 +1714,7 @@ const App = () => {
         availability: availabilityMap,
         locations: locationNames,
         postal_code: currentUser.postal_code ?? '',
+        nickname: currentUser.nickname ?? '',
       });
 
       setPendingAvatarFile(null);
@@ -1469,6 +1775,7 @@ const App = () => {
           name: editUser.name,
           avatar_url: newAvatarUrl ?? currentUser?.avatar_url ?? undefined,
           postal_code: editUser.postal_code || null,
+          nickname: editUser.nickname?.trim() || null,
         }).eq('id', uid);
       if (upErr) throw upErr;
 
@@ -1545,9 +1852,8 @@ const App = () => {
 
     // 2. Si el mensaje es corto, intentamos usar la API moderna para compartir.
     const shareData = {
-      title: 'PPC Scheduled Matches', // <-- AÑADIDO: Título para el diálogo de compartir.
-      text: message,
-      url: window.location.href // <-- AÑADIDO: URL de la página actual.
+      title: 'PPC Scheduled Matches',
+      text: message
     };
 
     if (typeof navigator !== 'undefined' && navigator.share) {
@@ -1605,8 +1911,10 @@ const App = () => {
   }
 
   function sharePendingMatch(m: Match) {
-    const msg = formatPendingShare(m);
-    safeShareOnWhatsApp(msg); // reutiliza tu helper existente
+    let msg = formatPendingShare(m);
+    const siteUrl = window.location.origin;
+    msg = `${msg}\n\n${siteUrl}`;
+    safeShareOnWhatsApp(msg);
   }
 
   async function joinPendingMatch(m: Match) {
@@ -1614,6 +1922,13 @@ const App = () => {
 
     setLoading(true);
     try {
+      // Evita unirse si ya existe un partido scheduled o played entre el creador y el que se quiere unir
+      const hostId = m.home_player_id || m.created_by;  // en pendings, away es null
+      if (currentUser && hasAnyMatchBetween(m.tournament_id, m.division_id, currentUser.id, hostId, ['scheduled','played'])) {
+        alert('No puedes unirte: ya existe un partido agendado o jugado entre ustedes.');
+        setLoading(false);
+        return;
+      }
       // Concurrencia segura: solo se agenda si sigue "pending" y sin away_player
       const { data, error } = await supabase
         .from('matches')
@@ -1661,19 +1976,41 @@ const App = () => {
               <div className="text-sm text-gray-700 whitespace-pre-line">{n.text}</div>
               {m && (
                 <div className="mt-3 flex gap-2">
-                  <button
-                    onClick={() => joinPendingMatch(m)}
-                    className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
-                  >
-                    Unirme
-                  </button>
+                  {/* Condición: no creador, mismo torneo/división, sigue pending y sin away */}
+                  {(() => {
+                    if (!m || !currentUser) return null;
+                    const sameDivision = registrations.some(r =>
+                      r.profile_id === currentUser.id &&
+                      r.tournament_id === m.tournament_id &&
+                      r.division_id === m.division_id
+                    );
+                    const canJoin = sameDivision &&
+                                    currentUser.id !== m.created_by &&
+                                    m.status === 'pending' &&
+                                    !m.away_player_id;
+                    return canJoin ? (
+                      <button
+                        onClick={() => joinPendingMatch(m)}
+                        className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
+                      >
+                        Unirme
+                      </button>
+                    ) : null;
+                  })()}
+
+                  {/* Compartir (icono WhatsApp solo) */}
                   <button
                     onClick={() => sharePendingMatch(m)}
-                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700"
+                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700 flex items-center justify-center"
+                    aria-label="Compartir por WhatsApp"
+                    title="Compartir por WhatsApp"
                   >
-                    Compartir
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M20.52 3.48A11.9 11.9 0 0012.06 0C5.5 0 .18 5.32.18 11.89c0 2.09.55 4.12 1.6 5.93L0 24l6.36-1.72a11.77 11.77 0 005.7 1.47h.01c6.56 0 11.88-5.32 11.88-11.89 0-3.17-1.24-6.15-3.43-8.38zM12.06 21.3h-.01a9.4 9.4 0 01-4.8-1.32l-.34-.2-3.77 1.02 1.01-3.67-.22-.38a9.42 9.42 0 01-1.44-5.05c0-5.2 4.23-9.42 9.45-9.42 2.52 0 4.88.98 6.66 2.75a9.34 9.34 0 012.77 6.65c0 5.2-4.23 9.42-9.45 9.42zm5.49-7.06c-.3-.15-1.78-.88-2.06-.98-.28-.1-.48-.15-.68.15-.2.29-.78.96-1.18.93-1.18-.17-.3-.02-.46.13-.61.14-.14.29-.35.43-.52.14-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.68-1.63-.93-2.23-.25-.59-.5-.52-.69-.53-.18-.01-.38-.02-.58-.02-.2 0-.53.07-.8.39-.28.3-1.05 1.02-1.05 2.48 0 1.46 1.07 2.87 1.23 3.08.15.2 2.14 3.21 5.18 4.5.73.31 1.29.49 1.73.63.73.23 1.39.2 1.92.11.59-.09 1.78-.72 2.03-1.41.25-.69.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35z"/>
+                    </svg>
                   </button>
                 </div>
+
               )}
             </div>
           );
@@ -1714,7 +2051,7 @@ const App = () => {
           m.status === 'scheduled' &&
           isTodayOrFuture(m.date)
         )
-        .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
 
     if (all.length === 0) return alert('No scheduled matches to share');
 
@@ -1729,8 +2066,8 @@ const App = () => {
     Object.keys(grouped).sort().forEach(date => {
       msg += `*${tituloFechaEs(date)}*\n`;
       grouped[date].forEach(m => {
-        const p1 = profiles.find(p => p.id === m.home_player_id)?.name || '';
-        const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
+        const p1 = displayNameForShare(m.home_player_id);
+        const p2 = displayNameForShare(m.away_player_id ?? '');
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         // MENSAJE SIMPLIFICADO
@@ -1738,8 +2075,10 @@ const App = () => {
       });
       msg += '\n';
     });
-    
-    safeShareOnWhatsApp(msg.trim());
+    const siteUrl = window.location.origin; // o tu dominio fijo
+    msg = msg.trimEnd() + `\n\n${siteUrl}`;
+
+    safeShareOnWhatsApp(msg);
   };
 
   const copyTableToClipboard = () => {
@@ -1750,7 +2089,7 @@ const App = () => {
           m.status === 'scheduled' &&
           isTodayOrFuture(m.date)
         )
-        .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
 
     if (allScheduled.length === 0) return alert('No hay partidos programados para copiar');
 
@@ -1766,8 +2105,8 @@ const App = () => {
     Object.keys(grouped).sort().forEach(date => {
       message += `*${tituloFechaEs(date)}*\n`;
       grouped[date].forEach(m => {
-        const p1 = profiles.find(p => p.id === m.home_player_id)?.name || '';
-        const p2 = profiles.find(p => p.id === m.away_player_id)?.name || '';
+        const p1 = displayNameForShare(m.home_player_id);
+        const p2 = displayNameForShare(m.away_player_id!);
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         // MENSAJE SIMPLIFICADO
@@ -1840,6 +2179,13 @@ const App = () => {
 
     setLoading(true);
     try {
+
+      const dup = await alreadyPlayedBetween(tournamentId, divisionId, player1Id, player2Id);
+      if (dup) {
+        alert('Ya existe un resultado entre estos dos jugadores en esta división/torneo. Edita el existente en lugar de crear uno nuevo.');
+        setLoading(false);
+        return;
+      }
       // 7) Insert del match
       const { data: matchData, error: matchError } = await supabase
         .from('matches')
@@ -1909,7 +2255,7 @@ const App = () => {
   const handleScheduleMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMatch.player1 || !newMatch.location_details || !newMatch.date || !newMatch.time) {
+    if (!newMatch.player1 || !newMatch.date) {
       return alert('Please fill all required fields.');
     }
 
@@ -1934,10 +2280,10 @@ const App = () => {
         tournament_id: selectedTournament!.id,
         division_id: selectedDivision!.id,
         date: newMatch.date,
-        time: newMatch.time, // Guarda la hora manual (ej: "19:30")
+        time: newMatch.time || null, // Guarda la hora manual (ej: "19:30")
         time_block: timeBlock, // Guarda el bloque calculado (ej: "Evening")
-        location_id: locationId,
-        location_details: newMatch.location_details,
+        location_id: locationId || null,
+        location_details: newMatch.location_details || null,
         status,
         home_player_id: newMatch.player1,
         away_player_id: newMatch.player2 || null,
@@ -1955,6 +2301,61 @@ const App = () => {
       setLoading(false);
     }
   };
+
+
+  async function alreadyPlayedBetween(
+    tournamentId: string,
+    divisionId: string,
+    p1: string,
+    p2: string
+  ): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('id')
+      .eq('tournament_id', tournamentId)
+      .eq('division_id', divisionId)
+      .eq('status', 'played')
+      .or(
+        `and(home_player_id.eq.${p1},away_player_id.eq.${p2}),and(home_player_id.eq.${p2},away_player_id.eq.${p1})`
+      )
+      .limit(1);
+
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
+  }
+
+  // ¿Existe ya partido entre dos jugadores en este torneo/división con alguno de estos estados?
+  function hasAnyMatchBetween(
+    tournamentId: string,
+    divisionId: string,
+    a: string,
+    b: string,
+    statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
+  ) {
+    return matches.some(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      statuses.includes(m.status) &&
+      (
+        (m.home_player_id === a && m.away_player_id === b) ||
+        (m.home_player_id === b && m.away_player_id === a)
+      )
+    );
+  }
+
+  // Lista de rivales elegibles para "playerId" (oculta con quienes ya hay scheduled/played)
+  function eligibleOpponentsFor(
+    playerId: string,
+    divisionId: string,
+    tournamentId: string
+  ): Profile[] {
+    const players = getDivisionPlayers(divisionId, tournamentId);
+    return players.filter(p =>
+      p.id !== playerId &&
+      !hasAnyMatchBetween(tournamentId, divisionId, playerId, p.id, ['scheduled','played'])
+    );
+  }
+
 
   const addSet = () => {
     setNewMatch(prev => ({
@@ -2038,6 +2439,41 @@ const App = () => {
       playerBWins
     };
   };
+
+  function compareByRules(
+    a: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
+    b: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
+    divisionId: string,
+    tournamentId: string
+  ) {
+    // 1) Puntos
+    if (b.points !== a.points) return b.points - a.points;
+
+    // 2) Head-to-Head (si hay al menos un partido entre ellos)
+    const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
+    if (h2h && h2h.playerAWins !== h2h.playerBWins) {
+      return h2h.winner === a.profile_id ? -1 : 1;
+    }
+
+    // 3) Ratio de sets
+    const aSetsTotal = a.sets_won + a.sets_lost;
+    const bSetsTotal = b.sets_won + b.sets_lost;
+    const aSetRatio = aSetsTotal > 0 ? a.sets_won / aSetsTotal : 0;
+    const bSetRatio = bSetsTotal > 0 ? b.sets_won / bSetsTotal : 0;
+    if (bSetRatio !== aSetRatio) return bSetRatio - aSetRatio;
+
+    // 4) Ratio de games
+    const aGamesTotal = a.games_won + a.games_lost;
+    const bGamesTotal = b.games_won + b.games_lost;
+    const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
+    const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
+    if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
+
+    // 5) Nombre (estable)
+    const aName = profiles.find(p => p.id === a.profile_id)?.name || '';
+    const bName = profiles.find(p => p.id === b.profile_id)?.name || '';
+    return aName.localeCompare(bName);
+  }
 
   const getPlayerMatches = (divisionId: string, tournamentId: string, playerId: string) => {
     if (!divisionId || !tournamentId || !playerId) {
@@ -2606,7 +3042,15 @@ const App = () => {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 required
               />
+              <label className="block text-sm font-medium text-gray-700 mt-4">Preferred name (nickname)</label>
+              <input
+                value={editUser.nickname}
+                onChange={e => setEditUser(v => ({ ...v, nickname: e.target.value }))}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                placeholder="Ej: Pato, Nico, Koke..."
+              />
             </div>
+
 
             {/* Email */}
             <div>
@@ -2744,6 +3188,91 @@ const App = () => {
     );
   }
 
+  if (editingSchedule) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6">
+          <h3 className="text-2xl font-bold text-gray-800 mb-6">Editar partido programado</h3>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+              <input
+                type="date"
+                lang="es-CL"
+                value={editedSchedule.date}
+                onChange={(e) => setEditedSchedule(s => ({ ...s, date: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hora</label>
+              <select
+                value={editedSchedule.time}
+                onChange={(e) => setEditedSchedule(s => ({ ...s, time: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+              >
+                <option value="">Selecciona hora</option>
+                {timeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Location (zona)</label>
+              <select
+                value={editedSchedule.locationName}
+                onChange={(e) => setEditedSchedule(s => ({ ...s, locationName: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+              >
+                <option value="">(sin zona)</option>
+                {locations.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Lugar específico</label>
+              <input
+                type="text"
+                placeholder="Ej: Clapham Common Court 4"
+                value={editedSchedule.location_details}
+                onChange={(e) => setEditedSchedule(s => ({ ...s, location_details: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded"
+              />
+            </div>
+          </div>
+          {/* Acciones */}
+          <div className="flex items-center justify-between mt-8">
+            {/* Izquierda: borrar */}
+            <button
+              onClick={() => handleDeleteScheduledMatch()} 
+              className="px-5 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+            >
+              Borrar partido
+            </button>
+
+            {/* Derecha: cancelar / guardar */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setEditingSchedule(null)}
+                className="px-5 py-2 rounded bg-gray-200 hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveEditedSchedule}
+                className="px-5 py-2 rounded bg-green-600 text-white hover:bg-green-700"
+              >
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
   if (editingMatch) {
     // Nombres para etiquetar inputs
     const p1Name = profiles.find(p => p.id === editingMatch.home_player_id)?.name || 'Player 1';
@@ -2751,33 +3280,33 @@ const App = () => {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-8">
-          <h3 className="text-2xl font-bold text-gray-800 mb-6">Edit Match Result</h3>
+        <div className="bg-white w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl rounded-2xl shadow-2xl ring-1 ring-black/5 p-4 sm:p-6 max-h-[80vh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+          <h3 className="text-2xl sm:text-3xl font-semibold tracking-tight text-gray-900 mb-4 sm:mb-6">Edit Match Result</h3>
 
           {/* Sets con nombres + agregar/quitar */}
-          <div className="border rounded-lg p-4 space-y-4">
+          <div className="border border-gray-200 rounded-xl p-4 sm:p-5 space-y-4 bg-white/60">
             {editedMatchData.sets.map((set, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between">
+              <div key={index} className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-gray-700">Set {index + 1}</span>
                   {editedMatchData.sets.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeEditedSet(index)}
-                      className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                      className="h-9 px-3 text-xs rounded-md border border-red-200 text-red-600 bg-red-50 hover:bg-red-100"
                     >
                       Remove
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <div className="text-xs text-gray-500 mb-1">{p1Name}</div>
                     <input
                       type="number"
                       value={set.score1}
                       onChange={(e) => updateEditedSetScore(index, 'score1', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-center"
+                      className="w-full h-11 text-base px-3 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -2797,9 +3326,9 @@ const App = () => {
               <button
                 type="button"
                 onClick={addEditedSet}
-                className="text-sm px-3 py-2 rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+                className="text-sm h-11 px-4 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
               >
-                + Add set
+                + Agregar set
               </button>
             </div>
           </div>
@@ -2812,7 +3341,7 @@ const App = () => {
                 type="checkbox"
                 checked={editedMatchData.hadPint}
                 onChange={(e) => setEditedMatchData({ ...editedMatchData, hadPint: e.target.checked })}
-                className="w-4 h-4 text-green-600"
+                className="size-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
               />
               <label htmlFor="editHadPint" className="ml-2 text-sm text-gray-700">
                 ¿Se tomaron una Pinta post?
@@ -2829,18 +3358,44 @@ const App = () => {
                   onChange={(e) =>
                     setEditedMatchData({ ...editedMatchData, pintsCount: parseInt(e.target.value) || 1 })
                   }
-                  className="w-20 px-3 py-2 border border-gray-300 rounded text-center ml-2"
+                  className="w-24 h-11 text-base px-3 border border-gray-300 rounded-lg text-center ml-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
             )}
           </div>
 
+          {/* Anécdota del partido */}
+          <label className="block text-sm font-medium text-gray-700 mt-4">
+            Anécdota (opcional, máx. 50 palabras)
+          </label>
+          <textarea
+            value={editedMatchData.anecdote ?? ''}
+            onChange={(e) => {
+              let text = e.target.value ?? '';
+
+              // Separar por espacios, contar palabras, pero sin eliminar los espacios del texto
+              const words = text.trim().split(/\s+/);
+              if (words.length > 50) {
+                // Cortar al número 50, pero manteniendo el resto del texto con espacios normales
+                text = words.slice(0, 50).join(' ');
+              }
+
+              setEditedMatchData(prev => ({ ...prev, anecdote: text }));
+            }}
+            rows={3}
+            placeholder="Ej: se definió en tiebreak del 2° set..."
+            className="mt-1 block w-full min-h-[96px] text-base rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
+          </p>
+
           {/* Acciones */}
-          <div className="flex items-center justify-between mt-8">
+          <div className="mt-6 sm:mt-8 flex flex-col-reverse sm:flex-row sm:items-center gap-3 sm:gap-4">
             {/* Izquierda: borrar partido */}
             <button
               onClick={handleDeleteMatch}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700"
+              className="w-full sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700"
             >
               Borrar partido
             </button>
@@ -2849,15 +3404,15 @@ const App = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => setEditingMatch(null)}
-                className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-semibold hover:bg-gray-300"
+                className="w-full sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-gray-100 text-gray-800 font-medium hover:bg-gray-200"
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 onClick={handleSaveEditedMatch}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700"
+                className="w-full sm:ml-auto sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
               >
-                Save Changes
+                Guardar cambios
               </button>
             </div>
           </div>
@@ -2958,7 +3513,7 @@ const App = () => {
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800">{currentUser.name}</p>
+                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="text-sm text-gray-600">
                       {/* Muestra todos los torneos en los que está inscrito */}
                       {registrations
@@ -2969,21 +3524,33 @@ const App = () => {
                     </p>
                   </div>
                   <img
-                    src={currentUser.avatar_url || '/default-avatar.png'}
+                    src={avatarSrc(currentUser)}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
                     alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover"
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
                   />
                   <button
                     onClick={openEditProfile}
-                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Editar perfil"
+                    title="Editar perfil"
                   >
-                    Edit Profile
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
                   </button>
+
                   <button
                     onClick={handleLogout}
-                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
                   >
-                    Logout
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                    </svg>
                   </button>
                 </div>
               )}
@@ -3115,6 +3682,59 @@ const App = () => {
               Find Tennis Courts
             </button>
           </div>
+
+          {/* Instagram footer */}
+          <div className="mt-4 text-center text-sm text-gray-700">
+            <span className="mr-2">Para más información, visita:</span>
+            <a
+              href="https://instagram.com/pintapostchampionship"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 font-medium text-pink-600 hover:text-pink-700"
+            >
+              {/* icono simple cámara/instagram */}
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/>
+              </svg>
+              <span className="align-middle">@pintapostchampionship</span>
+            </a>
+          </div>
+
+          {socialEvents.length > 0 && (
+            <div className="mt-6 mx-auto max-w-2xl">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📣</span>
+                  <div>
+                    <div className="font-semibold text-gray-900">
+                      Próximo evento: {socialEvents[0].title}
+                    </div>
+                    <div className="text-sm text-gray-700">
+                      {tituloFechaEs(socialEvents[0].date)}
+                      {socialEvents[0].time ? ` · ${socialEvents[0].time}` : ''} 
+                      {socialEvents[0].venue ? ` · ${socialEvents[0].venue}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  {socialEvents[0].rsvp_url && (
+                    <a
+                      href={socialEvents[0].rsvp_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                    >
+                      Confirmar asistencia
+                    </a>
+                  )}
+                  {socialEvents[0].image_url && (
+                    <img src={socialEvents[0].image_url} alt="Evento" className="h-12 w-auto rounded" />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
         {renderNotifs()}
       </div>
@@ -3131,15 +3751,22 @@ const App = () => {
 
       const divisionStandings = standings.filter(
         s => s.division_id === division.id && s.tournament_id === selectedTournament.id
+      );     
+
+      // partidos jugados de ESTA división (para head-to-head)
+      const playedInThisDiv = matches.filter(
+        m => m.tournament_id === selectedTournament.id &&
+            m.division_id === division.id &&
+            m.status === 'played'
       );
 
-      // Mapeamos las estadísticas de cada jugador en la división
-      const playerStats = players.map(player => {
-        const standing = divisionStandings.find(s => s.profile_id === player.id);
-        const played = (standing?.wins || 0) + (standing?.losses || 0);
+      // Stats por jugador (incluye wins/sets/games para los desempates)
+      const playerRows = players.map(player => {
+        const s = divisionStandings.find(st => st.profile_id === player.id);
+        const played = (s?.wins || 0) + (s?.losses || 0);
         const scheduled = matches.filter(m =>
           m.division_id === division.id &&
-          (m.home_player_id === player.id || m.away_player_id === player.id) && // <-- CORREGIDO
+          (m.home_player_id === player.id || m.away_player_id === player.id) &&
           m.status === 'scheduled'
         ).length;
 
@@ -3149,25 +3776,46 @@ const App = () => {
           gamesPlayed: played,
           gamesScheduled: scheduled,
           gamesNotScheduled: totalPossibleMatches - played - scheduled,
-          pints: standing?.pints || 0,
-          points: standing?.points || 0,
+          pints: s?.pints || 0,
+          points: s?.points || 0,
+          sets_won: s?.sets_won || 0,
+          sets_lost: s?.sets_lost || 0,
+          games_won: s?.games_won || 0,
+          games_lost: s?.games_lost || 0,
         };
       });
-      
-      // Ordenamos las estadísticas para encontrar al líder y al "top pintas"
-      const sortedByPoints = [...playerStats].sort((a, b) => b.points - a.points);
-      const sortedByPints = [...playerStats].sort((a, b) => b.pints - a.pints);
+
+      const sortedForLeader = [...playerRows].sort((a, b) =>
+        compareByRules(
+          { profile_id: a.id, points: a.points, sets_won: a.sets_won, sets_lost: a.sets_lost, games_won: a.games_won, games_lost: a.games_lost },
+          { profile_id: b.id, points: b.points, sets_won: b.sets_won, sets_lost: b.sets_lost, games_won: b.games_won, games_lost: b.games_lost },
+          division.id,
+          selectedTournament.id
+        )
+      );
+
+      const sortedByPints = [...playerRows].sort((a, b) => b.pints - a.pints);
 
       return {
         division,
         players: players.length,
         gamesPlayed: matches.filter(m => m.division_id === division.id && m.status === 'played').length,
-        totalPints: playerStats.reduce((sum, p) => sum + p.pints, 0), // <-- AÑADE ESTA LÍNEA
-        leader: sortedByPoints[0] || null,
+        totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
+        leader: sortedForLeader.length ? {
+          id: sortedForLeader[0].id,
+          name: sortedForLeader[0].name,
+          gamesPlayed: sortedForLeader[0].gamesPlayed,
+          gamesScheduled: sortedForLeader[0].gamesScheduled,
+          gamesNotScheduled: sortedForLeader[0].gamesNotScheduled,
+          pints: sortedForLeader[0].pints,
+          points: sortedForLeader[0].points,
+        } : null,
         topPintsPlayer: sortedByPints[0] || null,
-        playerStats: sortedByPoints,
+        // Si quieres ver el panel “actividad” ordenado igual, deja 'sortedForLeader'; si no, usa 'playerRows'
+        playerStats: sortedForLeader,
       };
     });
+
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
@@ -3193,7 +3841,7 @@ const App = () => {
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800">{currentUser.name}</p>
+                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="text-sm text-gray-600">
                       Division: {
                         registrations
@@ -3205,21 +3853,33 @@ const App = () => {
                     </p>
                   </div>
                   <img
-                    src={currentUser.avatar_url || '/default-avatar.png'}
+                    src={avatarSrc(currentUser)}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
                     alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover"
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
                   />                  
                   <button
                     onClick={openEditProfile}
-                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200"
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Editar perfil"
+                    title="Editar perfil"
                   >
-                    Edit Profile
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
                   </button>
+
                   <button
                     onClick={handleLogout}
-                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
+                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
                   >
-                    Logout
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                    </svg>
                   </button>
                 </div>
               )}
@@ -3258,12 +3918,19 @@ const App = () => {
                 {divisionsData.map(d => (
                   <div
                     key={d.division.id}
-                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" // <-- ESTILOS AÑADIDOS
-                    onClick={() => setSelectedDivision(d.division)} // <-- LÓGICA AÑADIDA
+                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
+                    onClick={() => setSelectedDivision(d.division)} 
                   >
                     <div className="flex justify-between">
-                      <span className="font-medium text-gray-800">{d.division.name}</span>
-                      <span className="text-sm text-gray-600">Líder: {d.leader ? d.leader.name : 'N/A'}</span>
+                      <span className="font-medium text-gray-800">
+                        {d.division.name}
+                        <span className="ml-2 text-sm text-purple-700">
+                          ({Number(d.totalPints || 0)} 🍺)
+                        </span>
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -3304,22 +3971,20 @@ const App = () => {
                       <div className="text-sm text-gray-600">Pintas Máximas</div>
                     </div>
                   </div>
-
-                  {topPintsPlayer && (
-                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                      <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
-                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
-                    </div>
-                  )}
-                  
                   {leader && (
                     <div className="bg-yellow-50 p-3 rounded-lg mb-4">
                       <div className="text-sm text-yellow-800">Líder Actual</div>
                       <div className="font-semibold text-yellow-900">{leader.name}</div>
                       <div className="text-sm text-yellow-700">
-                        {standings.find(s => s.profile_id === leader.id && s.division_id === division.id)?.points || 0} puntos
+                        {leader.points} puntos
                       </div>
+                    </div>
+                  )}
+                  {topPintsPlayer && (
+                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                      <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
+                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
                     </div>
                   )}
                   
@@ -3341,7 +4006,7 @@ const App = () => {
                             ?.playerStats // .slice(0, 3) - Mostramos solo el top 3
                             .map(stats => (
                               <tr key={stats.id} className="text-sm">
-                                <td className="px-4 py-2 font-medium text-gray-900">{stats.name}</td>
+                                <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
@@ -3363,22 +4028,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-gray-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Copiar"
+                  title="Copiar"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 11h8" />
-                  </svg>
-                  Copy Table
+                  <img src="/copy.svg" alt="" className="w-6 h-6" />
                 </button>
+                {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-green-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Compartir por WhatsApp"
+                  title="Compartir por WhatsApp"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
-                  </svg>
-                  Compartir en WhatsApp
+                  {/* Logo WhatsApp */}
+                  <img src="/whatsapp.svg" alt="" className="w-6 h-6" /> 
                 </button>
               </div>
             </div>
@@ -3392,6 +4057,7 @@ const App = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -3401,7 +4067,7 @@ const App = () => {
                       match.status === 'scheduled' &&
                       isTodayOrFuture(match.date)
                     )
-                    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                    .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
                     .map(match => {
                       const player1 = profiles.find(p => p.id === match.home_player_id);
                       const player2 = profiles.find(p => p.id === match.away_player_id);
@@ -3411,18 +4077,39 @@ const App = () => {
                       return (
                         <tr key={match.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(match.date)}
+                            {formatDateLocal(match.date)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player1?.name} vs {player2?.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(player1?.name)} vs {uiName(player2?.name)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{match.time && match.time.slice(0, 5)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{division}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {/* Location */}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 align-middle">
                             {
                               [
                                 locations.find(l => l.id === match.location_id)?.name,
                                 match.location_details
                               ].filter(Boolean).join(' - ') || 'TBD'
                             }
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
+                            {canEditSchedule(match) && (
+                              <div className="space-x-2">
+                                <button
+                                  onClick={() => openEditSchedule(match)}
+                                  className="text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteScheduledMatch(match)}
+                                  className="text-red-600 hover:text-red-800 underline"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -3447,6 +4134,58 @@ const App = () => {
               Find Tennis Courts
             </button>
           </div>
+          {/* Instagram footer */}
+          <div className="mt-4 text-center text-sm text-gray-700">
+            <span className="mr-2">Para más información, visita:</span>
+            <a
+              href="https://instagram.com/pintapostchampionship"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 font-medium text-pink-600 hover:text-pink-700"
+            >
+              {/* icono simple cámara/instagram */}
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/>
+              </svg>
+              <span className="align-middle">@pintapostchampionship</span>
+            </a>
+          </div>
+          {socialEvents.length > 0 && (
+            <div className="mt-6 mx-auto max-w-2xl">
+              <div className="rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📣</span>
+                  <div>
+                    <div className="font-semibold text-gray-900">
+                      Próximo evento: {socialEvents[0].title}
+                    </div>
+                    <div className="text-sm text-gray-700">
+                      {tituloFechaEs(socialEvents[0].date)}
+                      {socialEvents[0].time ? ` · ${socialEvents[0].time}` : ''} 
+                      {socialEvents[0].venue ? ` · ${socialEvents[0].venue}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  {socialEvents[0].rsvp_url && (
+                    <a
+                      href={socialEvents[0].rsvp_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center px-3 py-1.5 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                    >
+                      Confirmar asistencia
+                    </a>
+                  )}
+                  {socialEvents[0].image_url && (
+                    <img src={socialEvents[0].image_url} alt="Evento" className="h-12 w-auto rounded" />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+
         </div>
         {renderNotifs()}
       </div>
@@ -3456,6 +4195,37 @@ const App = () => {
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
+
+  // Oculta rivales con los que ya hubo scheduled o played
+  const eligibleP2Options =
+    !newMatch.player1
+      ? players
+      : players.filter(p =>
+          p.id !== newMatch.player1 &&
+          !hasAnyMatchBetween(
+            selectedTournament.id,
+            selectedDivision.id,
+            newMatch.player1,
+            p.id,
+            ['scheduled','played']
+          )
+        );
+
+  // Si primero eliges Jugador 2, hacemos lo mismo del otro lado:
+  const eligibleP1Options =
+    !newMatch.player2
+      ? players
+      : players.filter(p =>
+          p.id !== newMatch.player2 &&
+          !hasAnyMatchBetween(
+            selectedTournament.id,
+            selectedDivision.id,
+            newMatch.player2,
+            p.id,
+            ['scheduled','played']
+          )
+        );
+
 
     // Stats solo de quienes tienen partidos (como antes)
     const divisionStats = standings
@@ -3468,6 +4238,12 @@ const App = () => {
     // Mapa rápido por id para mezclar stats con el roster completo
     const statsById = new Map(divisionStats.map(s => [s.profile_id, s]));
 
+    const playedMatchesThisDivision = matches.filter(
+      m => m.tournament_id === selectedTournament.id &&
+          m.division_id === selectedDivision.id &&
+          m.status === 'played'
+    );
+
     // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
     const rosterRows = players.map(p => {
       const s = statsById.get(p.id);
@@ -3479,21 +4255,33 @@ const App = () => {
         losses: s?.losses ?? 0,
         sets_won: s?.sets_won ?? 0,
         sets_lost: s?.sets_lost ?? 0,
+        games_won: s?.games_won ?? 0,
+        games_lost: s?.games_lost ?? 0,
         set_diff: s?.set_diff ?? 0,
         pints: s?.pints ?? 0,
       };
-    })
-    // orden principal por puntos, secundario por nombre
-    .sort((a, b) => (b.points - a.points) || a.name.localeCompare(b.name));
+    }).sort((a, b) => compareByRules(
+      a, b,
+      selectedDivision.id,
+      selectedTournament.id
+    ));
 
-    // Para compatibilidad con código más abajo
+
+    // Usaremos el comparador único: victorias → H2H → ratio sets → ratio games
+    const rosterSorted = [...rosterRows].sort((a, b) =>
+      compareStandings(a, b, selectedDivision.id, selectedTournament.id, matches)
+    );
+
     const divisionStandings = divisionStats;
-
-    // Líder y top pintas ahora salen del roster mezclado (incluye 0s)
-    const leader = rosterRows[0] ?? null;
-    const topPintsPlayer = rosterRows.reduce(
+    const divLeader = rosterRows[0] ?? null;
+    const divTopPintsPlayer = rosterRows.reduce(
       (max, r) => (max == null || r.pints > max.pints ? r : max),
       null as null | typeof rosterRows[number]
+    );
+    const leader = rosterSorted[0] ?? null;
+    const topPintsPlayer = rosterSorted.reduce(
+      (max, r) => (max == null || r.pints > max.pints ? r : max),
+      null as null | typeof rosterSorted[number]
     );
 
 
@@ -3507,10 +4295,8 @@ const App = () => {
   const scheduledMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'scheduled' &&
-    isTodayOrFuture(m.date)
+    m.status === 'scheduled'
   );
-
 
   const playedMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
@@ -3522,7 +4308,8 @@ const App = () => {
     // Player Profile View
     if (selectedPlayer) {
       const player = players.find(p => p.id === selectedPlayer.id);
-      const playerStats = divisionStandings.find(s => s.profile_id === selectedPlayer.id) || {
+      const playerStats = (rosterRows.find(r => r.profile_id === selectedPlayer.id) ?? {
+        profile_id: selectedPlayer.id,
         name: selectedPlayer.name,
         points: 0,
         wins: 0,
@@ -3530,8 +4317,8 @@ const App = () => {
         sets_won: 0,
         sets_lost: 0,
         set_diff: 0,
-        pints: 0
-      };
+        pints: 0,
+      });
       
       const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id);
       
@@ -3570,27 +4357,39 @@ const App = () => {
                 {currentUser && (
                   <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                     <div className="text-right">
-                      <p className="font-semibold text-gray-800">{currentUser.name}</p>
+                      <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                       <p className="text-sm text-gray-600">
                         Division: {selectedDivision.name}
                       </p>
                     </div>
                     <img
-                      src={currentUser.avatar_url || '/default-avatar.png'}
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
                       alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
                     />
                     <button
                       onClick={openEditProfile}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
                     >
-                      Edit Profile
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
                     </button>
+
                     <button
                       onClick={handleLogout}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
                     >
-                      Logout
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
                     </button>
                   </div>
                 )}
@@ -3607,17 +4406,13 @@ const App = () => {
                   <div className="text-center mb-6">
                     <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-green-100">
                       <img
-                        src={
-                          selectedPlayer.avatar_url
-                            || supabase.storage.from('avatars').getPublicUrl(`${selectedPlayer.id}.jpg`).data.publicUrl
-                            || ''
-                        }
+                        src={avatarSrc(selectedPlayer)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
                         alt="Profile"
                         className="w-full h-full object-cover"
                       />
-
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-800 mt-4">{selectedPlayer.name}</h2>
+                    <h2 className="text-2xl font-bold text-gray-800 mt-4">{uiName(selectedPlayer.name)}</h2>
                     <p className="text-gray-600">{selectedDivision.name} Division</p>
                   </div>
 
@@ -3752,18 +4547,23 @@ const App = () => {
                         <tr className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
-                              <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                                playerStats.points === divisionStandings[0]?.points ? 'bg-yellow-400 text-yellow-800' :
-                                playerStats.points === divisionStandings[1]?.points ? 'bg-gray-300 text-gray-800' :
-                                playerStats.points === divisionStandings[2]?.points ? 'bg-orange-300 text-orange-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {divisionStandings.findIndex(s => s.profile_id === selectedPlayer.id) + 1}
-                              </span>
+                              {(() => {
+                                const rankIndex = rosterRows.findIndex(r => r.profile_id === selectedPlayer.id);
+                                const badgeCls =
+                                  rankIndex === 0 ? 'bg-yellow-400 text-yellow-800' :
+                                  rankIndex === 1 ? 'bg-gray-300 text-gray-800' :
+                                  rankIndex === 2 ? 'bg-orange-300 text-orange-800' :
+                                  'bg-gray-100 text-gray-800';
+                                return (
+                                  <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${badgeCls}`}>
+                                    {rankIndex + 1}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                            {selectedPlayer.name}
+                            {uiName(selectedPlayer.name)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{playerStats.points}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{playerStats.wins + playerStats.losses}</td>
@@ -3801,7 +4601,7 @@ const App = () => {
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
-                                  {opponent?.name}
+                                  {uiName(opponent?.name)}
                                   {(() => {
                                     const b = homeAwayBadge(match, selectedPlayer.id);
                                     return (
@@ -3814,12 +4614,12 @@ const App = () => {
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
                               <div className="text-right">
-                                <div className="text-sm font-semibold text-blue-600">{formatDate(match.date)}</div>
+                                <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
                                 <div className="text-sm text-gray-600">{setsLineFor(match, selectedPlayer.id)}</div>
                               </div>
                             </div>
                             <div className="text-sm text-gray-600">
-                              <span className="font-medium">Location:</span>
+                              <span className="font-medium">Location: </span>
                               {/* Esta lógica prioriza el detalle y solo muestra TBD si ambos campos están vacíos */}
                               {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
                             </div>
@@ -3844,6 +4644,7 @@ const App = () => {
                                       sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
                                       hadPint: match.player1_had_pint,
                                       pintsCount: match.player1_pints || 1,
+                                      anecdote: '',
                                     });
                                     setEditingMatch(match);
                                   }}
@@ -3852,6 +4653,16 @@ const App = () => {
                                   Edit Result
                                 </button>
                               </div>
+                            )}
+                            {(match as any).anecdote && (
+                              <details className="mt-2 text-left">
+                                <summary className="text-blue-600 hover:underline cursor-pointer select-none">
+                                  Ver anécdota
+                                </summary>
+                                <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+                                  {(match as any).anecdote}
+                                </p>
+                              </details>
                             )}
                           </div>
                         );
@@ -3887,7 +4698,7 @@ const App = () => {
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
                               <div className="text-right">
-                                <div className="text-sm font-semibold text-blue-600">{formatDate(match.date)}</div>
+                                <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
                                 <div className="text-sm text-gray-600">{match.time && match.time.slice(0,5)}</div>
                               </div>
                             </div>
@@ -3925,26 +4736,46 @@ const App = () => {
                                 </h4>
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
+                              {(() => {
+                                if (hasActiveMatchWith(
+                                  selectedPlayer.id,
+                                  opponent.id,
+                                  selectedTournament.id,
+                                  selectedDivision.id
+                                )) {
+                                  return (
+                                    <button
+                                      className="bg-gray-300 text-gray-600 px-4 py-2 rounded-lg cursor-not-allowed"
+                                      disabled
+                                      title="Ya existe un partido agendado entre ustedes"
+                                    >
+                                      Ya está agendado
+                                    </button>
+                                  );
+                                }
 
-                              <button
-                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
-                                onClick={() => {
-                                  // 2) Pre-llenamos el formulario respetando quién es Home
-                                  const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
-                                  setNewMatch(prev => ({
-                                    ...prev,
-                                    player1: homeId,     // SIEMPRE el Home va en player1 (home_player_id)
-                                    player2: awayId,     // Away en player2
-                                    location: '',
-                                    location_details: '',
-                                    date: '',
-                                    time: '',
-                                  }));
-                                  setSelectedPlayer(null);
-                                }}
-                              >
-                                Schedule Match
-                              </button>
+                                return (
+                                  <button
+                                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
+                                    onClick={() => {
+                                      const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
+                                      setNewMatch(prev => ({
+                                        ...prev,
+                                        player1: homeId,
+                                        player2: awayId,
+                                        location: '',
+                                        location_details: '',
+                                        date: '',
+                                        time: '',
+                                      }));
+                                      setSelectedPlayer(null);
+                                    }}
+                                  >
+                                    Agendar Partido
+                                  </button>
+                                );
+                              })()}
+
                             </div>
                           </div>
                         );
@@ -3991,7 +4822,7 @@ const App = () => {
                         return (
                           <div key={opponent.id} className="border rounded-lg p-4">
                             <div className="flex justify-between items-center mb-4">
-                              <h3 className="font-semibold text-gray-800 text-lg">{opponent.name}</h3>
+                              <h3 className="font-semibold text-gray-800 text-lg">{uiName(opponent.name)}</h3>
                               <div className="bg-gray-50 px-3 py-1 rounded-lg">
                                 <span className="text-green-600 font-medium">{wins}W</span> - 
                                 <span className="text-red-600 font-medium">{losses}L</span>
@@ -4014,7 +4845,7 @@ const App = () => {
                                   <div key={index} className="border-t pt-2">
                                     <div className="flex justify-between">
                                       <div>
-                                        <p className="text-sm font-medium">{player1?.name} vs {player2?.name}</p>
+                                        <p className="text-sm font-medium">{uiName(player1?.name)} vs {uiName(player2?.name)}</p>
                                         <p className="text-xs text-gray-500">{formatDate(match.date)} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
                                       </div>
                                       <div className="text-right">
@@ -4043,6 +4874,108 @@ const App = () => {
                     </div>
                   )}
                 </div>
+                {/* Partidos agendados (todos) */}
+                {(() => {
+                  if (!selectedPlayer || !selectedTournament || !selectedDivision) return null;
+
+                  // Todos los partidos agendados del jugador (scheduled o pending), sin importar si son pasados o futuros
+                  const myScheduled = matches
+                    .filter(m =>
+                      m.tournament_id === selectedTournament.id &&
+                      m.division_id === selectedDivision.id &&
+                      (m.status === 'scheduled' || m.status === 'pending') &&
+                      (m.home_player_id === selectedPlayer.id || m.away_player_id === selectedPlayer.id || m.created_by === selectedPlayer.id)
+                    )
+                    .sort((a,b) =>
+                      (a.date || '').localeCompare(b.date || '') ||
+                      (a.time || '').localeCompare(b.time || '')
+                    );
+
+                  if (myScheduled.length === 0) return null;
+
+                  const nameById = (id?: string | null) =>
+                    (profiles.find(p => p.id === id)?.name || '').replace(/\b\w/g, c => c.toUpperCase());
+
+                  const divName = (id?: string | null) => divisions.find(d => d.id === id)?.name || '';
+
+                  return (
+                    <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
+                      <h2 className="text-2xl font-bold text-gray-800 mb-6">Partidos agendados</h2>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
+                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase ">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {myScheduled.map(m => {
+                              const loc =
+                                [locations.find(l => l.id === m.location_id)?.name, m.location_details]
+                                  .filter(Boolean).join(' - ') || 'Por definir';
+
+                              return (
+                                <tr key={m.id} className="hover:bg-gray-50">
+                                  <td className="px-4 py-2">
+                                    {formatDate(m.date)} {m.time ? `· ${m.time.slice(0,5)}` : ''}
+                                  </td>
+                                  <td className="px-4 py-2">
+                                    {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
+                                  </td>
+                                  <td className="px-4 py-2">{loc}</td>
+                                  <td className="px-4 py-2">
+                                    <div className="flex gap-3">
+                                      <button
+                                        onClick={() => openEditSchedule(m)}   // reutiliza tu modal existente
+                                        className="text-blue-600 hover:underline"
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        className="text-green-600 hover:underline"
+                                        onClick={() => {
+                                          const currentSets = matchSets
+                                            .filter(s => s.match_id === m.id)
+                                            .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
+                                            .map(s => ({
+                                              score1: String(s.p1_games ?? ''),
+                                              score2: String(s.p2_games ?? ''),
+                                            }));
+
+                                          setEditedMatchData({
+                                            sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
+                                            hadPint: false,
+                                            pintsCount: 1,
+                                            anecdote: '',
+                                          });
+                                          setEditingMatch(m);
+                                        }}
+                                      >
+                                        Agregar resultados
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteScheduledMatch(m)} // reutiliza tu delete/cancel existente
+                                        className="text-red-600 hover:underline"
+                                      >
+                                        Eliminar
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-4">
+                        *Aquí ves todos tus partidos agendados (pendientes o programados). Puedes editarlos o eliminarlos.
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -4073,29 +5006,40 @@ const App = () => {
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
-                    <p className="font-semibold text-gray-800">{currentUser.name}</p>
+                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="text-sm text-gray-600">
                       Division: {selectedDivision.name} 
                     </p>
                   </div>
                   
                   <img
-                    src={currentUser.avatar_url || '/default-avatar.png'}
+                    src={avatarSrc(currentUser)}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
                     alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover"
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
                   />
                   <button
                     onClick={openEditProfile}
-                    className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700"
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Editar perfil"
+                    title="Editar perfil"
                   >
-                    Edit Profile
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
                   </button>
-                  
+
                   <button
                     onClick={handleLogout}
-                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
                   >
-                    Logout
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                    </svg>
                   </button>
                 </div>
               )}
@@ -4149,7 +5093,7 @@ const App = () => {
                   m.division_id === selectedDivision.id &&
                   m.status === 'pending'
                 ).length === 0 && (
-                  <div className="text-gray-600 text-sm">No hay pendientes ahora.</div>
+                  <div className="text-gray-600 text-sm">No quedan pendientes.</div>
                 )}
               </div>
             </div>
@@ -4188,19 +5132,19 @@ const App = () => {
                   </div>
                 </div>
 
-                {leader && (
+                {divLeader && (
                   <div className="mt-6 bg-yellow-50 p-4 rounded-lg">
                     <div className="text-sm text-yellow-800">Líder Actual</div>
-                    <div className="font-semibold text-yellow-900">{leader.name}</div>
-                    <div className="text-sm text-yellow-700">{leader.points} puntos</div>
+                    <div className="font-semibold text-yellow-900">{divLeader.name}</div>
+                    <div className="text-sm text-yellow-700">{divLeader.points} puntos</div>
                   </div>
                 )}
 
-                {topPintsPlayer && (
+                {divTopPintsPlayer && (
                   <div className="mt-4 bg-blue-50 p-4 rounded-lg">
                     <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                    <div className="font-semibold text-blue-900">{topPintsPlayer.name}</div>
-                    <div className="text-sm text-blue-700">{topPintsPlayer.pints} pintas</div>
+                    <div className="font-semibold text-blue-900">{uiName(divTopPintsPlayer.name)}</div>
+                    <div className="text-sm text-blue-700">{divTopPintsPlayer.pints} pintas</div>
                   </div>
                 )}
               </div>
@@ -4232,8 +5176,8 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {rosterRows.length > 0 ? (
-                        rosterRows.map((stats, index) => {
+                      {rosterSorted.length > 0 ? (
+                        rosterSorted.map((stats, index) => {
                           const player = profiles.find(p => p.id === stats.profile_id);
                           if (!player) return null;
                           return (
@@ -4258,14 +5202,14 @@ const App = () => {
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
                                     <img 
-                                      className="h-10 w-10 rounded-full object-cover" 
+                                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
                                       src={player.avatar_url || '/default-avatar.png'} 
                                       alt="" 
                                     />
                                   </div>
                                   <div className="ml-4">
                                     <div className="text-sm font-medium text-gray-900 hover:text-green-700 cursor-pointer">
-                                      {player.name}
+                                      {uiName(player.name)}
                                     </div>
                                   </div>
                                 </div>
@@ -4320,7 +5264,7 @@ const App = () => {
                     >
                       <option value="">Select Player</option>
                       {players.map(player => (
-                        <option key={player.id} value={player.id}>{player.name}</option>
+                        <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                       ))}
                     </select>
                   </div>
@@ -4337,20 +5281,20 @@ const App = () => {
                       <option value="">Select Player</option>
                       {/* El filtro ahora compara por ID, que es más seguro y correcto */}
                       {players.filter(p => p.id !== newMatch.player1).map(player => (
-                        <option key={player.id} value={player.id}>{player.name}</option>
+                        <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                       ))}
                     </select>
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Location (General Area)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Lugar (Parte de Londres)</label>
                   <select
                     value={newMatch.location}
                     onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                     required
                   >
-                    <option value="">Select an area</option>
+                    <option value="">Selecciona una zona</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.name}>{loc.name}</option>
                     ))}
@@ -4358,13 +5302,14 @@ const App = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name (Specific)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nombre del Club/Lugar</label>
                   <input
                     type="text"
                     placeholder="E.g., Parliament Hill, Court 3"
                     value={newMatch.location_details || ''}
                     onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+                    required
                   />
                 </div>               
                 <div className="border rounded-lg p-4">
@@ -4376,7 +5321,7 @@ const App = () => {
                         onClick={addSet}
                         className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
                       >
-                        Add Set
+                        Agregar Set
                       </button>
                     </div>
                   </div>
@@ -4453,6 +5398,32 @@ const App = () => {
                   )}
                 </div>
                 
+                {/* Anécdota del partido */}
+                <label className="block text-sm font-medium text-gray-700 mt-4">
+                  Anécdota (opcional, máx. 50 palabras)
+                </label>
+                <textarea
+                  value={editedMatchData.anecdote ?? ''}
+                  onChange={(e) => {
+                    let text = e.target.value ?? '';
+
+                    // Separar por espacios, contar palabras, pero sin eliminar los espacios del texto
+                    const words = text.trim().split(/\s+/);
+                    if (words.length > 50) {
+                      // Cortar al número 50, pero manteniendo el resto del texto con espacios normales
+                      text = words.slice(0, 50).join(' ');
+                    }
+
+                    setEditedMatchData(prev => ({ ...prev, anecdote: text }));
+                  }}
+                  rows={3}
+                  placeholder="Ej: se definió en tiebreak del 2° set..."
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
+                </p>
+                
                 <button
                   type="submit"
                   className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
@@ -4471,13 +5442,13 @@ const App = () => {
                   {/* Jugador 1 */}
                   <select
                     value={newMatch.player1}
-                    onChange={(e) => setNewMatch({...newMatch, player1: e.target.value})}
+                    onChange={(e) => setNewMatch({ ...newMatch, player1: e.target.value, player2: '' })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     required
                   >
-                    <option value="">Select Player</option>
-                    {players.map(player => (
-                      <option key={player.id} value={player.id}>{player.name}</option>
+                    <option value="">Seleccionar jugador</option>
+                    {eligibleP1Options.map((player) => (
+                      <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
                 </div>
@@ -4487,47 +5458,48 @@ const App = () => {
                   {/* Jugador 2 (Opcional) */}
                   <select
                     value={newMatch.player2}
-                    onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
+                    onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                    disabled={!newMatch.player1}
                   >
-                    <option value="">Anyone can join (Pending)</option>
-                    {players.filter(p => p.id !== newMatch.player1).map(player => (
-                      <option key={player.id} value={player.id}>{player.name}</option>
+                    <option value="">Jugador Pendiente</option>
+                    {eligibleP2Options.map((player) => (
+                      <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
                 </div>
-                
+                {/* Lugar (opcional) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Lugar</label>
                   <select
                     value={newMatch.location}
                     onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    required
                   >
-                    <option value="">Select a location</option>
+                    <option value="">(Opcional) Zona</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.name}>{loc.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Court / Club Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Club / Cancha (Opcional)</label>
                   <input
                     type="text"
                     placeholder="E.g., Parliament Hill, Court 3"
                     value={newMatch.location_details || ''}
                     onChange={(e) => setNewMatch({ ...newMatch, location_details: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                    required // Hacemos que el nombre del lugar sea requerido
                   />
                 </div>
-
+                {/* Fecha (obligatoria) */}   
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
                     <input
                       type="date"
+                      lang="es-CL"
                       value={newMatch.date}
                       onChange={(e) => setNewMatch({...newMatch, date: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -4535,14 +5507,14 @@ const App = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Time</label>
+                    {/* Horario (opcional) */}
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Horario (Opcional)</label>
                     <select
                       value={newMatch.time}
                       onChange={(e) => setNewMatch({...newMatch, time: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
-                      required
                     >
-                      <option value="">Select a time</option>
+                      <option value="">Elegir</option>
                       {timeOptions.map(time => (
                         <option key={time} value={time}>{time}</option>
                       ))}
@@ -4554,7 +5526,7 @@ const App = () => {
                   type="submit"
                   className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
                 >
-                  Programar Partido
+                  Programar
                 </button>
               </form>
             </div>
@@ -4574,12 +5546,12 @@ const App = () => {
                     <div key={match.id} className="border rounded-lg p-4">
                       <div className="flex justify-between items-start mb-2">
                         <div>
-                          <h4 className="font-semibold text-gray-800">{player1?.name} is looking for a match</h4>
+                          <h4 className="font-semibold text-gray-800">{uiName(player1?.name)} is looking for a match</h4>
                           <p className="text-sm text-gray-600">{selectedDivision.name}</p>
                         </div>
                         <div className="text-right">
                           <div className="text-sm font-semibold text-blue-600">
-                            {new Date(match.date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}
+                            {formatDateLocal(match.date)}
                           </div>
                           <div className="text-sm text-gray-600">{match.time}</div>
                         </div>
@@ -4618,7 +5590,7 @@ const App = () => {
                               // refresca desde DB para que todos lo vean
                               await loadInitialData(session?.user.id);
 
-                              alert(`You have joined ${player1?.name}'s match! The match is now confirmed.`);
+                              alert(`You have joined ${uiName(player1?.name)}'s match! The match is now confirmed.`);
                             } catch (e:any) {
                               console.error('join match error', e);
                               alert(`Error joining match: ${e.message}`);
@@ -4677,22 +5649,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-gray-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Copiar"
+                  title="Copiar"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 11h8" />
-                  </svg>
-                  Copy Table
+                  <img src="/copy.svg" alt="" className="w-6 h-6" />
                 </button>
+                {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-green-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Compartir por WhatsApp"
+                  title="Compartir por WhatsApp"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
-                  </svg>
-                  Compartir en WhatsApp
+                  {/* Logo WhatsApp */}
+                  <img src="/whatsapp.svg" alt="" className="w-6 h-6" /> 
                 </button>
               </div>
             </div>
@@ -4703,17 +5675,19 @@ const App = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Players</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Division</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th> {/* <-- NUEVA */}
                     </tr>
                   </thead>
+
                   <tbody className="bg-white divide-y divide-gray-200">
                     {scheduledMatches
                       .filter(m => isTodayOrFuture(m.date))
-                      .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                      .sort((a,b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
                       .map(m => {
                         const p1 = profiles.find(p => p.id === m.home_player_id);
                         const p2 = profiles.find(p => p.id === m.away_player_id);
@@ -4724,10 +5698,29 @@ const App = () => {
                         return (
                           <tr key={m.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(m.date)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{p1?.name} vs {p2?.name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(p1?.name)} vs {uiName(p2?.name)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{selectedDivision.name}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{locationName}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              {canEditSchedule(m) && (
+                                <div className="space-x-2">
+                                  <button
+                                    onClick={() => openEditSchedule(m)}
+                                    className="text-blue-600 hover:text-blue-800 underline"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteScheduledMatch(m)}
+                                    className="text-red-600 hover:text-red-800 underline"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+
+                            </td>
                           </tr>
                         );
                       })}

@@ -1922,6 +1922,13 @@ const App = () => {
 
     setLoading(true);
     try {
+      // Evita unirse si ya existe un partido scheduled o played entre el creador y el que se quiere unir
+      const hostId = m.home_player_id || m.created_by;  // en pendings, away es null
+      if (currentUser && hasAnyMatchBetween(m.tournament_id, m.division_id, currentUser.id, hostId, ['scheduled','played'])) {
+        alert('No puedes unirte: ya existe un partido agendado o jugado entre ustedes.');
+        setLoading(false);
+        return;
+      }
       // Concurrencia segura: solo se agenda si sigue "pending" y sin away_player
       const { data, error } = await supabase
         .from('matches')
@@ -2315,6 +2322,38 @@ const App = () => {
 
     if (error) throw error;
     return (data?.length ?? 0) > 0;
+  }
+
+  // ¿Existe ya partido entre dos jugadores en este torneo/división con alguno de estos estados?
+  function hasAnyMatchBetween(
+    tournamentId: string,
+    divisionId: string,
+    a: string,
+    b: string,
+    statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
+  ) {
+    return matches.some(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      statuses.includes(m.status) &&
+      (
+        (m.home_player_id === a && m.away_player_id === b) ||
+        (m.home_player_id === b && m.away_player_id === a)
+      )
+    );
+  }
+
+  // Lista de rivales elegibles para "playerId" (oculta con quienes ya hay scheduled/played)
+  function eligibleOpponentsFor(
+    playerId: string,
+    divisionId: string,
+    tournamentId: string
+  ): Profile[] {
+    const players = getDivisionPlayers(divisionId, tournamentId);
+    return players.filter(p =>
+      p.id !== playerId &&
+      !hasAnyMatchBetween(tournamentId, divisionId, playerId, p.id, ['scheduled','played'])
+    );
   }
 
 
@@ -3241,33 +3280,33 @@ const App = () => {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-8">
-          <h3 className="text-2xl font-bold text-gray-800 mb-6">Edit Match Result</h3>
+        <div className="bg-white w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl rounded-2xl shadow-2xl ring-1 ring-black/5 p-4 sm:p-6 max-h-[80vh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+          <h3 className="text-2xl sm:text-3xl font-semibold tracking-tight text-gray-900 mb-4 sm:mb-6">Edit Match Result</h3>
 
           {/* Sets con nombres + agregar/quitar */}
-          <div className="border rounded-lg p-4 space-y-4">
+          <div className="border border-gray-200 rounded-xl p-4 sm:p-5 space-y-4 bg-white/60">
             {editedMatchData.sets.map((set, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between">
+              <div key={index} className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-gray-700">Set {index + 1}</span>
                   {editedMatchData.sets.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeEditedSet(index)}
-                      className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                      className="h-9 px-3 text-xs rounded-md border border-red-200 text-red-600 bg-red-50 hover:bg-red-100"
                     >
                       Remove
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <div className="text-xs text-gray-500 mb-1">{p1Name}</div>
                     <input
                       type="number"
                       value={set.score1}
                       onChange={(e) => updateEditedSetScore(index, 'score1', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-center"
+                      className="w-full h-11 text-base px-3 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -3287,7 +3326,7 @@ const App = () => {
               <button
                 type="button"
                 onClick={addEditedSet}
-                className="text-sm px-3 py-2 rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+                className="text-sm h-11 px-4 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
               >
                 + Agregar set
               </button>
@@ -3302,7 +3341,7 @@ const App = () => {
                 type="checkbox"
                 checked={editedMatchData.hadPint}
                 onChange={(e) => setEditedMatchData({ ...editedMatchData, hadPint: e.target.checked })}
-                className="w-4 h-4 text-green-600"
+                className="size-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
               />
               <label htmlFor="editHadPint" className="ml-2 text-sm text-gray-700">
                 ¿Se tomaron una Pinta post?
@@ -3319,7 +3358,7 @@ const App = () => {
                   onChange={(e) =>
                     setEditedMatchData({ ...editedMatchData, pintsCount: parseInt(e.target.value) || 1 })
                   }
-                  className="w-20 px-3 py-2 border border-gray-300 rounded text-center ml-2"
+                  className="w-24 h-11 text-base px-3 border border-gray-300 rounded-lg text-center ml-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
             )}
@@ -3345,18 +3384,18 @@ const App = () => {
             }}
             rows={3}
             placeholder="Ej: se definió en tiebreak del 2° set..."
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+            className="mt-1 block w-full min-h-[96px] text-base rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
           <p className="text-xs text-gray-500 mt-1">
             {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
           </p>
 
           {/* Acciones */}
-          <div className="flex items-center justify-between mt-8">
+          <div className="mt-6 sm:mt-8 flex flex-col-reverse sm:flex-row sm:items-center gap-3 sm:gap-4">
             {/* Izquierda: borrar partido */}
             <button
               onClick={handleDeleteMatch}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700"
+              className="w-full sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700"
             >
               Borrar partido
             </button>
@@ -3365,13 +3404,13 @@ const App = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => setEditingMatch(null)}
-                className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-semibold hover:bg-gray-300"
+                className="w-full sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-gray-100 text-gray-800 font-medium hover:bg-gray-200"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveEditedMatch}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700"
+                className="w-full sm:ml-auto sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
               >
                 Guardar cambios
               </button>
@@ -4156,6 +4195,37 @@ const App = () => {
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
+
+  // Oculta rivales con los que ya hubo scheduled o played
+  const eligibleP2Options =
+    !newMatch.player1
+      ? players
+      : players.filter(p =>
+          p.id !== newMatch.player1 &&
+          !hasAnyMatchBetween(
+            selectedTournament.id,
+            selectedDivision.id,
+            newMatch.player1,
+            p.id,
+            ['scheduled','played']
+          )
+        );
+
+  // Si primero eliges Jugador 2, hacemos lo mismo del otro lado:
+  const eligibleP1Options =
+    !newMatch.player2
+      ? players
+      : players.filter(p =>
+          p.id !== newMatch.player2 &&
+          !hasAnyMatchBetween(
+            selectedTournament.id,
+            selectedDivision.id,
+            newMatch.player2,
+            p.id,
+            ['scheduled','played']
+          )
+        );
+
 
     // Stats solo de quienes tienen partidos (como antes)
     const divisionStats = standings
@@ -5372,12 +5442,12 @@ const App = () => {
                   {/* Jugador 1 */}
                   <select
                     value={newMatch.player1}
-                    onChange={(e) => setNewMatch({...newMatch, player1: e.target.value})}
+                    onChange={(e) => setNewMatch({ ...newMatch, player1: e.target.value, player2: '' })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     required
                   >
-                    <option value="">Selecciona Jugador</option>
-                    {players.map(player => (
+                    <option value="">Seleccionar jugador</option>
+                    {eligibleP1Options.map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
@@ -5388,11 +5458,13 @@ const App = () => {
                   {/* Jugador 2 (Opcional) */}
                   <select
                     value={newMatch.player2}
-                    onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
+                    onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                    disabled={!newMatch.player1}
                   >
                     <option value="">Jugador Pendiente</option>
-                    {players.filter(p => p.id !== newMatch.player1).map(player => (
+                    {eligibleP2Options.map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>

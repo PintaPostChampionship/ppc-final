@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+
+/* Evita auto-zoom en inputs/textarea en iOS (Safari) */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea {
+    font-size: 16px;
+  }
+}
+
+/* Mantiene la proporción del texto en iPhone (sin cambios de escala) */
+html, body {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Opcional: mejora el desplazamiento en modales o contenedores con scroll */
+body {
+  overscroll-behavior: contain;
+}
