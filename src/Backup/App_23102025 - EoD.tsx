@@ -2187,118 +2187,44 @@ const App = () => {
         return;
       }
       // 7) Insert del match
-      /** Buscar un match SCHEDULED o PENDING entre estos jugadores (independiente del orden) */
-      const existing = matches.find(m =>
-        m.tournament_id === tournamentId &&
-        m.division_id === divisionId &&
-        (m.status === 'scheduled' || m.status === 'pending') &&
-        (
-          (m.home_player_id === player1Id && m.away_player_id === player2Id) ||
-          (m.home_player_id === player2Id && m.away_player_id === player1Id)
-        )
-      );
+      const { data: matchData, error: matchError } = await supabase
+        .from('matches')
+        .insert({
+          tournament_id: tournamentId,
+          division_id: divisionId,
+          date: newMatch.date || new Date().toISOString().split('T')[0],
+          time: newMatch.time,
+          location_id: locationId,
+          location_details: newMatch.location_details,
+          status: 'played',
+          home_player_id: player1Id,
+          away_player_id: player2Id,
+          player1_sets_won: p1SetsWon,
+          player2_sets_won: p2SetsWon,
+          player1_games_won: p1Games,
+          player2_games_won: p2Games,
+          player1_had_pint: newMatch.hadPint,
+          player2_had_pint: newMatch.hadPint,
+          player1_pints: pints,
+          player2_pints: pints,
+          created_by: session?.user.id,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      if (matchError) throw matchError;
 
-      let matchId: string;
-
-      if (existing) {
-        // Mapear los totales de sets/games a "home/away" del match existente
-        const p1IsHome = existing.home_player_id === player1Id;
-
-        const homeSetsWon = p1IsHome ? p1SetsWon : p2SetsWon;
-        const awaySetsWon = p1IsHome ? p2SetsWon : p1SetsWon;
-        const homeGames   = p1IsHome ? p1Games   : p2Games;
-        const awayGames   = p1IsHome ? p2Games   : p1Games;
-
-        // 7-a) UPDATE del match existente -> played + totales + pintas
-        const { data: updated, error: upErr } = await supabase
-          .from('matches')
-          .update({
-            status: 'played',
-            // totales orientados a home/away del match existente
-            player1_sets_won: homeSetsWon,
-            player2_sets_won: awaySetsWon,
-            player1_games_won: homeGames,
-            player2_games_won: awayGames,
-            // pintas (si marcaste hadPint lo aplicamos simétrico como venías haciendo)
-            player1_had_pint: newMatch.hadPint,
-            player2_had_pint: newMatch.hadPint,
-            player1_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
-            player2_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
-            // opcional: guarda location_details si lo llenaron aquí
-            location_id: locationId,
-            location_details: newMatch.location_details || existing.location_details,
-          })
-          .eq('id', existing.id)
-          .select()
-          .single();
-
-        if (upErr) throw upErr;
-        matchId = updated.id;
-
-        // 8-a) Borrar sets previos y reinsertar según los nuevos scores
-        const { error: delErr } = await supabase.from('match_sets').delete().eq('match_id', matchId);
-        if (delErr) throw delErr;
-
-        for (let i = 0; i < newMatch.sets.length; i++) {
-          const s = newMatch.sets[i];
-          if (s.score1 !== '' && s.score2 !== '') {
-            const a = parseInt(s.score1, 10);
-            const b = parseInt(s.score2, 10);
-            // Orientamos los juegos del set a home/away del match EXISTENTE
-            const homeGamesSet = p1IsHome ? a : b;
-            const awayGamesSet = p1IsHome ? b : a;
-
-            const { error: setErr } = await supabase.from('match_sets').insert({
-              match_id: matchId,
-              set_number: i + 1,
-              p1_games: homeGamesSet,
-              p2_games: awayGamesSet,
-            });
-            if (setErr) throw setErr;
-          }
-        }
-      } else {
-        // === Flujo original: no existe scheduled/pending -> crear match PLAYED nuevo ===
-        const { data: matchData, error: matchError } = await supabase
-          .from('matches')
-          .insert({
-            tournament_id: tournamentId,
-            division_id: divisionId,
-            date: newMatch.date || new Date().toISOString().split('T')[0],
-            time: newMatch.time,
-            location_id: locationId,
-            location_details: newMatch.location_details,
-            status: 'played',
-            home_player_id: player1Id,
-            away_player_id: player2Id,
-            player1_sets_won: p1SetsWon,
-            player2_sets_won: p2SetsWon,
-            player1_games_won: p1Games,
-            player2_games_won: p2Games,
-            player1_had_pint: newMatch.hadPint,
-            player2_had_pint: newMatch.hadPint,
-            player1_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
-            player2_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
-            created_by: session?.user.id,
-            created_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-        if (matchError) throw matchError;
-
-        matchId = matchData.id;
-
-        for (let i = 0; i < newMatch.sets.length; i++) {
-          const s = newMatch.sets[i];
-          if (s.score1 !== '' && s.score2 !== '') {
-            const { error: setErr } = await supabase.from('match_sets').insert({
-              match_id: matchId,
-              set_number: i + 1,
-              p1_games: parseInt(s.score1, 10),
-              p2_games: parseInt(s.score2, 10),
-            });
-            if (setErr) throw setErr;
-          }
+      // 8) Insert de sets
+      for (let i = 0; i < newMatch.sets.length; i++) {
+        const s = newMatch.sets[i];
+        if (s.score1 !== '' && s.score2 !== '') {
+          const { error: setErr } = await supabase.from('match_sets').insert({
+            match_id: matchData.id,
+            set_number: i + 1,
+            p1_games: parseInt(s.score1),
+            p2_games: parseInt(s.score2),
+          });
+          if (setErr) throw setErr;
         }
       }
 
@@ -4068,33 +3994,22 @@ const App = () => {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
                         </tr>
                       </thead>
                         <tbody className="divide-y divide-gray-200">
                           {divisionsData
                             .find(d => d.division.id === division.id)
-                            ?.playerStats
-                            // Orden descendente por %Av
-                            .slice() // crea copia para no mutar el array original
-                            .sort((a, b) => {
-                              const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
-                              const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
-                              const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
-                              const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
-                              return pctB - pctA; // Mayor a menor
-                            })
+                            ?.playerStats // .slice(0, 3) - Mostramos solo el top 3
                             .map(stats => (
                               <tr key={stats.id} className="text-sm">
                                 <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                                <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
                               </tr>
                           ))}
                         </tbody>
