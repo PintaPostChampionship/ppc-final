@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
+import FindTennisCourt from './components/FindTennisCourt';
 
 // ---------- Onboarding storage helpers (sessionStorage + tamaño mínimo) ----------
 const PENDING_KEY = 'pending_onboarding';
@@ -323,6 +324,7 @@ const App = () => {
     time: '' 
   });
   const [showMap, setShowMap] = useState(false);
+  const [embedLoaded, setEmbedLoaded] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [newRegistration, setNewRegistration] = useState({ tournamentId: '', divisionId: '' }); 
   const [registrationStep, setRegistrationStep] = useState(1);
@@ -3498,75 +3500,8 @@ const App = () => {
 
   if (showMap) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-        <header className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div>
-                <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                <p className="text-gray-600">Find Nearby Tennis Courts</p>
-              </div>
-              <button
-                onClick={() => setShowMap(false)}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
-              >
-                Back to Tournament
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">Nearby Tennis Courts</h2>
-            
-            <div className="mb-6">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-blue-800 mb-2">PPC Recommended Courts</h3>
-                <p className="text-blue-700 text-sm">These are the most popular courts among PPC players, featuring excellent facilities and convenient booking options.</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {getNearbyCourts().map(court => (
-                <div key={court.id} className="border rounded-lg p-6 hover:shadow-md transition duration-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{court.name}</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Distance:</span>
-                      <span className="font-medium">{court.distance}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Rating:</span>
-                      <span className="font-medium text-yellow-600">{'★'.repeat(Math.floor(court.rating)) + '☆'.repeat(5 - Math.floor(court.rating))}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Type:</span>
-                      <span className="font-medium">{court.type}</span>
-                    </div>
-                  </div>
-                  <button className="w-full mt-4 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition duration-200">
-                    Book Court
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8">
-              <div className="bg-gray-100 h-96 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <p className="mt-4 text-gray-600">Interactive map would be displayed here</p>
-                  <p className="text-sm text-gray-500">Showing tennis courts within 5 miles radius</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        {renderNotifs()}
+      <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
+        <FindTennisCourt />
       </div>
     );
   }
