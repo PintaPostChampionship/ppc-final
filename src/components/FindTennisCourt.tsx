@@ -135,7 +135,7 @@ export default function FindTennisCourt() {
             {/* 1️⃣ Tiebreak (.jpg) */}
             <AppCard
               href="https://tiebreak.io/"
-              logo="/images/tiebreak-logo.jpeg"
+              logo="/public/tiebreak-logo.jpeg"
               name="Tiebreak"
               desc="Reserva rápida en clubes y centros de Londres"
               color="from-emerald-100 to-emerald-50"
@@ -144,7 +144,7 @@ export default function FindTennisCourt() {
             {/* 2️⃣ SPIN (.png) */}
             <AppCard
               href="https://www.spinapp.co.uk/"
-              logo="/images/spin-logo.png"
+              logo="/public/spin-logo.png"
               name="SPIN"
               desc="Juega en grupos y partidos sociales cerca de ti"
               color="from-yellow-50 to-emerald-50"
@@ -153,7 +153,7 @@ export default function FindTennisCourt() {
             {/* 3️⃣ LTA Rally (.svg) */}
             <AppCard
               href="https://www.lta.org.uk/rally/"
-              logo="/images/lta-logo.svg"
+              logo="/public/lta-logo.svg"
               name="LTA Rally"
               desc="Reservas y clubes asociados (Lawn Tennis Association)"
               color="from-blue-50 to-emerald-50"
