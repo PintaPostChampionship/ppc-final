@@ -35,12 +35,23 @@ function AppCard({ href, name, desc, color, logo, icon }: AppCardProps) {
   );
 }
 
-export default function FindTennisCourt() {
+export default function FindTennisCourt({ onBack }: { onBack: () => void }) {
   const [embedLoaded, setEmbedLoaded] = React.useState(false);
 
   return (
     <div className="w-full min-h-screen bg-gradient-to-br from-emerald-50 via-white to-gray-100 py-10 px-4">
       <div className="w-full max-w-5xl mx-auto">
+
+        {/* 🔙 Botón volver */}
+        <div className="flex items-center justify-start mb-6">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-2 text-sm font-medium text-emerald-700 hover:text-emerald-900 transition"
+          >
+            ← Volver a Torneos
+          </button>
+        </div>
+
         {/* Título principal */}
         <h1 className="text-center text-3xl sm:text-4xl font-bold tracking-tight text-emerald-800 mb-10">
           Encuentra y agenda tu próxima cancha 🎾
@@ -134,7 +145,7 @@ export default function FindTennisCourt() {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {/* 1️⃣ Tiebreak (.jpg) */}
             <AppCard
-              href="https://tiebreak.io/"
+              href="https://tiebreak.app/"
               logo="/tiebreak-logo.jpeg"
               name="Tiebreak"
               desc="Reserva rápida en clubes y centros de Londres"
@@ -143,7 +154,7 @@ export default function FindTennisCourt() {
 
             {/* 2️⃣ SPIN (.png) */}
             <AppCard
-              href="https://www.spinapp.co.uk/"
+              href="https://www.spintennisapp.com/es/"
               logo="/spin-logo.png"
               name="SPIN"
               desc="Juega en grupos y partidos sociales cerca de ti"
@@ -161,7 +172,7 @@ export default function FindTennisCourt() {
 
             {/* 4️⃣ Playfinder (emoji) */}
             <AppCard
-              href="https://www.playfinder.com/london/tennis"
+              href="https://www.playfinder.com/"
               icon="📍"
               name="Playfinder"
               desc="Canchas públicas y privadas en Londres"
@@ -170,7 +181,7 @@ export default function FindTennisCourt() {
 
             {/* 5️⃣ Better (emoji) */}
             <AppCard
-              href="https://www.better.org.uk/tennis"
+              href="https://www.better.org.uk/what-we-offer/activities/tennis"
               icon="🏟️"
               name="Better (GLL)"
               desc="Centros municipales con tenis"

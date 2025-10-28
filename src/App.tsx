@@ -3500,8 +3500,8 @@ const App = () => {
 
   if (showMap) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6">
-        <FindTennisCourt />
+      <div className="p-4 sm:p-6">
+        <FindTennisCourt onBack={() => setShowMap(false)} />
       </div>
     );
   }
@@ -3571,13 +3571,15 @@ const App = () => {
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-white mb-4">Welcome to the Pinta Post Championship</h2>
             <p className="text-white text-lg opacity-90">Select a tournament to view divisions and player details</p>
-            
+          
+          <div className="text-center mt-8">
             <button
-              onClick={() => setShowJoinModal(true)}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 mt-4" // Añadimos un margen superior
+              onClick={() => setShowMap(true)}
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 text-lg"
             >
-              Join a New Tournament
+              Encontrar Cancha
             </button>
+          </div>
           </div>
 
             {/* Tournament Selection */}
@@ -3682,13 +3684,13 @@ const App = () => {
           </div>
         )}
 
-          {/* Set Match Button */}
+          {/* Find Tennis Courts */}
           <div className="text-center mt-8">
             <button
-              onClick={() => setShowMap(true)}
-              className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200 text-lg"
+              onClick={() => setShowJoinModal(true)}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 mt-4" // Añadimos un margen superior
             >
-              Find Tennis Courts
+              Join a New Tournament
             </button>
           </div>
 
@@ -4145,13 +4147,13 @@ const App = () => {
             <p className="text-gray-600 text-center">No photos available yet. Start adding matches to create highlights!</p>
           </div>
 
-          {/* Set Match Button */}
+          {/* Find Tennis Courts */}
           <div className="text-center mt-8">
             <button
               onClick={() => setShowMap(true)}
-              className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200 text-lg"
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 text-lg"
             >
-              Find Tennis Courts
+              Encontrar Cancha
             </button>
           </div>
           {/* Instagram footer */}
