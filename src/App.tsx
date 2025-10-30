@@ -1920,37 +1920,58 @@ const App = () => {
   }
 
   async function joinPendingMatch(m: Match) {
-    if (!currentUser) return alert('Please log in.');
-
-    setLoading(true);
-    try {
-      // Evita unirse si ya existe un partido scheduled o played entre el creador y el que se quiere unir
-      const hostId = m.home_player_id || m.created_by;  // en pendings, away es null
-      if (currentUser && hasAnyMatchBetween(m.tournament_id, m.division_id, currentUser.id, hostId, ['scheduled','played'])) {
-        alert('No puedes unirte: ya existe un partido agendado o jugado entre ustedes.');
-        setLoading(false);
-        return;
-      }
-      // Concurrencia segura: solo se agenda si sigue "pending" y sin away_player
-      const { data, error } = await supabase
-        .from('matches')
-        .update({ away_player_id: currentUser.id, status: 'scheduled' })
-        .eq('id', m.id)
-        .is('away_player_id', null)
-        .eq('status', 'pending')
-        .select()
-        .single();
-
-      if (error) throw error;
-      await fetchData(session?.user.id);
-      alert('¡Te uniste al partido!');
-    } catch (e: any) {
-      // Si otro se adelantó, este update no encuentra filas
-      const msg = String(e.message || e);
-      alert(msg.includes('0 rows') ? 'Lo siento, alguien ya se unió a ese partido.' : `Error: ${msg}`);
-    } finally {
-      setLoading(false);
+    if (!session?.user) {
+      alert('Debes iniciar sesión.');
+      return;
     }
+    const uid = session.user.id;
+
+    // 1) No puedes unirte a tu propio pendiente
+    if (m.home_player_id === uid) {
+      alert('No puedes unirte a tu propio aviso de partido.');
+      return;
+    }
+
+    // 2) Debe seguir pendiente y sin rival asignado
+    if (m.status !== 'pending') {
+      alert('Este partido ya no está pendiente.');
+      return;
+    }
+    if (m.away_player_id) {
+      alert('Este partido ya tiene rival asignado.');
+      return;
+    }
+
+    // 3) Bloquear si ya existe scheduled/played entre creador y quien intenta unirse
+    const yaHayPartido = hasAnyMatchBetween(
+      m.tournament_id,
+      m.division_id,
+      m.home_player_id!, // creador del pending
+      uid,
+      ['scheduled', 'played']
+    );
+    if (yaHayPartido) {
+      alert('Ya existe un partido agendado o jugado entre ustedes en esta división/torneo.');
+      return;
+    }
+
+    // 4) Asignar rival y pasar a scheduled
+    const { error } = await supabase
+      .from('matches')
+      .update({
+        away_player_id: uid,
+        status: 'scheduled',
+      })
+      .eq('id', m.id);
+
+    if (error) {
+      console.error(error);
+      alert('No fue posible unirse al partido. Intenta de nuevo.');
+      return;
+    }
+
+    await fetchData(session.user.id);
+    alert('Te uniste al partido. ¡Suerte!');
   }
 
   function pushNotif(text: string, matchId?: string) {
@@ -2134,15 +2155,15 @@ const App = () => {
       !isNaN(parseInt(s.score1)) && !isNaN(parseInt(s.score2))
     );
     if (validSets.length === 0) {
-      alert('Please enter valid scores for at least one set');
+      alert('Porfavor ingresa al menos un set con puntajes válidos.');
       return;
     }
 
     // 2) Validación jugadores (IDs)
     const player1Id = newMatch.player1;
     const player2Id = newMatch.player2;
-    if (!player1Id || !player2Id) {
-      alert('Please select both players');
+    if (!player1Id) {
+      alert('Selecciona el Jugador 1');
       return;
     }
 
@@ -2151,7 +2172,7 @@ const App = () => {
     const isValidP1 = playersInDiv.some(p => p.id === player1Id);
     const isValidP2 = playersInDiv.some(p => p.id === player2Id);
     if (!isValidP1 || !isValidP2) {
-      alert('Selected players are not in this division/tournament');
+      alert('Jugadores no se encuentran dentro de la división/torneo seleccionados.');
       return;
     }
 
@@ -2408,6 +2429,7 @@ const App = () => {
     b: string,
     statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
   ) {
+    if (!a || !b) return false;
     return matches.some(m =>
       m.tournament_id === tournamentId &&
       m.division_id === divisionId &&
@@ -4218,6 +4240,7 @@ const App = () => {
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
 
+  const PENDING_ID = '__PENDING_OPPONENT__';
   // Oculta rivales con los que ya hubo scheduled o played
   const eligibleP2Options =
     !newMatch.player1
@@ -5479,13 +5502,13 @@ const App = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
                   {/* Jugador 2 (Opcional) */}
                   <select
-                    value={newMatch.player2}
+                    value={newMatch.player2 ?? PENDING_ID}
                     onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    required
+                    //required    -- Jugador 2 es opcional
                     disabled={!newMatch.player1}
                   >
-                    <option value="">Jugador Pendiente</option>
+                    <option value={PENDING_ID}>— Rival pendiente (publicar aviso) —</option>
                     {eligibleP2Options.map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}

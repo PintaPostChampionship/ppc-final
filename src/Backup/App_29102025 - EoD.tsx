@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
+import FindTennisCourt from './components/FindTennisCourt';
 
 // ---------- Onboarding storage helpers (sessionStorage + tamaño mínimo) ----------
 const PENDING_KEY = 'pending_onboarding';
@@ -323,6 +324,7 @@ const App = () => {
     time: '' 
   });
   const [showMap, setShowMap] = useState(false);
+  const [embedLoaded, setEmbedLoaded] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [newRegistration, setNewRegistration] = useState({ tournamentId: '', divisionId: '' }); 
   const [registrationStep, setRegistrationStep] = useState(1);
@@ -1123,7 +1125,7 @@ const App = () => {
       // 4) refrescar todo
       await fetchData(session?.user?.id);
       setEditingMatch(null);
-      alert('Resultado guardado. El partido pasó a "Jugado".');
+      alert('Resultado guardado.');
     } catch (err: any) {
       alert(`Error al guardar el resultado: ${err.message || err}`);
     } finally {
@@ -1144,8 +1146,14 @@ const App = () => {
   }
 
   // ---- NOMBRES: visual solo ----
-  const toTitleCase = (s: string) =>
-    (s ?? '').toLowerCase().replace(/([\p{L}\p{M}])([\p{L}\p{M}]*)/gu, (_, a, b) => a.toUpperCase() + b);
+  const toTitleCase = (str: string) => {
+    if (!str) return '';
+
+    return str
+      .normalize('NFC') // <-- AÑADE ESTA LÍNEA
+      .toLowerCase()
+      .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
+  };
 
   const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
 
@@ -1905,8 +1913,10 @@ const App = () => {
   }
 
   function sharePendingMatch(m: Match) {
-    const msg = formatPendingShare(m);
-    safeShareOnWhatsApp(msg); // reutiliza tu helper existente
+    let msg = formatPendingShare(m);
+    const siteUrl = window.location.origin;
+    msg = `${msg}\n\n${siteUrl}`;
+    safeShareOnWhatsApp(msg);
   }
 
   async function joinPendingMatch(m: Match) {
@@ -1914,6 +1924,13 @@ const App = () => {
 
     setLoading(true);
     try {
+      // Evita unirse si ya existe un partido scheduled o played entre el creador y el que se quiere unir
+      const hostId = m.home_player_id || m.created_by;  // en pendings, away es null
+      if (currentUser && hasAnyMatchBetween(m.tournament_id, m.division_id, currentUser.id, hostId, ['scheduled','played'])) {
+        alert('No puedes unirte: ya existe un partido agendado o jugado entre ustedes.');
+        setLoading(false);
+        return;
+      }
       // Concurrencia segura: solo se agenda si sigue "pending" y sin away_player
       const { data, error } = await supabase
         .from('matches')
@@ -1961,19 +1978,41 @@ const App = () => {
               <div className="text-sm text-gray-700 whitespace-pre-line">{n.text}</div>
               {m && (
                 <div className="mt-3 flex gap-2">
-                  <button
-                    onClick={() => joinPendingMatch(m)}
-                    className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
-                  >
-                    Unirme
-                  </button>
+                  {/* Condición: no creador, mismo torneo/división, sigue pending y sin away */}
+                  {(() => {
+                    if (!m || !currentUser) return null;
+                    const sameDivision = registrations.some(r =>
+                      r.profile_id === currentUser.id &&
+                      r.tournament_id === m.tournament_id &&
+                      r.division_id === m.division_id
+                    );
+                    const canJoin = sameDivision &&
+                                    currentUser.id !== m.created_by &&
+                                    m.status === 'pending' &&
+                                    !m.away_player_id;
+                    return canJoin ? (
+                      <button
+                        onClick={() => joinPendingMatch(m)}
+                        className="flex-1 bg-green-600 text-white py-1.5 rounded-lg hover:bg-green-700"
+                      >
+                        Unirme
+                      </button>
+                    ) : null;
+                  })()}
+
+                  {/* Compartir (icono WhatsApp solo) */}
                   <button
                     onClick={() => sharePendingMatch(m)}
-                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700"
+                    className="flex-1 bg-blue-600 text-white py-1.5 rounded-lg hover:bg-blue-700 flex items-center justify-center"
+                    aria-label="Compartir por WhatsApp"
+                    title="Compartir por WhatsApp"
                   >
-                    Compartir
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M20.52 3.48A11.9 11.9 0 0012.06 0C5.5 0 .18 5.32.18 11.89c0 2.09.55 4.12 1.6 5.93L0 24l6.36-1.72a11.77 11.77 0 005.7 1.47h.01c6.56 0 11.88-5.32 11.88-11.89 0-3.17-1.24-6.15-3.43-8.38zM12.06 21.3h-.01a9.4 9.4 0 01-4.8-1.32l-.34-.2-3.77 1.02 1.01-3.67-.22-.38a9.42 9.42 0 01-1.44-5.05c0-5.2 4.23-9.42 9.45-9.42 2.52 0 4.88.98 6.66 2.75a9.34 9.34 0 012.77 6.65c0 5.2-4.23 9.42-9.45 9.42zm5.49-7.06c-.3-.15-1.78-.88-2.06-.98-.28-.1-.48-.15-.68.15-.2.29-.78.96-1.18.93-1.18-.17-.3-.02-.46.13-.61.14-.14.29-.35.43-.52.14-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.68-1.63-.93-2.23-.25-.59-.5-.52-.69-.53-.18-.01-.38-.02-.58-.02-.2 0-.53.07-.8.39-.28.3-1.05 1.02-1.05 2.48 0 1.46 1.07 2.87 1.23 3.08.15.2 2.14 3.21 5.18 4.5.73.31 1.29.49 1.73.63.73.23 1.39.2 1.92.11.59-.09 1.78-.72 2.03-1.41.25-.69.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35z"/>
+                    </svg>
                   </button>
                 </div>
+
               )}
             </div>
           );
@@ -2142,45 +2181,126 @@ const App = () => {
 
     setLoading(true);
     try {
-      // 7) Insert del match
-      const { data: matchData, error: matchError } = await supabase
-        .from('matches')
-        .insert({
-          tournament_id: tournamentId,
-          division_id: divisionId,
-          date: newMatch.date || new Date().toISOString().split('T')[0],
-          time: newMatch.time,
-          location_id: locationId,
-          location_details: newMatch.location_details,
-          status: 'played',
-          home_player_id: player1Id,
-          away_player_id: player2Id,
-          player1_sets_won: p1SetsWon,
-          player2_sets_won: p2SetsWon,
-          player1_games_won: p1Games,
-          player2_games_won: p2Games,
-          player1_had_pint: newMatch.hadPint,
-          player2_had_pint: newMatch.hadPint,
-          player1_pints: pints,
-          player2_pints: pints,
-          created_by: session?.user.id,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-      if (matchError) throw matchError;
 
-      // 8) Insert de sets
-      for (let i = 0; i < newMatch.sets.length; i++) {
-        const s = newMatch.sets[i];
-        if (s.score1 !== '' && s.score2 !== '') {
-          const { error: setErr } = await supabase.from('match_sets').insert({
-            match_id: matchData.id,
-            set_number: i + 1,
-            p1_games: parseInt(s.score1),
-            p2_games: parseInt(s.score2),
-          });
-          if (setErr) throw setErr;
+      const dup = await alreadyPlayedBetween(tournamentId, divisionId, player1Id, player2Id);
+      if (dup) {
+        alert('Ya existe un resultado entre estos dos jugadores en esta división/torneo. Edita el existente en lugar de crear uno nuevo.');
+        setLoading(false);
+        return;
+      }
+      // 7) Insert del match
+      /** Buscar un match SCHEDULED o PENDING entre estos jugadores (independiente del orden) */
+      const existing = matches.find(m =>
+        m.tournament_id === tournamentId &&
+        m.division_id === divisionId &&
+        (m.status === 'scheduled' || m.status === 'pending') &&
+        (
+          (m.home_player_id === player1Id && m.away_player_id === player2Id) ||
+          (m.home_player_id === player2Id && m.away_player_id === player1Id)
+        )
+      );
+
+      let matchId: string;
+
+      if (existing) {
+        // Mapear los totales de sets/games a "home/away" del match existente
+        const p1IsHome = existing.home_player_id === player1Id;
+
+        const homeSetsWon = p1IsHome ? p1SetsWon : p2SetsWon;
+        const awaySetsWon = p1IsHome ? p2SetsWon : p1SetsWon;
+        const homeGames   = p1IsHome ? p1Games   : p2Games;
+        const awayGames   = p1IsHome ? p2Games   : p1Games;
+
+        // 7-a) UPDATE del match existente -> played + totales + pintas
+        const { data: updated, error: upErr } = await supabase
+          .from('matches')
+          .update({
+            status: 'played',
+            // totales orientados a home/away del match existente
+            player1_sets_won: homeSetsWon,
+            player2_sets_won: awaySetsWon,
+            player1_games_won: homeGames,
+            player2_games_won: awayGames,
+            // pintas (si marcaste hadPint lo aplicamos simétrico como venías haciendo)
+            player1_had_pint: newMatch.hadPint,
+            player2_had_pint: newMatch.hadPint,
+            player1_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
+            player2_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
+            // opcional: guarda location_details si lo llenaron aquí
+            location_id: locationId,
+            location_details: newMatch.location_details || existing.location_details,
+          })
+          .eq('id', existing.id)
+          .select()
+          .single();
+
+        if (upErr) throw upErr;
+        matchId = updated.id;
+
+        // 8-a) Borrar sets previos y reinsertar según los nuevos scores
+        const { error: delErr } = await supabase.from('match_sets').delete().eq('match_id', matchId);
+        if (delErr) throw delErr;
+
+        for (let i = 0; i < newMatch.sets.length; i++) {
+          const s = newMatch.sets[i];
+          if (s.score1 !== '' && s.score2 !== '') {
+            const a = parseInt(s.score1, 10);
+            const b = parseInt(s.score2, 10);
+            // Orientamos los juegos del set a home/away del match EXISTENTE
+            const homeGamesSet = p1IsHome ? a : b;
+            const awayGamesSet = p1IsHome ? b : a;
+
+            const { error: setErr } = await supabase.from('match_sets').insert({
+              match_id: matchId,
+              set_number: i + 1,
+              p1_games: homeGamesSet,
+              p2_games: awayGamesSet,
+            });
+            if (setErr) throw setErr;
+          }
+        }
+      } else {
+        // === Flujo original: no existe scheduled/pending -> crear match PLAYED nuevo ===
+        const { data: matchData, error: matchError } = await supabase
+          .from('matches')
+          .insert({
+            tournament_id: tournamentId,
+            division_id: divisionId,
+            date: newMatch.date || new Date().toISOString().split('T')[0],
+            time: newMatch.time,
+            location_id: locationId,
+            location_details: newMatch.location_details,
+            status: 'played',
+            home_player_id: player1Id,
+            away_player_id: player2Id,
+            player1_sets_won: p1SetsWon,
+            player2_sets_won: p2SetsWon,
+            player1_games_won: p1Games,
+            player2_games_won: p2Games,
+            player1_had_pint: newMatch.hadPint,
+            player2_had_pint: newMatch.hadPint,
+            player1_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
+            player2_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
+            created_by: session?.user.id,
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+        if (matchError) throw matchError;
+
+        matchId = matchData.id;
+
+        for (let i = 0; i < newMatch.sets.length; i++) {
+          const s = newMatch.sets[i];
+          if (s.score1 !== '' && s.score2 !== '') {
+            const { error: setErr } = await supabase.from('match_sets').insert({
+              match_id: matchId,
+              set_number: i + 1,
+              p1_games: parseInt(s.score1, 10),
+              p2_games: parseInt(s.score2, 10),
+            });
+            if (setErr) throw setErr;
+          }
         }
       }
 
@@ -2257,6 +2377,61 @@ const App = () => {
       setLoading(false);
     }
   };
+
+
+  async function alreadyPlayedBetween(
+    tournamentId: string,
+    divisionId: string,
+    p1: string,
+    p2: string
+  ): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('id')
+      .eq('tournament_id', tournamentId)
+      .eq('division_id', divisionId)
+      .eq('status', 'played')
+      .or(
+        `and(home_player_id.eq.${p1},away_player_id.eq.${p2}),and(home_player_id.eq.${p2},away_player_id.eq.${p1})`
+      )
+      .limit(1);
+
+    if (error) throw error;
+    return (data?.length ?? 0) > 0;
+  }
+
+  // ¿Existe ya partido entre dos jugadores en este torneo/división con alguno de estos estados?
+  function hasAnyMatchBetween(
+    tournamentId: string,
+    divisionId: string,
+    a: string,
+    b: string,
+    statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
+  ) {
+    return matches.some(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      statuses.includes(m.status) &&
+      (
+        (m.home_player_id === a && m.away_player_id === b) ||
+        (m.home_player_id === b && m.away_player_id === a)
+      )
+    );
+  }
+
+  // Lista de rivales elegibles para "playerId" (oculta con quienes ya hay scheduled/played)
+  function eligibleOpponentsFor(
+    playerId: string,
+    divisionId: string,
+    tournamentId: string
+  ): Profile[] {
+    const players = getDivisionPlayers(divisionId, tournamentId);
+    return players.filter(p =>
+      p.id !== playerId &&
+      !hasAnyMatchBetween(tournamentId, divisionId, playerId, p.id, ['scheduled','played'])
+    );
+  }
+
 
   const addSet = () => {
     setNewMatch(prev => ({
@@ -3181,33 +3356,33 @@ const App = () => {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-        <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-8">
-          <h3 className="text-2xl font-bold text-gray-800 mb-6">Edit Match Result</h3>
+        <div className="bg-white w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl rounded-2xl shadow-2xl ring-1 ring-black/5 p-4 sm:p-6 max-h-[80vh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+          <h3 className="text-2xl sm:text-3xl font-semibold tracking-tight text-gray-900 mb-4 sm:mb-6">Edit Match Result</h3>
 
           {/* Sets con nombres + agregar/quitar */}
-          <div className="border rounded-lg p-4 space-y-4">
+          <div className="border border-gray-200 rounded-xl p-4 sm:p-5 space-y-4 bg-white/60">
             {editedMatchData.sets.map((set, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex items-center justify-between">
+              <div key={index} className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-gray-700">Set {index + 1}</span>
                   {editedMatchData.sets.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeEditedSet(index)}
-                      className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100"
+                      className="h-9 px-3 text-xs rounded-md border border-red-200 text-red-600 bg-red-50 hover:bg-red-100"
                     >
                       Remove
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
                     <div className="text-xs text-gray-500 mb-1">{p1Name}</div>
                     <input
                       type="number"
                       value={set.score1}
                       onChange={(e) => updateEditedSetScore(index, 'score1', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded text-center"
+                      className="w-full h-11 text-base px-3 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                   </div>
                   <div>
@@ -3227,9 +3402,9 @@ const App = () => {
               <button
                 type="button"
                 onClick={addEditedSet}
-                className="text-sm px-3 py-2 rounded bg-gray-100 text-gray-800 hover:bg-gray-200"
+                className="text-sm h-11 px-4 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
               >
-                + Add set
+                + Agregar set
               </button>
             </div>
           </div>
@@ -3242,7 +3417,7 @@ const App = () => {
                 type="checkbox"
                 checked={editedMatchData.hadPint}
                 onChange={(e) => setEditedMatchData({ ...editedMatchData, hadPint: e.target.checked })}
-                className="w-4 h-4 text-green-600"
+                className="size-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
               />
               <label htmlFor="editHadPint" className="ml-2 text-sm text-gray-700">
                 ¿Se tomaron una Pinta post?
@@ -3259,7 +3434,7 @@ const App = () => {
                   onChange={(e) =>
                     setEditedMatchData({ ...editedMatchData, pintsCount: parseInt(e.target.value) || 1 })
                   }
-                  className="w-20 px-3 py-2 border border-gray-300 rounded text-center ml-2"
+                  className="w-24 h-11 text-base px-3 border border-gray-300 rounded-lg text-center ml-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
             )}
@@ -3272,25 +3447,31 @@ const App = () => {
           <textarea
             value={editedMatchData.anecdote ?? ''}
             onChange={(e) => {
-              const text = e.target.value ?? '';
-              const words = text.trim().split(/\s+/).filter(Boolean);
-              const limited = words.slice(0, 50).join(' ');
-              setEditedMatchData((prev) => ({ ...prev, anecdote: limited }));
+              let text = e.target.value ?? '';
+
+              // Separar por espacios, contar palabras, pero sin eliminar los espacios del texto
+              const words = text.trim().split(/\s+/);
+              if (words.length > 50) {
+                // Cortar al número 50, pero manteniendo el resto del texto con espacios normales
+                text = words.slice(0, 50).join(' ');
+              }
+
+              setEditedMatchData(prev => ({ ...prev, anecdote: text }));
             }}
             rows={3}
-            placeholder="Ej: Partido muy parejo, se definió 7-6 en el segundo set..."
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+            placeholder="Ej: se definió en tiebreak del 2° set..."
+            className="mt-1 block w-full min-h-[96px] text-base rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
           <p className="text-xs text-gray-500 mt-1">
-            {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
+            {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
           </p>
 
           {/* Acciones */}
-          <div className="flex items-center justify-between mt-8">
+          <div className="mt-6 sm:mt-8 flex flex-col-reverse sm:flex-row sm:items-center gap-3 sm:gap-4">
             {/* Izquierda: borrar partido */}
             <button
               onClick={handleDeleteMatch}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700"
+              className="w-full sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700"
             >
               Borrar partido
             </button>
@@ -3299,13 +3480,13 @@ const App = () => {
             <div className="flex gap-3">
               <button
                 onClick={() => setEditingMatch(null)}
-                className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-semibold hover:bg-gray-300"
+                className="w-full sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-gray-100 text-gray-800 font-medium hover:bg-gray-200"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleSaveEditedMatch}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700"
+                className="w-full sm:ml-auto sm:w-auto inline-flex justify-center items-center h-11 px-5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
               >
                 Guardar cambios
               </button>
@@ -3319,75 +3500,8 @@ const App = () => {
 
   if (showMap) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-        <header className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div>
-                <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                <p className="text-gray-600">Find Nearby Tennis Courts</p>
-              </div>
-              <button
-                onClick={() => setShowMap(false)}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"
-              >
-                Back to Tournament
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">Nearby Tennis Courts</h2>
-            
-            <div className="mb-6">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="font-semibold text-blue-800 mb-2">PPC Recommended Courts</h3>
-                <p className="text-blue-700 text-sm">These are the most popular courts among PPC players, featuring excellent facilities and convenient booking options.</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {getNearbyCourts().map(court => (
-                <div key={court.id} className="border rounded-lg p-6 hover:shadow-md transition duration-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">{court.name}</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Distance:</span>
-                      <span className="font-medium">{court.distance}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Rating:</span>
-                      <span className="font-medium text-yellow-600">{'★'.repeat(Math.floor(court.rating)) + '☆'.repeat(5 - Math.floor(court.rating))}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Type:</span>
-                      <span className="font-medium">{court.type}</span>
-                    </div>
-                  </div>
-                  <button className="w-full mt-4 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition duration-200">
-                    Book Court
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8">
-              <div className="bg-gray-100 h-96 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <svg className="mx-auto h-16 w-16 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <p className="mt-4 text-gray-600">Interactive map would be displayed here</p>
-                  <p className="text-sm text-gray-500">Showing tennis courts within 5 miles radius</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        {renderNotifs()}
+      <div className="p-4 sm:p-6">
+        <FindTennisCourt onBack={() => setShowMap(false)} />
       </div>
     );
   }
@@ -3457,13 +3571,15 @@ const App = () => {
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-white mb-4">Welcome to the Pinta Post Championship</h2>
             <p className="text-white text-lg opacity-90">Select a tournament to view divisions and player details</p>
-            
+          
+          <div className="text-center mt-8">
             <button
-              onClick={() => setShowJoinModal(true)}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 mt-4" // Añadimos un margen superior
+              onClick={() => setShowMap(true)}
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 text-lg"
             >
-              Join a New Tournament
+              Encontrar Cancha
             </button>
+          </div>
           </div>
 
             {/* Tournament Selection */}
@@ -3568,13 +3684,13 @@ const App = () => {
           </div>
         )}
 
-          {/* Set Match Button */}
+          {/* Find Tennis Courts */}
           <div className="text-center mt-8">
             <button
-              onClick={() => setShowMap(true)}
-              className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200 text-lg"
+              onClick={() => setShowJoinModal(true)}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 mt-4" // Añadimos un margen superior
             >
-              Find Tennis Courts
+              Join a New Tournament
             </button>
           </div>
 
@@ -3889,22 +4005,33 @@ const App = () => {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
                           <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
+                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
                         </tr>
                       </thead>
                         <tbody className="divide-y divide-gray-200">
                           {divisionsData
                             .find(d => d.division.id === division.id)
-                            ?.playerStats // .slice(0, 3) - Mostramos solo el top 3
+                            ?.playerStats
+                            // Orden descendente por %Av
+                            .slice() // crea copia para no mutar el array original
+                            .sort((a, b) => {
+                              const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
+                              const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
+                              const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
+                              const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
+                              return pctB - pctA; // Mayor a menor
+                            })
                             .map(stats => (
                               <tr key={stats.id} className="text-sm">
                                 <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
                                 <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
+                                <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
                               </tr>
                           ))}
                         </tbody>
@@ -3923,22 +4050,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-gray-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Copiar"
+                  title="Copiar"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 11h8" />
-                  </svg>
-                  Copy Table
+                  <img src="/copy.svg" alt="" className="w-6 h-6" />
                 </button>
+                {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-green-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Compartir por WhatsApp"
+                  title="Compartir por WhatsApp"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
-                  </svg>
-                  Compartir en WhatsApp
+                  {/* Logo WhatsApp */}
+                  <img src="/whatsapp.svg" alt="" className="w-6 h-6" /> 
                 </button>
               </div>
             </div>
@@ -4020,13 +4147,13 @@ const App = () => {
             <p className="text-gray-600 text-center">No photos available yet. Start adding matches to create highlights!</p>
           </div>
 
-          {/* Set Match Button */}
+          {/* Find Tennis Courts */}
           <div className="text-center mt-8">
             <button
               onClick={() => setShowMap(true)}
-              className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200 text-lg"
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 text-lg"
             >
-              Find Tennis Courts
+              Encontrar Cancha
             </button>
           </div>
           {/* Instagram footer */}
@@ -4090,6 +4217,37 @@ const App = () => {
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
+
+  // Oculta rivales con los que ya hubo scheduled o played
+  const eligibleP2Options =
+    !newMatch.player1
+      ? players
+      : players.filter(p =>
+          p.id !== newMatch.player1 &&
+          !hasAnyMatchBetween(
+            selectedTournament.id,
+            selectedDivision.id,
+            newMatch.player1,
+            p.id,
+            ['scheduled','played']
+          )
+        );
+
+  // Si primero eliges Jugador 2, hacemos lo mismo del otro lado:
+  const eligibleP1Options =
+    !newMatch.player2
+      ? players
+      : players.filter(p =>
+          p.id !== newMatch.player2 &&
+          !hasAnyMatchBetween(
+            selectedTournament.id,
+            selectedDivision.id,
+            newMatch.player2,
+            p.id,
+            ['scheduled','played']
+          )
+        );
+
 
     // Stats solo de quienes tienen partidos (como antes)
     const divisionStats = standings
@@ -4518,6 +4676,16 @@ const App = () => {
                                 </button>
                               </div>
                             )}
+                            {(match as any).anecdote && (
+                              <details className="mt-2 text-left">
+                                <summary className="text-blue-600 hover:underline cursor-pointer select-none">
+                                  Ver anécdota
+                                </summary>
+                                <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+                                  {(match as any).anecdote}
+                                </p>
+                              </details>
+                            )}
                           </div>
                         );
                       })}
@@ -4777,7 +4945,7 @@ const App = () => {
                                     {formatDate(m.date)} {m.time ? `· ${m.time.slice(0,5)}` : ''}
                                   </td>
                                   <td className="px-4 py-2">
-                                    {nameById(m.home_player_id)} vs {nameById(m.away_player_id) || '(busca rival)'}
+                                    {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
                                   </td>
                                   <td className="px-4 py-2">{loc}</td>
                                   <td className="px-4 py-2">
@@ -4947,7 +5115,7 @@ const App = () => {
                   m.division_id === selectedDivision.id &&
                   m.status === 'pending'
                 ).length === 0 && (
-                  <div className="text-gray-600 text-sm">No hay pendientes ahora.</div>
+                  <div className="text-gray-600 text-sm">No quedan pendientes.</div>
                 )}
               </div>
             </div>
@@ -5175,7 +5343,7 @@ const App = () => {
                         onClick={addSet}
                         className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
                       >
-                        Add Set
+                        Agregar Set
                       </button>
                     </div>
                   </div>
@@ -5259,17 +5427,23 @@ const App = () => {
                 <textarea
                   value={editedMatchData.anecdote ?? ''}
                   onChange={(e) => {
-                    const text = e.target.value ?? '';
-                    const words = text.trim().split(/\s+/).filter(Boolean);
-                    const limited = words.slice(0, 50).join(' ');
-                    setEditedMatchData((prev) => ({ ...prev, anecdote: limited }));
+                    let text = e.target.value ?? '';
+
+                    // Separar por espacios, contar palabras, pero sin eliminar los espacios del texto
+                    const words = text.trim().split(/\s+/);
+                    if (words.length > 50) {
+                      // Cortar al número 50, pero manteniendo el resto del texto con espacios normales
+                      text = words.slice(0, 50).join(' ');
+                    }
+
+                    setEditedMatchData(prev => ({ ...prev, anecdote: text }));
                   }}
                   rows={3}
-                  placeholder="Ej: Partido muy parejo, se definió 7-6 en el segundo set..."
+                  placeholder="Ej: se definió en tiebreak del 2° set..."
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {(editedMatchData.anecdote?.trim().split(/\s+/).filter(Boolean).length || 0)} / 50 palabras
+                  {((editedMatchData.anecdote || '').trim().split(/\s+/).filter(Boolean).length)} / 50 palabras
                 </p>
                 
                 <button
@@ -5290,27 +5464,29 @@ const App = () => {
                   {/* Jugador 1 */}
                   <select
                     value={newMatch.player1}
-                    onChange={(e) => setNewMatch({...newMatch, player1: e.target.value})}
+                    onChange={(e) => setNewMatch({ ...newMatch, player1: e.target.value, player2: '' })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     required
                   >
-                    <option value="">Select Player</option>
-                    {players.map(player => (
+                    <option value="">Seleccionar jugador</option>
+                    {eligibleP1Options.map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Jugador 2</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
                   {/* Jugador 2 (Opcional) */}
                   <select
                     value={newMatch.player2}
-                    onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
+                    onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                    disabled={!newMatch.player1}
                   >
-                    <option value="">Cualquiera se puede unir (Pendiente)</option>
-                    {players.filter(p => p.id !== newMatch.player1).map(player => (
+                    <option value="">Jugador Pendiente</option>
+                    {eligibleP2Options.map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
@@ -5323,14 +5499,14 @@ const App = () => {
                     onChange={(e) => setNewMatch({ ...newMatch, location: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   >
-                    <option value="">(Opcional) Selecciona un lugar</option>
+                    <option value="">(Opcional) Zona</option>
                     {locations.map(loc => (
                       <option key={loc.id} value={loc.name}>{loc.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Nombre del Club / Cancha</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Club / Cancha (Opcional)</label>
                   <input
                     type="text"
                     placeholder="E.g., Parliament Hill, Court 3"
@@ -5354,13 +5530,13 @@ const App = () => {
                   </div>
                   <div>
                     {/* Horario (opcional) */}
-                    <label className="block text-sm font-medium text-gray-700 mb-2">(Opcional) Horario</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Horario (Opcional)</label>
                     <select
                       value={newMatch.time}
                       onChange={(e) => setNewMatch({...newMatch, time: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                     >
-                      <option value="">Selecciona una hora</option>
+                      <option value="">Elegir</option>
                       {timeOptions.map(time => (
                         <option key={time} value={time}>{time}</option>
                       ))}
@@ -5372,7 +5548,7 @@ const App = () => {
                   type="submit"
                   className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
                 >
-                  Programar Partido
+                  Programar
                 </button>
               </form>
             </div>
@@ -5495,22 +5671,22 @@ const App = () => {
                 <button
                   type="button"
                   onClick={copyTableToClipboard}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-gray-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Copiar"
+                  title="Copiar"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 11h8" />
-                  </svg>
-                  Copy Table
+                  <img src="/copy.svg" alt="" className="w-6 h-6" />
                 </button>
+                {/* WhatsApp (icono solo) */}
                 <button
                   type="button"
                   onClick={shareAllScheduledMatches}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200 flex items-center"
+                  className="grid place-items-center w-11 h-11 rounded-xl bg-green-600 text-white hover:bg-green-700 active:scale-[.98] transition"
+                  aria-label="Compartir por WhatsApp"
+                  title="Compartir por WhatsApp"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-1.164.94-1.164-.173-.298-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004c-1.03 0-2.018-.183-2.955-.51-.05-.018-.099-.037-.148-.055-1.753-.73-3.251-2.018-4.199-3.602l-.123-.214-8.254 3.032.133.194c3.105 4.51 8.178 7.154 13.58 7.154 2.029 0 3.979-.354 5.771-1.007 1.792-.654 3.333-1.644 4.53-2.916 1.197-1.273 1.986-2.783 2.26-4.417.275-1.635.099-3.347-.526-4.889-.625-1.543-1.665-2.843-3.022-3.796-1.357-.952-2.963-1.514-4.664-1.514h-.004c-1.724 0-3.35.573-4.68 1.601l-1.368 1.033 2.868 3.725 1.349-1.017c.557.371 1.158.654 1.802.843.644.189 1.318.284 2.02.284.571 0 1.133-.075 1.671-.223a5.04 5.04 0 001.395-.606 3.575 3.575 0 001.046-1.098c.31-.47.468-1.007.468-1.612 0-.578-.14-1.107-.42-1.596-.28-.489-.698-.891-1.255-1.207-.557-.316-1.22-.474-1.99-.474-.933 0-1.77.337-2.512 1.01l-1.368 1.207-1.37-1.17c-.604-.51-1.355-.872-2.166-1.081-.811-.209-1.65-.228-2.479-.055-1.07.228-2.03.85-2.72 1.774-.69.925-1.05 2.036-1.05 3.219 0 .67.128 1.318.385 1.914.258.595.614 1.125 1.07 1.57 1.713 1.6 4.083 2.577 6.567 2.577.41 0 .815-.027 1.213-.081.398-.055.788-.138 1.17-.248l.004-.002z"/>
-                  </svg>
-                  Compartir en WhatsApp
+                  {/* Logo WhatsApp */}
+                  <img src="/whatsapp.svg" alt="" className="w-6 h-6" /> 
                 </button>
               </div>
             </div>
