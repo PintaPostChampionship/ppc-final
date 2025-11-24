@@ -141,7 +141,6 @@ interface Tournament {
   start_date: string;
   end_date: string;
   status: string;
-  format?: 'league' | 'knockout';
 }
 
 interface Division {
@@ -181,8 +180,6 @@ interface Match {
   player2_pints: number;
   created_by: string;
   created_at: string;
-  knockout_round?: string | null;
-  bracket_position?: number | null
 }
 
 interface MatchSet {
@@ -273,545 +270,6 @@ function avatarSrc(p?: Profile | null) {
   const { data } = supabase.storage.from('avatars').getPublicUrl(`${p.id}.jpg`);
   return data?.publicUrl || '/default-avatar.png';
 }
-
-
-// ---- NOMBRES: visual solo ----
-const toTitleCase = (str: string) => {
-  if (!str) return '';
-
-  return str
-    .normalize('NFC') // <-- AÑADE ESTA LÍNEA
-    .toLowerCase()
-    .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
-};
-
-const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
-
-
-function getNextMatchPosition(round: string | null | undefined, pos: number | null | undefined) {
-  if (!round || !pos) return null;
-
-  // R16 -> QF
-  if (round === 'R16') {
-    // 1-2 -> QF1, 3-4 -> QF2, 5-6 -> QF3, 7-8 -> QF4
-    return {
-      nextRound: 'QF',
-      nextPos: Math.ceil(pos / 2),
-    };
-  }
-
-  // QF -> SF
-  if (round === 'QF') {
-    return {
-      nextRound: 'SF',
-      nextPos: Math.ceil(pos / 2), // QF1,2 -> SF1 ; QF3,4 -> SF2
-    };
-  }
-
-  // SF -> Final
-  if (round === 'SF') {
-    return {
-      nextRound: 'F',
-      nextPos: 1,
-    };
-  }
-
-  return null;
-}
-
-
-async function advanceWinner(match: Match, supabase: any) {
-  if (!match || match.status !== 'played') return;
-
-  const { home_player_id, away_player_id } = match;
-  const { player1_sets_won, player2_sets_won } = match;
-
-  if (!home_player_id || !away_player_id) return;
-
-  // Obtener ganador
-  let winner: string | null = null;
-
-  if (player1_sets_won > player2_sets_won) {
-    winner = home_player_id;
-  } else if (player2_sets_won > player1_sets_won) {
-    winner = away_player_id;
-  } else {
-    return; // empate no avanza
-  }
-
-  // Calcular el partido siguiente
-  const meta = getNextMatchPosition(match.knockout_round, match.bracket_position);
-  if (!meta) return; // Final no tiene siguiente ronda
-
-  const { nextRound, nextPos } = meta;
-
-  // Buscar si ya existe el partido de la siguiente ronda
-  const { data: existing, error: existingErr } = await supabase
-    .from('matches')
-    .select('*')
-    .eq('tournament_id', match.tournament_id)
-    .eq('knockout_round', nextRound)
-    .eq('bracket_position', nextPos)
-    .maybeSingle();
-
-  // 1) Si NO existe → crear el partido
-  if (!existing) {
-    // Fechas por defecto según la ronda
-    let defaultDate = new Date().toISOString().split('T')[0];
-
-    if (nextRound === 'QF') {
-      defaultDate = '2026-01-31';
-    } else if (nextRound === 'SF') {
-      defaultDate = '2026-02-28';
-    } else if (nextRound === 'F') {
-      defaultDate = '2026-03-31';
-    }
-
-    await supabase.from('matches').insert({
-      tournament_id: match.tournament_id,
-      division_id: match.division_id,
-      knockout_round: nextRound,
-      bracket_position: nextPos,
-      home_player_id: winner,
-      away_player_id: null,
-      date: defaultDate,      // 👈 aquí usamos la fecha por defecto
-      status: 'pending',
-    });
-
-    return;
-  }
-
-  // 2) Si existe → actualizamos home/away según disponibilidad
-  const updatePayload: any = {};
-
-  if (!existing.home_player_id) {
-    updatePayload.home_player_id = winner;
-  } else if (!existing.away_player_id) {
-    updatePayload.away_player_id = winner;
-  } else {
-    return; // Ya tiene ambos jugadores, no hacemos nada
-  }
-
-  await supabase
-    .from('matches')
-    .update(updatePayload)
-    .eq('id', existing.id);
-}
-
-
-// ---------------- Bracket (vista KO) ----------------
-
-type BracketViewProps = {
-  tournament: Tournament;
-  matches: Match[];
-  profiles: Profile[];
-  matchSets: MatchSet[]; 
-  onBack: () => void;
-  onEditSchedule: (m: Match) => void;  
-  onEditResult: (m: Match) => void;     
-  canEditSchedule: (m: Match) => boolean; 
-};
-
-type BracketPlayerSlotProps = {
-  player?: Profile | null;
-  isWinner?: boolean;
-  isLoser?: boolean;
-};
-
-function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps) {
-  const base =
-    'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all duration-150 min-w-[150px]';
-
-  let cls =
-    'bg-slate-900/70 border-slate-700 text-slate-100 shadow-sm';
-
-  if (!player) {
-    // Slot vacío (por ejemplo, rondas futuras sin jugador aún)
-    cls =
-      'bg-slate-900/40 border-dashed border-slate-600 text-slate-400 italic';
-  }
-
-  if (isWinner) {
-    cls =
-      'bg-lime-400/90 border-lime-300 text-slate-900 font-semibold shadow-md';
-  } else if (isLoser) {
-    // Perdedor más oscuro
-    cls =
-      'bg-slate-900/95 border-slate-800 text-slate-500 opacity-70';
-  }
-
-  return (
-    <div className={`${base} ${cls}`}>
-      <div className="h-7 w-7 rounded-full overflow-hidden ring-1 ring-slate-600 bg-slate-800 flex-shrink-0">
-        {player?.avatar_url ? (
-          <img
-            src={player.avatar_url}
-            alt={player.name}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="h-full w-full flex items-center justify-center text-xs">
-            🎾
-          </div>
-        )}
-      </div>
-      <div className="text-sm truncate">
-        {player ? player.name : '—'}
-      </div>
-    </div>
-  );
-}
-
-type BracketMatchCardProps = {
-  match: Match | null;
-  player1?: Profile | null;
-  player2?: Profile | null;
-  header?: string;
-  sets?: MatchSet[]; 
-};
-
-const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
-  match,
-  player1,
-  player2,
-  header,
-  sets = [],
-}) => {
-  // Detectar ganador / perdedor si el partido ya está jugado
-  let winnerId: string | null = null;
-  let loserId: string | null = null;
-
-  if (match && match.status === 'played') {
-    if (match.player1_sets_won > match.player2_sets_won) {
-      winnerId = match.home_player_id;
-      loserId = match.away_player_id ?? null;
-    } else if (match.player2_sets_won > match.player1_sets_won) {
-      winnerId = match.away_player_id ?? null;
-      loserId = match.home_player_id;
-    }
-  }
-
-  const isWinner = (p?: Profile | null) =>
-    !!winnerId && p?.id === winnerId;
-  const isLoser = (p?: Profile | null) =>
-    !!loserId && p?.id === loserId;
-
-  // Crear línea de marcador, ej: "6-4  3-6  10-8"
-  const orderedSets = [...sets].sort(
-    (a, b) => (a.set_number ?? 0) - (b.set_number ?? 0)
-  );
-  const scoreLine =
-    orderedSets.length > 0
-      ? orderedSets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ')
-      : '';
-
-  return (
-    <div className="flex flex-col gap-2">
-      {header && (
-        <div className="text-[11px] uppercase tracking-[0.2em] text-yellow-300 mb-1 text-center">
-          {header}
-        </div>
-      )}
-
-      <div className="bg-white/10 border border-white/30 rounded-xl p-3 text-white text-sm flex flex-col gap-2 min-h-[80px]">
-        <BracketPlayerSlot
-          player={player1}
-          isWinner={isWinner(player1)}
-          isLoser={isLoser(player1)}
-        />
-        <BracketPlayerSlot
-          player={player2}
-          isWinner={isWinner(player2)}
-          isLoser={isLoser(player2)}
-        />
-
-        {scoreLine && (
-          <div className="mt-1 text-[11px] text-slate-200 text-center tracking-[0.12em]">
-            {scoreLine}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-
-
-
-function BracketView({
-  tournament,
-  matches,
-  profiles,
-  matchSets,
-  onBack,
-  onEditSchedule,
-  onEditResult,
-  canEditSchedule,
-}: BracketViewProps) {
-  const getProfile = (id?: string | null) =>
-    id ? profiles.find(p => p.id === id) ?? null : null;
-
-  const byRound = (
-    round: 'R16' | 'QF' | 'SF' | 'F',
-    pos: number
-  ): Match | null =>
-    matches.find(
-      m =>
-        m.knockout_round === round &&
-        (m.bracket_position ?? 0) === pos
-    ) || null;
-
-  // Colocamos siempre los slots, aunque no haya partido en BD → se ve el “esqueleto” completo
-  const r16Left = [1, 2, 3, 4].map(pos => byRound('R16', pos));
-  const r16Right = [5, 6, 7, 8].map(pos => byRound('R16', pos));
-  const qfLeft = [1, 2].map(pos => byRound('QF', pos));
-  const qfRight = [3, 4].map(pos => byRound('QF', pos));
-  const sf = [1, 2].map(pos => byRound('SF', pos));
-  const finalMatch = byRound('F', 1);
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Botón volver a torneos */}
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-2 text-sm text-slate-200 hover:text-white"
-          >
-            <span className="text-lg">←</span>
-            <span>Volver a torneos</span>
-          </button>
-        </div>
-
-        {/* Cabecera con copa */}
-        <div className="flex flex-col items-center mb-10">
-          {/* Pon aquí la imagen que quieras (trophy o layout) en /public */}
-          <img
-            src="/ppc-cup-trophy.jpg"
-            alt="PPC Cup Trophy"
-            className="h-40 w-auto mb-3 object-contain"
-          />
-          <h1 className="text-3xl font-extrabold tracking-wide">
-            {tournament.name}
-          </h1>
-          <p className="text-sm text-slate-300 mt-1">
-            Knockout · 16 jugadores
-          </p>
-        </div>
-
-        {/* Grid del bracket */}
-        <div className="overflow-x-auto">
-          <div className="min-w-[900px] grid grid-cols-[1.1fr,1fr,1.2fr,1fr,1.1fr] gap-x-6">
-          {/* R16 izquierda */}
-          <div className="space-y-6">
-            {r16Left.map((m, idx) => (
-              <BracketMatchCard
-                key={`r16-L-${idx}`}
-                match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
-                header={idx === 0 ? 'Round of 16' : undefined}
-                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-              />
-            ))}
-          </div>
-
-          {/* QF izquierda */}
-          <div className="space-y-12 mt-12">
-            {qfLeft.map((m, idx) => (
-              <BracketMatchCard
-                key={`qf-L-${idx}`}
-                match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
-                header={idx === 0 ? 'Quarter-finals' : undefined}
-                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-              />
-            ))}
-          </div>
-
-          {/* Centro: SF + Final */}
-          <div className="flex flex-col items-center justify-between py-4">
-            <div className="space-y-12">
-              {sf.map((m, idx) => (
-                <BracketMatchCard
-                  key={`sf-${idx}`}
-                  match={m}
-                  player1={getProfile(m?.home_player_id)}
-                  player2={getProfile(m?.away_player_id)}
-                  header={idx === 0 ? 'Semi-finals' : undefined}
-                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-                />
-              ))}
-            </div>
-
-            <div className="mt-10">
-              <div className="text-center mb-2 text-[11px] uppercase tracking-[0.2em] text-yellow-300">
-                Final
-              </div>
-              <BracketMatchCard
-                match={finalMatch}
-                player1={getProfile(finalMatch?.home_player_id)}
-                player2={getProfile(finalMatch?.away_player_id)}
-                sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
-              />
-            </div>
-          </div>
-
-          {/* QF derecha */}
-          <div className="space-y-12 mt-12">
-            {qfRight.map((m, idx) => (
-              <BracketMatchCard
-                key={`qf-R-${idx}`}
-                match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
-                header={idx === 0 ? 'Quarter-finals' : undefined}
-                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-              />
-            ))}
-          </div>
-
-          {/* R16 derecha */}
-          <div className="space-y-6">
-            {r16Right.map((m, idx) => (
-              <BracketMatchCard
-                key={`r16-R-${idx}`}
-                match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
-                header={idx === 0 ? 'Round of 16' : undefined}
-                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-              />
-            ))}
-          </div>
-        </div>
-        
-        {/* Logo abajo */}
-        <div className="mt-12 flex flex-col items-center gap-4">
-          <img
-            src="/ppc-cup-logo.png"
-            alt="PPC Cup Logo"
-            className="h-42 w-auto opacity-90"
-          />
-        </div>
-        </div>
-      </div>
-
-      {/* Panel inferior: lista de partidos y acciones */}
-      <div className="px-4 pb-8 mt-6">
-        <h2 className="text-sm sm:text-base font-semibold text-white mb-3">
-          Partidos y resultados
-        </h2>
-
-        <div className="bg-slate-900/80 border border-white/10 rounded-xl overflow-hidden">
-          <table className="min-w-full text-xs sm:text-sm">
-            <thead className="bg-slate-900/90 text-slate-300 uppercase text-[11px]">
-              <tr>
-                <th className="px-3 py-2 text-left">Ronda</th>
-                <th className="px-3 py-2 text-left">Partido</th>
-                <th className="px-3 py-2 text-middle">Fecha</th>
-                <th className="px-3 py-2 text-middle">Lugar</th>
-                <th className="px-3 py-2 text-middle">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {["R16", "QF", "SF", "F"].map((round) => {
-                const roundLabel =
-                  round === "R16"
-                    ? "Round of 16"
-                    : round === "QF"
-                    ? "Quarter-finals"
-                    : round === "SF"
-                    ? "Semi-finals"
-                    : "Final";
-
-                const roundMatches = matches
-                  .filter((m) => m.knockout_round === round)
-                  .sort((a, b) => {
-                    const da = a.date || "";
-                    const db = b.date || "";
-                    if (da !== db) return da.localeCompare(db);
-                    const ta = a.time || "";
-                    const tb = b.time || "";
-                    return ta.localeCompare(tb);
-                  });
-
-                if (roundMatches.length === 0) return null;
-
-                return roundMatches.map((m) => {
-                  const p1 = profiles.find((p) => p.id === m.home_player_id) || null;
-                  const p2 = m.away_player_id
-                    ? profiles.find((p) => p.id === m.away_player_id) || null
-                    : null;
-
-                  const dateText = m.date ? m.date.slice(0, 10) : "Por definir";
-                  const timeText = m.time ? m.time.slice(0, 5) : "";
-                  const placeText = m.location_details || "Por definir";
-
-                  return (
-                    <tr key={m.id} className="hover:bg-slate-800/60">
-                      <td className="px-3 py-2 align-top text-slate-300">
-                        {roundLabel}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                          <span>
-                            {p1?.name ?? "Por definir"}
-                            {p2 ? ` vs ${p2.name}` : " vs —"}
-                          </span>
-                          {m.status === "played" && (
-                            <span className="text-[15px] text-lime-300 font-semibold">
-                              (jugado)
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 align-top text-slate-200">
-                        {dateText}
-                        {timeText && (
-                          <span className="ml-1 text-slate-400">· {timeText}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 align-top text-slate-200">
-                        {placeText}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <div className="flex flex-wrap gap-2 justify-end">
-                        {canEditSchedule(m) && (
-                          <button
-                            onClick={() => onEditSchedule(m)}
-                            className="px-2 py-1 rounded-full bg-slate-800 text-blue-300 hover:bg-slate-700 hover:text-blue-100 text-[11px] sm:text-xs"
-                          >
-                            Editar horario
-                          </button>
-                        )}
-                        {canEditSchedule(m) && (
-                          <button
-                            onClick={() => onEditResult(m)}
-                            className="px-2 py-1 rounded-full bg-green-600 text-white hover:bg-green-700 text-[11px] sm:text-xs"
-                          >
-                            Agregar resultados
-                          </button>
-                        )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                });
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-
-    </div>
-  );
-}
-
-
 
 const App = () => {
   // Initialize all state with proper types
@@ -1166,26 +624,12 @@ const App = () => {
 
   function canEditSchedule(m: Match) {
     if (!currentUser) return false;
-
-    const isPlayer =
-      currentUser.id === m.home_player_id ||
-      currentUser.id === (m.away_player_id ?? '');
-
+    const isPlayer = currentUser.id === m.home_player_id || currentUser.id === (m.away_player_id ?? '');
     const isCreator = currentUser.id === m.created_by;
     const isAdmin = (currentUser as any).role === 'admin';
-
-    const canEditUser = isPlayer || isCreator || isAdmin;
-    if (!canEditUser) return false;
-
-    // 👇 aquí permitimos también partidos ya jugados
-    const editableStatus =
-      m.status === 'pending' ||
-      m.status === 'scheduled' ||
-      m.status === 'played';
-
-    return editableStatus;
+    const editable = m.status === 'pending' || m.status === 'scheduled';
+    return editable && (isPlayer || isCreator || isAdmin);
   }
-
 
   // Determinístico: para un par (a,b) siempre decide quién es Home en esa división/torneo
   function computeHomeForPair(divisionId: string, tournamentId: string, a: string, b: string) {
@@ -1651,27 +1095,14 @@ const App = () => {
     if (!editingMatch) return;
     setLoading(true);
     try {
-      // 1) preparar sets para el RPC y contar sets ganados
-      let p1SetsWon = 0;
-      let p2SetsWon = 0;
-
+      // 1) preparar sets para el RPC
       const setsForRPC = (editedMatchData?.sets || [])
         .filter(s => s.score1 !== '' && s.score2 !== '')
-        .map((s, idx) => {
-          const p1 = parseInt(s.score1, 10);
-          const p2 = parseInt(s.score2, 10);
-
-          if (!Number.isNaN(p1) && !Number.isNaN(p2)) {
-            if (p1 > p2) p1SetsWon += 1;
-            else if (p2 > p1) p2SetsWon += 1;
-          }
-
-          return {
-            set_number: idx + 1,
-            p1_games: p1,
-            p2_games: p2,
-          };
-        });
+        .map((s, idx) => ({
+          set_number: idx + 1,
+          p1_games: parseInt(s.score1, 10),
+          p2_games: parseInt(s.score2, 10),
+        }));
 
       // 2) ejecutar tu RPC existente
       const { error: rpcErr } = await supabase.rpc('update_match_result', {
@@ -1682,30 +1113,14 @@ const App = () => {
       });
       if (rpcErr) throw rpcErr;
 
-      // 3) forzar status = 'played'
+      // 3) forzar status = 'played' (clave para que salga de "agendados" y cuente puntos)
       const { error: upErr } = await supabase
         .from('matches')
-        .update({
-          status: 'played',
-          anecdote: editedMatchData.anecdote?.trim() || null,
-        })
+        .update({ status: 'played', anecdote: editedMatchData.anecdote?.trim() || null, })
         .eq('id', editingMatch.id)
         .select('id')
         .single();
       if (upErr) throw upErr;
-
-      // 🔹 SOLO PARA KO: avanzar ganador ANTES del fetchData
-      if (selectedTournament?.format === 'knockout') {
-        await advanceWinner(
-          {
-            ...editingMatch,
-            status: 'played',
-            player1_sets_won: p1SetsWon,
-            player2_sets_won: p2SetsWon,
-          } as Match,
-          supabase
-        );
-      }
 
       // 4) refrescar todo
       await fetchData(session?.user?.id);
@@ -1719,7 +1134,6 @@ const App = () => {
   };
 
 
-
   function openEditSchedule(m: Match) {
     const locName = locations.find(l => l.id === m.location_id)?.name || '';
     setEditingSchedule(m);
@@ -1731,25 +1145,17 @@ const App = () => {
     });
   }
 
-    function openEditResult(m: Match) {
-    const currentSets = matchSets
-      .filter(s => s.match_id === m.id)
-      .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
-      .map(s => ({
-        score1: String(s.p1_games ?? ''),
-        score2: String(s.p2_games ?? ''),
-      }));
+  // ---- NOMBRES: visual solo ----
+  const toTitleCase = (str: string) => {
+    if (!str) return '';
 
-    setEditedMatchData({
-      sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
-      hadPint: false,
-      pintsCount: 1,
-      anecdote: '',
-    });
+    return str
+      .normalize('NFC') // <-- AÑADE ESTA LÍNEA
+      .toLowerCase()
+      .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
+  };
 
-    setEditingMatch(m);
-  }
-
+  const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
 
   const displayNameForShare = (id: string) => {
     const p = profiles.find(pp => pp.id === id);
@@ -2064,7 +1470,7 @@ const App = () => {
   async function fetchTournamentsAndDivisions() {
     const { data: ts, error: tErr } = await supabase
       .from('tournaments')
-      .select('id,name,season,start_date,end_date,status,format')
+      .select('id,name,season,start_date,end_date,status')
       .order('start_date', { ascending: false });
     if (tErr) throw tErr;
 
@@ -2672,12 +2078,7 @@ const App = () => {
 
     if (all.length === 0) return alert('No scheduled matches to share');
 
-    const tName =
-      tournaments.find(t => t.id === selectedTournament.id)?.name ||
-      selectedTournament.name ||
-      'Pinta Post Championship';
-
-    let msg = `*${tName} - Partidos programados*\n\n`;
+    let msg = `*Pinta Post Championship - Partidos Programados*\n\n`;
     
     const grouped = all.reduce((acc, match) => {
       const key = dateKey(match.date);
@@ -4373,51 +3774,6 @@ const App = () => {
     );
   }
 
-
-  if (selectedTournament && selectedTournament.format === 'knockout' && !selectedDivision) {
-    const tournamentMatches = matches.filter(m => m.tournament_id === selectedTournament.id    );
-
-    return (
-      <div className="flex flex-col gap-4">
-        <BracketView
-          tournament={selectedTournament}
-          matches={tournamentMatches}
-          profiles={profiles}
-          matchSets={matchSets}
-          onBack={() => {
-            setSelectedTournament(null);
-            setSelectedDivision(null);
-            setSelectedPlayer(null);
-          }}
-          onEditSchedule={openEditSchedule}
-          onEditResult={openEditResult}
-          canEditSchedule={canEditSchedule}
-        />
-
-        {/* Botón de compartir tabla de partidos de este torneo */}
-        <div className="px-4 pb-6 flex justify-end">
-          <button
-            onClick={shareAllScheduledMatches}
-            className="inline-flex items-center gap-2 rounded-full bg-emerald-500 text-slate-900 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 hover:bg-emerald-400 shadow-md"
-          >
-            {/* Icono estilo WhatsApp */}
-            <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M20.52 3.48A11.9 11.9 0 0012.06 0C5.67 0 .48 5.19.48 11.58c0 2.04.53 4.04 1.54 5.8L0 24l6.8-1.96a11.57 11.57 0 005.26 1.33h.01c6.39 0 11.58-5.19 11.58-11.58 0-3.09-1.2-6-3.4-8.21zM12.06 21.1h-.01a9.5 9.5 0 01-4.84-1.33l-.35-.2-4.03 1.16 1.15-3.93-.23-.4a9.55 9.55 0 01-1.45-5.08c0-5.26 4.28-9.54 9.55-9.54 2.55 0 4.95.99 6.76 2.8a9.49 9.49 0 012.79 6.75c0 5.27-4.28 9.55-9.54 9.55zm5.23-7.16c-.28-.14-1.66-.82-1.92-.91-.26-.1-.45-.14-.64.14-.19.29-.74.91-.91 1.09-.17.19-.34.21-.62.07-.28-.14-1.18-.44-2.25-1.4-.83-.74-1.39-1.66-1.55-1.94-.16-.28-.02-.43.12-.57.12-.12.28-.31.42-.46.14-.16.18-.26.28-.44.1-.19.05-.35-.02-.5-.07-.14-.64-1.54-.88-2.11-.23-.55-.47-.47-.64-.48h-.55c-.19 0-.5.07-.76.35s-1 1-1 2.43 1.02 2.82 1.16 3.02c.14.19 2.01 3.07 4.86 4.3.68.29 1.21.46 1.62.59.68.22 1.3.19 1.79.12.55-.08 1.66-.68 1.9-1.33.23-.65.23-1.21.16-1.33-.07-.12-.26-.19-.54-.33z" />
-            </svg>
-            <span>Compartir partidos</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-
-
   if (selectedTournament && !selectedDivision) {
     // Tournament View with all divisions
     const tournamentDivisions = divisions.filter(d => d.tournament_id === selectedTournament.id);
@@ -4879,35 +4235,6 @@ const App = () => {
       </div>
     );
   }
-
-  // Knockout tournament view (sin divisiones)
-  if (
-    selectedTournament &&
-    (selectedTournament as any).format === 'knockout' &&
-    !selectedDivision
-  ) {
-    const tournamentMatches = matches.filter(
-      m => m.tournament_id === selectedTournament.id
-    );
-
-    return (
-      <BracketView
-        tournament={selectedTournament}
-        matches={tournamentMatches}
-        profiles={profiles}
-        matchSets={matchSets}             // 👈 NUEVO
-        onBack={() => {
-          setSelectedTournament(null);
-          setSelectedDivision(null);
-          setSelectedPlayer(null);
-        }}
-        onEditSchedule={openEditSchedule}
-        onEditResult={openEditResult}
-        canEditSchedule={canEditSchedule}
-      />
-    );
-  }
-
 
   // Division View
   if (selectedTournament && selectedDivision) {
@@ -5645,17 +4972,15 @@ const App = () => {
                                   </td>
                                   <td className="px-4 py-2">{loc}</td>
                                   <td className="px-4 py-2">
-                                    <div className="flex flex-wrap gap-2">
-                                      {/* Editar fecha / hora / lugar */}
+                                    <div className="flex gap-3">
                                       <button
-                                        onClick={() => openEditSchedule(m)}
-                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700"
+                                        onClick={() => openEditSchedule(m)}   // reutiliza tu modal existente
+                                        className="text-blue-600 hover:underline"
                                       >
-                                        Editar horario
+                                        Editar
                                       </button>
-
-                                      {/* Agregar resultados */}
                                       <button
+                                        className="text-green-600 hover:underline"
                                         onClick={() => {
                                           const currentSets = matchSets
                                             .filter(s => s.match_id === m.id)
@@ -5673,15 +4998,12 @@ const App = () => {
                                           });
                                           setEditingMatch(m);
                                         }}
-                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
                                       >
                                         Agregar resultados
                                       </button>
-
-                                      {/* Eliminar partido (opcional, pero útil) */}
                                       <button
-                                        onClick={() => handleDeleteScheduledMatch(m)}
-                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700"
+                                        onClick={() => handleDeleteScheduledMatch(m)} // reutiliza tu delete/cancel existente
+                                        className="text-red-600 hover:underline"
                                       >
                                         Eliminar
                                       </button>
@@ -6463,8 +5785,5 @@ const App = () => {
 
   return null;
 };
-
-
-
 export default App;
 
