@@ -1138,32 +1138,6 @@ const App = () => {
     return 0; // sin desempate
   }
 
-  function compareStandings(a: any, b: any, divisionId: string, tournamentId: string, matches: any[]) {
-    // 1) victorias
-    const aw = wins(a), bw = wins(b);
-    if (bw !== aw) return bw - aw;
-
-    // 2) h2h si el empate es de 2 (este comparator se llama par a par)
-    const h2h = headToHead(a.profile_id, b.profile_id, divisionId, tournamentId, matches);
-    if (h2h !== 0) return h2h;
-
-    // 3) ratio de sets
-    const asr = setRatio(a), bsr = setRatio(b);
-    if (bsr !== asr) return (bsr - asr) * 1000000; // evita flotantes casi iguales
-
-    // 4) ratio de games
-    const agr = gameRatio(a), bgr = gameRatio(b);
-    if (bgr !== agr) return (bgr - agr) * 1000000;
-
-    // 5) fallback: puntos y nombre
-    const ap = Number(a.points || 0), bp = Number(b.points || 0);
-    if (bp !== ap) return bp - ap;
-    const an = (a.player_name || a.name || '').toString();
-    const bn = (b.player_name || b.name || '').toString();
-    return an.localeCompare(bn, 'es');
-  }
-
-
   function canEditSchedule(m: Match) {
     if (!currentUser) return false;
 
@@ -3294,6 +3268,23 @@ const App = () => {
     }
   };
 
+  const visibleTournaments = [...tournaments]
+    // 🔹 mostrar solo torneos vivos (por ahora: activos o próximos)
+    .filter(t => t.status === 'active' || t.status === 'upcoming')
+    // 🔹 primero ligas, luego KO, luego cualquier otro formato
+    .sort((a, b) => {
+      const order = (fmt?: string) => {
+        if (fmt === 'league') return 0;
+        if (fmt === 'knockout') return 1;
+        return 2;
+      };
+
+      const diff = order(a.format) - order(b.format);
+      if (diff !== 0) return diff;
+
+      // dentro del mismo tipo, más nuevo primero (start_date descendente)
+      return (b.start_date || '').localeCompare(a.start_date || '');
+    });
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const target = e.target;
@@ -4205,7 +4196,7 @@ const App = () => {
 
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            {tournaments.map(tournament => {
+            {visibleTournaments.map(tournament => {
               // Get tournament registrations
               const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id);
               
@@ -4986,9 +4977,7 @@ const App = () => {
 
 
     // Usaremos el comparador único: victorias → H2H → ratio sets → ratio games
-    const rosterSorted = [...rosterRows].sort((a, b) =>
-      compareStandings(a, b, selectedDivision.id, selectedTournament.id, matches)
-    );
+    const rosterSorted = rosterRows;
 
     const divisionStandings = divisionStats;
     const divLeader = rosterRows[0] ?? null;
