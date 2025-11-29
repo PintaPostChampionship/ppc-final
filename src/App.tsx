@@ -4,6 +4,65 @@ import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 import FindTennisCourt from './components/FindTennisCourt';
 
+
+// 🔹 CARRUSEL DE FOTOS ANTERIORES (home)
+const PHOTOS_BASE_PATH = '/fotos-anteriores';
+
+const highlightPhotos = [
+  // PPC 2 – Foto 1 a 3
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto1.JPG`,
+    alt: 'Final PPC versión 2',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto2.jpg`,
+    alt: 'Final PPC versión 2',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto3.jpg`,
+    alt: 'Final PPC versión 2',
+    caption: '',
+  },
+
+  // PPC 3 – Foto 1 a 3
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto1.jpg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto2.JPG`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto3.jpg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+
+  // PPC 4 – Foto 1 a 3
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto1.JPG`,
+    alt: 'Final PPC versión 4',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto2.JPG`,
+    alt: 'Final PPC versión 4',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto3.JPG`,
+    alt: 'Final PPC versión 4',
+    caption: '',
+  },
+];
+
+
+
 // ---------- Onboarding storage helpers (sessionStorage + tamaño mínimo) ----------
 const PENDING_KEY = 'pending_onboarding';
 
@@ -918,6 +977,27 @@ const App = () => {
   };
   const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
 
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+  const goToNextPhoto = () => {
+    if (highlightPhotos.length === 0) return;
+    setCurrentPhotoIndex((prev) => (prev + 1) % highlightPhotos.length);
+  };
+
+  const goToPrevPhoto = () => {
+    if (highlightPhotos.length === 0) return;
+    setCurrentPhotoIndex((prev) =>
+      (prev - 1 + highlightPhotos.length) % highlightPhotos.length
+    );
+  };
+
+  // Auto-play del carrusel cada 5s
+  useEffect(() => {
+    if (highlightPhotos.length <= 1) return;
+
+    const interval = setInterval(goToNextPhoto, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -4248,6 +4328,92 @@ const App = () => {
               );
             })}
           </div>
+
+          {/* Carrusel de fotos de torneos anteriores */}
+          {highlightPhotos.length > 0 && (
+            <div className="mb-10">
+              <h3 className="text-2xl font-bold text-white mb-4 text-center">
+                Fotos de torneos anteriores
+              </h3>
+
+              <div className="relative max-w-4xl mx-auto rounded-2xl overflow-hidden shadow-2xl bg-black/40">
+                {/* Slides */}
+                <div className="relative w-full aspect-[16/9]">
+                  {highlightPhotos.map((photo, index) => (
+                    <div
+                      key={photo.src}
+                      className={`
+                        absolute inset-0
+                        transition-transform duration-700 ease-out
+                        ${index === 0 ? '' : ''}
+                      `}
+                      style={{
+                        transform: `translateX(${(index - currentPhotoIndex) * 100}%)`,
+                      }}
+                    >
+                      <img
+                        src={photo.src}
+                        alt={photo.alt}
+                        className="w-full h-full object-scale-down"
+                      />
+                      {/* Degradado para texto */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                      {/* Texto sobre la foto */}
+                      <div className="absolute bottom-4 left-4 right-4 md:left-6 md:bottom-6">
+                        <p className="text-sm md:text-base text-gray-100 font-medium drop-shadow">
+                          {photo.caption}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Flechas de navegación */}
+                {highlightPhotos.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={goToPrevPhoto}
+                      className="absolute inset-y-0 left-0 flex items-center px-3 md:px-4
+                                 text-white/80 hover:text-white focus:outline-none"
+                      aria-label="Foto anterior"
+                    >
+                      <span className="text-2xl md:text-3xl">‹</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={goToNextPhoto}
+                      className="absolute inset-y-0 right-0 flex items-center px-3 md:px-4
+                                 text-white/80 hover:text-white focus:outline-none"
+                      aria-label="Foto siguiente"
+                    >
+                      <span className="text-2xl md:text-3xl">›</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Dots inferiores */}
+                {highlightPhotos.length > 1 && (
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+                    {highlightPhotos.map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setCurrentPhotoIndex(index)}
+                        className={`
+                          h-2.5 w-2.5 rounded-full border border-white/70
+                          transition-all duration-200
+                          ${index === currentPhotoIndex ? 'bg-white scale-110' : 'bg-white/20'}
+                        `}
+                        aria-label={`Ir a la foto ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
 
         {showJoinModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
