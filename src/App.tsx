@@ -11,29 +11,24 @@ const PHOTOS_BASE_PATH = '/fotos-anteriores';
 const highlightPhotos = [
   // PPC 2 – Foto 1 a 3
   {
-    src: `${PHOTOS_BASE_PATH}/PPC2-Foto1.JPG`,
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto1.jpeg`,
     alt: 'Final PPC versión 2',
     caption: '',
   },
   {
-    src: `${PHOTOS_BASE_PATH}/PPC2-Foto2.jpg`,
-    alt: 'Final PPC versión 2',
-    caption: '',
-  },
-  {
-    src: `${PHOTOS_BASE_PATH}/PPC2-Foto3.jpg`,
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto2.jpeg`,
     alt: 'Final PPC versión 2',
     caption: '',
   },
 
   // PPC 3 – Foto 1 a 3
   {
-    src: `${PHOTOS_BASE_PATH}/PPC3-Foto1.jpg`,
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto1.jpeg`,
     alt: 'Final PPC versión 3',
     caption: '',
   },
   {
-    src: `${PHOTOS_BASE_PATH}/PPC3-Foto2.JPG`,
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto2.jpeg`,
     alt: 'Final PPC versión 3',
     caption: '',
   },
@@ -42,23 +37,29 @@ const highlightPhotos = [
     alt: 'Final PPC versión 3',
     caption: '',
   },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto4.jpeg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
 
   // PPC 4 – Foto 1 a 3
   {
-    src: `${PHOTOS_BASE_PATH}/PPC4-Foto1.JPG`,
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto1.jpeg`,
     alt: 'Final PPC versión 4',
     caption: '',
   },
   {
-    src: `${PHOTOS_BASE_PATH}/PPC4-Foto2.JPG`,
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto2.jpeg`,
     alt: 'Final PPC versión 4',
     caption: '',
   },
   {
-    src: `${PHOTOS_BASE_PATH}/PPC4-Foto3.JPG`,
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto3.jpeg`,
     alt: 'Final PPC versión 4',
     caption: '',
   },
+
 ];
 
 
@@ -267,6 +268,50 @@ interface Standings {
   points: number;
   name?: string;
 }
+
+type BookingAdmin = {
+  id: string;
+  profile_id: string;
+  created_at: string | null;
+};
+
+type BookingAccount = {
+  id: string;
+  label?: string | null;
+  env_username_key: string;
+  env_password_key: string;
+  owner_profile_id: string;
+  is_active?: boolean | null;
+  created_at: string | null;
+};
+
+type CourtBookingRequest = {
+  id: string;
+  profile_id: string;
+  better_account_id: string;
+  venue_slug: string;
+  activity_slug: string;
+  target_date: string;              // 'YYYY-MM-DD'
+  target_start_time: string;        // 'HH:MM:SS'
+  target_end_time: string;          // 'HH:MM:SS'
+  search_start_date: string | null;
+  search_window_start_time: string | null;
+  search_window_end_time: string | null;
+  preferred_court_name_1: string | null;
+  preferred_court_name_2: string | null;
+  preferred_court_name_3: string | null;
+  status: string;
+  booked_court_name: string | null;
+  booked_slot_start: string | null;
+  booked_slot_end: string | null;
+  last_run_at: string | null;
+  attempt_count: number | null;
+  last_error: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 
 // Helper function to convert data URI to Blob
 const dataURItoBlob = (dataURI: string) => {
@@ -975,6 +1020,37 @@ const App = () => {
     rsvp_url: string | null;
     is_active: boolean;
   };
+
+  const [bookingAdmins, setBookingAdmins] = useState<BookingAdmin[]>([]);
+  const [bookingAccounts, setBookingAccounts] = useState<BookingAccount[]>([]);
+  const [courtRequests, setCourtRequests] = useState<CourtBookingRequest[]>([]);
+
+  const [showBookingPanel, setShowBookingPanel] = useState(false);
+  const [savingBooking, setSavingBooking] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+
+  const [newBooking, setNewBooking] = useState<{
+    better_account_id: string;
+    venue_slug: string;
+    activity_slug: string;
+    target_date: string;     // input date 'YYYY-MM-DD'
+    start_time: string;      // 'HH:MM' (ej. '19:00')
+    preferred_court_name_1: string;
+    preferred_court_name_2: string,
+    preferred_court_name_3: string,
+  }>({
+    better_account_id: '',
+    venue_slug: 'islington-tennis-centre',
+    activity_slug: 'highbury-tennis',
+    target_date: '',
+    start_time: '19:00',
+    preferred_court_name_1: 'Court 11',
+    preferred_court_name_2: 'Court 10',
+    preferred_court_name_3: 'Court 9',  
+  });
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const courtNames = Array.from({ length: 11 }, (_, i) => `Court ${i + 1}`);
+
   const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
 
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -1112,7 +1188,16 @@ const App = () => {
     return `${y}-${m}-${d}`; // YYYY-MM-DD (local)
   }
 
-  const formatDate = (dateString: string) => formatDateLocal(dateString);
+  const formatDate = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  const todayPlus7 = (() => {
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 7);
+    return d;
+  })();
+  const minDate = formatDate(todayPlus7);
 
   function hasActiveMatchWith(
     meId: string,
@@ -1411,6 +1496,242 @@ const App = () => {
     return () => { supabase.removeChannel(channel); };
     // Nota: dependencias por id, no por objetos completos
   }, [selectedDivision?.id, selectedTournament?.id]);
+
+  // --- Datos de reservas automáticas Better ---
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const loadBookingData = async () => {
+      try {
+        const [adminsRes, accountsRes, requestsRes] = await Promise.all([
+          supabase.from('booking_admins').select('id, profile_id, created_at'),
+          supabase
+            .from('booking_accounts')
+            .select('id,label,env_username_key,env_password_key,owner_profile_id,is_active,created_at')
+            .order('label', { ascending: true }),
+          supabase
+            .from('court_booking_requests')
+            .select('*')
+            .order('target_date', { ascending: true })
+            .order('target_start_time', { ascending: true }),
+        ]);
+
+        if (adminsRes.error) throw adminsRes.error;
+        if (accountsRes.error) throw accountsRes.error;
+        if (requestsRes.error) throw requestsRes.error;
+
+        // IMPORTANTE: usa los *mismos* setters que ya tienes en el componente
+        setBookingAdmins((adminsRes.data ?? []) as BookingAdmin[]);
+        setBookingAccounts((accountsRes.data ?? []) as BookingAccount[]);
+        setCourtRequests((requestsRes.data ?? []) as CourtBookingRequest[]);
+      } catch (err) {
+        console.error('loadBookingData error:', err);
+      }
+    };
+
+    loadBookingData();
+  console.log('admins:', bookingAdmins?.length, bookingAdmins?.slice?.(0,3));
+  console.log('accounts:', bookingAccounts?.length, bookingAccounts?.slice?.(0,3));
+  console.log('requests:', courtRequests?.length, courtRequests?.slice?.(0,3));
+  console.log('isBookingAdmin?', isBookingAdmin, 'currentUser:', currentUser?.id);
+  }, [session?.user?.id]);
+
+  const uid: string | null = currentUser?.id ? String(currentUser.id) : null;
+  const role: string = currentUser?.role ?? 'user';
+
+  const isBookingAdmin: boolean =
+    uid !== null && (
+      role === 'admin' ||
+      (bookingAdmins?.some?.(a => String(a.profile_id) === uid) === true)
+    );
+
+  const betterTimeOptions = [
+    '08:00',
+    '09:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+    '21:00',
+    '22:00',
+  ];
+
+  const ACTIVE_STATES = ['PENDING','SEARCHING','QUEUED','CREATED'];
+
+  const activeRequests = courtRequests.filter(
+    (r) => r.is_active && r.status && ACTIVE_STATES.includes(r.status)
+  );
+  const historicalRequests = courtRequests.filter(
+    (r) => !r.is_active || !r.status || !ACTIVE_STATES.includes(r.status)
+  );
+
+  const myActiveRequests = activeRequests.filter(r => r.profile_id === currentUser?.id);
+  const myHistoricalRequests = historicalRequests.filter(r => r.profile_id === currentUser?.id);
+
+  const visibleActiveRequests = isBookingAdmin ? activeRequests : myActiveRequests;
+  const visibleHistoricalRequests = isBookingAdmin ? historicalRequests : myHistoricalRequests;
+
+  const formatTimeRange = (req: CourtBookingRequest) => {
+    const start = req.target_start_time?.slice(0, 5) ?? '';
+    const end = req.target_end_time?.slice(0, 5) ?? '';
+    return `${start}–${end}`;
+  };
+
+  async function reloadCourtRequests() {
+    const { data, error } = await supabase
+      .from('court_booking_requests')
+      .select('*')
+      .order('target_date', { ascending: true })
+      .order('target_start_time', { ascending: true });
+    if (error) {
+      console.error('Error reloading court_booking_requests', error);
+      return;
+    }
+    setCourtRequests((data as CourtBookingRequest[]) || []);
+  }
+
+  async function handleCreateBooking(e: React.FormEvent) {
+    e.preventDefault();
+    setBookingError(null);
+
+    if (!currentUser) {
+      setBookingError('Debes iniciar sesión para crear una reserva automática.');
+      return;
+    }
+    if (!isBookingAdmin) {
+      setBookingError('No tienes permisos para crear reservas automáticas.');
+      return;
+    }
+    if (!newBooking.better_account_id) {
+      setBookingError('Selecciona una cuenta Better.');
+      return;
+    }
+    if (!newBooking.target_date) {
+      setBookingError('Selecciona la fecha en que quieres jugar.');
+      return;
+    }
+
+    try {
+      setSavingBooking(true);
+
+      // target_date 'YYYY-MM-DD'
+      const targetDateStr = newBooking.target_date;
+      const startHHMM = newBooking.start_time; // '19:00'
+      const [hStr, mStr] = startHHMM.split(':');
+      const h = parseInt(hStr, 10);
+      const endH = h + 1;
+      const endHHMM = `${endH.toString().padStart(2, '0')}:${mStr}`;
+
+      // target_start_time / end_time en formato 'HH:MM:SS'
+      const target_start_time = `${startHHMM}:00`;
+      const target_end_time = `${endHHMM}:00`;
+
+      // search_start_date = target_date - 7 días
+      const baseDate = new Date(`${targetDateStr}T00:00:00`);
+      baseDate.setDate(baseDate.getDate() - 7);
+      const search_start_date = baseDate.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+      const normCourt = (s?: string | null) => {
+        if (!s) return null;
+        const t = s.trim();
+        // si viene como "Court 11" => "Highbury Fields Tennis Court 11"
+        if (/^Court\s*\d+$/i.test(t)) {
+          return `Highbury Fields Tennis ${t}`;
+        }
+        return t;
+      };
+
+      const insertPayload = {
+        profile_id: currentUser.id,
+        better_account_id:
+          newBooking.better_account_id && newBooking.better_account_id.trim() !== ''
+            ? newBooking.better_account_id
+            : null,
+        venue_slug: newBooking.venue_slug,
+        activity_slug: newBooking.activity_slug,
+        target_date: targetDateStr,
+        target_start_time,
+        target_end_time,
+        search_start_date,
+        search_window_start_time: '21:00:00',
+        search_window_end_time: '23:00:00',
+        preferred_court_name_1: normCourt(newBooking.preferred_court_name_1),
+        preferred_court_name_2: normCourt(newBooking.preferred_court_name_2),
+        preferred_court_name_3: normCourt(newBooking.preferred_court_name_3),
+        status: 'PENDING',
+        booked_court_name: null,
+        booked_slot_start: null,
+        booked_slot_end: null,
+        last_run_at: null,
+        attempt_count: 0,
+        last_error: null,
+        is_active: true,
+      };
+
+      const { error } = await supabase
+        .from('court_booking_requests')
+        .insert(insertPayload)
+        .single();
+
+      if (error) {
+        console.error('Error inserting court_booking_request', error);
+        setBookingError(error.message || 'Error creando la reserva.');
+        return;
+      }
+
+      // refrescamos lista
+      await reloadCourtRequests();
+
+      // reseteamos el formulario (dejamos misma cuenta/venue/actividad)
+      setNewBooking((prev) => ({
+        ...prev,
+        target_date: '',
+        start_time: '19:00',
+      }));
+
+      alert('Reserva automática creada correctamente.');
+    } catch (err: any) {
+      console.error(err);
+      setBookingError(err.message || String(err));
+    } finally {
+      setSavingBooking(false);
+    }
+  }
+
+  async function handleCancelBooking(req: CourtBookingRequest) {
+    if (!isBookingAdmin && currentUser?.id !== req.profile_id) {
+      alert('Solo el creador o un admin puede cancelar esta reserva.');
+      return;
+    }
+    if (!window.confirm('¿Seguro que quieres cancelar esta reserva automática?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('court_booking_requests')
+        .update({ is_active: false, status: 'CANCELLED' })
+        .eq('id', req.id);
+      if (error) {
+        console.error('Error cancelling court_booking_request', error);
+        alert(error.message || 'No se pudo cancelar la reserva.');
+        return;
+      }
+
+      await reloadCourtRequests();
+      alert('Reserva cancelada.');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || String(err));
+    }
+  }
 
 
   // Load all initial data from Supabase
@@ -4189,6 +4510,449 @@ const App = () => {
     );
   }
 
+  if (showBookingPanel && isBookingAdmin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        <header className="bg-white shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/ppc-logo.png"
+                  alt="PPC Logo"
+                  className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain"
+                />
+                <div>
+                  <button
+                    onClick={() => {
+                      setShowBookingPanel(false); //ACA QUIERO VOLVER
+                      setSelectedTournament(null);
+                      setSelectedDivision(null);
+                      setSelectedPlayer(null);
+                    }}
+                    className="text-green-600 hover:text-green-800 font-semibold mb-2"
+                  >
+                    ← Volver a torneos
+                  </button>
+                  <h1 className="text-4xl font-bold text-gray-800">
+                    Pinta Post Championship
+                  </h1>
+                  <p className="text-gray-600">Reservas automáticas Better</p>
+                </div>
+              </div>
+
+              {currentUser && (
+                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-800">
+                      {uiName(currentUser.name)}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {registrations
+                        .filter((r) => r.profile_id === currentUser.id)
+                        .map((r) => tournaments.find((t) => t.id === r.tournament_id)?.name)
+                        .filter(Boolean)
+                        .join(', ') || 'No tournaments'}
+                    </p>
+                  </div>
+                  <img
+                    src={avatarSrc(currentUser)}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
+                    }}
+                    alt="Profile"
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                  />
+                  <button
+                    onClick={openEditProfile}
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Editar perfil"
+                    title="Editar perfil"
+                  >
+                    <svg
+                      className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                    >
+                      <circle cx="12" cy="7" r="4" strokeWidth="2" />
+                      <path
+                        d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+
+                  <button
+                    onClick={handleLogout}
+                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
+                  >
+                    <svg
+                      className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 16l-4-4m0 0l4-4m-4 4h11"
+                      />
+                      <path
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <section className="bg-white/90 rounded-2xl shadow-lg p-6 border border-green-100">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Reservas automáticas Better
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Programa que el bot reserve automáticamente una cancha en Highbury
+                  7 días antes, usando el crédito de tu cuenta Better.
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Por ahora solo soporta Highbury Fields (Islington Tennis Centre) y
+                  reservas de 1 hora.
+                </p>
+              </div>
+              <div className="hidden sm:flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-700 text-2xl">
+                🎾
+              </div>
+            </div>
+
+            {/* --- AQUÍ VA EL PANEL QUE YA TENÍAS --- */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* FORMULARIO IZQUIERDA */}
+              <div className="border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  Crear nueva reserva
+                </h3>
+
+                {bookingError && (
+                  <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                    {bookingError}
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateBooking} className="space-y-4">
+                  {/* Cuenta Better */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Cuenta Better
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={newBooking.better_account_id || ''}  // UI en string
+                      onChange={(e) => setNewBooking({ ...newBooking, better_account_id: e.target.value })}
+                      required
+                    >
+                      <option value="">Selecciona una cuenta</option>
+                      {bookingAccounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.label?.trim?.()
+                            || acc.env_username_key?.trim?.()
+                            || `Cuenta ${acc.id.slice(0,8)}…`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Venue / Actividad (fijos por ahora) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Lugar / Venue
+                      </label>
+                      <input
+                        type="text"
+                        value="Highbury Fields (Islington Tennis Centre)"
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Actividad
+                      </label>
+                      <input
+                        type="text"
+                        value="Highbury Tennis"
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Fecha y hora */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha de juego
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        min={minDate}
+                        value={newBooking.target_date || minDate}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          // Si eligen antes de t+7, forzamos t+7
+                          setNewBooking({
+                            ...newBooking,
+                            target_date: v && v >= minDate ? v : minDate,
+                          });
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-amber-700">
+                        Solo se permiten reservas a partir de {minDate} (t+7).
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hora de inicio
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.start_time}
+                        onChange={(e) =>
+                          setNewBooking((prev) => ({
+                            ...prev,
+                            start_time: e.target.value,
+                          }))
+                        }
+                        required
+                      >
+                        {betterTimeOptions.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        La reserva será siempre de 1 hora (fin automático = inicio + 1h).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cancha preferida */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Canchas preferidas
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.preferred_court_name_1}
+                        onChange={(e) => setNewBooking({
+                          ...newBooking,
+                          preferred_court_name_1: e.target.value,
+                        })}
+                      >
+                        {courtNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.preferred_court_name_2}
+                        onChange={(e) => setNewBooking({
+                          ...newBooking,
+                          preferred_court_name_2: e.target.value,
+                        })}
+                      >
+                        <option value="">—</option>
+                        {courtNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.preferred_court_name_3}
+                        onChange={(e) => setNewBooking({
+                          ...newBooking,
+                          preferred_court_name_3: e.target.value,
+                        })}
+                      >
+                        <option value="">—</option>
+                        {courtNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Primero intenta la 1ª, luego 2ª y 3ª. Si no hay, el bot elige la mejor alternativa disponible.
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={savingBooking}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-60"
+                    >
+                      {savingBooking ? 'Guardando…' : 'Crear reserva automática'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* LISTAS DERECHA */}
+              <div className="space-y-4">
+                <div className="border border-green-200 rounded-xl p-4 bg-green-50/50">
+                  <h3 className="font-semibold text-gray-800 mb-2">
+                    Bookings activos
+                  </h3>
+                  {visibleActiveRequests.length === 0 ? (
+                    <p className="text-sm text-gray-600">
+                      No hay reservas automáticas activas.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2 text-sm">
+                      {visibleActiveRequests.map((req) => (
+                        <li
+                          key={req.id}
+                          className="flex items-start justify-between gap-3 border border-green-100 rounded-lg bg-white px-3 py-2"
+                        >
+                          <div>
+                            <div className="font-medium text-gray-900">
+                              {req.target_date} · {formatTimeRange(req)}
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              Cuenta:{' '}
+                              {
+                                bookingAccounts.find(
+                                  (a) => a.id === req.better_account_id,
+                                )?.label
+                              }{' '}
+                              · Canchas preferidas:{' '}
+                              {[
+                                req.preferred_court_name_1,
+                                req.preferred_court_name_2,
+                                req.preferred_court_name_3,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ') || '—'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Estado: {req.status}{' '}
+                              {req.last_error
+                                ? `· Último error: ${req.last_error}`
+                                : ''}
+                            </div>
+                          </div>
+                          <div className="mt-3 flex items-center gap-2">
+                            {(isBookingAdmin || req.profile_id === currentUser?.id) && (
+                              <>
+                                <button
+                                  className="px-3 py-1 rounded-md border border-gray-300 hover:bg-gray-50"
+                                  onClick={() => {
+                                    // Cargar la reserva al formulario para editar
+                                    setEditingRequestId(req.id);
+                                    setNewBooking({
+                                      better_account_id: req.better_account_id ?? '',
+                                      venue_slug: req.venue_slug ?? 'islington-tennis-centre',
+                                      activity_slug: req.activity_slug ?? 'highbury-tennis',
+                                      target_date: req.target_date ?? '',
+                                      start_time: (req.target_start_time ?? '19:00:00').slice(0,5), // HH:MM
+                                      preferred_court_name_1: req.preferred_court_name_1 ?? 'Court 11',
+                                      preferred_court_name_2: req.preferred_court_name_2 ?? 'Court 10',
+                                      preferred_court_name_3: req.preferred_court_name_3 ?? 'Court 9',
+                                    });
+                                  }}
+                                >
+                                  Modificar
+                                </button>
+
+                                <button
+                                  className="px-3 py-1 rounded-md bg-rose-600 text-white hover:bg-rose-700"
+                                  onClick={() => handleCancelBooking(req)}
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 border border-gray-200 rounded-xl p-4 bg-white">
+              <h3 className="font-semibold text-gray-800 mb-2">
+                Historial de bookings
+              </h3>
+              {visibleHistoricalRequests.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  Aún no hay historial de reservas.
+                </p>
+              ) : (
+                <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
+                  {visibleHistoricalRequests.map((req) => (
+                    <li
+                      key={req.id}
+                      className="border border-gray-100 rounded-lg px-3 py-2"
+                    >
+                      <div className="flex justify-between">
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {tituloFechaEs(req.target_date)} ·{' '}
+                            {formatTimeRange(req)}
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            Cuenta:{' '}
+                            {
+                              bookingAccounts.find(
+                                (a) => a.id === req.better_account_id,
+                              )?.label
+                            }{' '}
+                            · Cancha:{' '}
+                            {req.booked_court_name ||
+                              req.preferred_court_name_1 ||
+                              '—'}
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {req.status}
+                        </span>
+                      </div>
+                      {req.last_error && (
+                        <p className="mt-1 text-xs text-red-600">
+                          Último error: {req.last_error}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {renderNotifs()}
+      </div>
+    );
+  }
 
   if (showMap) {
     return (
@@ -4271,8 +5035,22 @@ const App = () => {
             >
               Encontrar Cancha
             </button>
+            {isBookingAdmin && (
+              <button
+                onClick={() => {
+                  setShowBookingPanel(true);
+                  setShowMap(false);
+                  setSelectedTournament(null);
+                  setSelectedDivision(null);
+                  setSelectedPlayer(null);
+                }}
+                className="ml-4 inline-flex items-center px-3 py-3.5 border border-green-700 text-white rounded-lg text-base font-medium hover:bg-green-400"
+              >
+                Reservas automáticas Better
+              </button>
+            )}
           </div>
-          </div>
+        </div>
 
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -4328,7 +5106,7 @@ const App = () => {
               );
             })}
           </div>
-
+          
           {/* Carrusel de fotos de torneos anteriores */}
           {highlightPhotos.length > 0 && (
             <div className="mb-10">
@@ -4354,7 +5132,7 @@ const App = () => {
                       <img
                         src={photo.src}
                         alt={photo.alt}
-                        className="w-full h-full object-scale-down"
+                        className="w-full h-full object-cover"
                       />
                       {/* Degradado para texto */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
@@ -4530,7 +5308,7 @@ const App = () => {
     );
   }
 
-
+  
   if (selectedTournament && selectedTournament.format === 'knockout' && !selectedDivision) {
     const tournamentMatches = matches.filter(m => m.tournament_id === selectedTournament.id    );
 
@@ -4661,13 +5439,13 @@ const App = () => {
                   onClick={() => setSelectedTournament(null)}
                   className="text-green-600 hover:text-green-800 font-semibold mb-2"
                 >
-                  ← Back to Tournaments
+                  ← Volver a torneos
                 </button>
                 <div className="flex items-center gap-3 mt-1">
                   <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
                   <div>
                     <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
-                    <p className="text-gray-600">All divisions and player details</p>
+                    <p className="text-gray-600">Detalles de divisiones y jugadores</p>
                   </div>
                 </div>
               </div>
@@ -5719,7 +6497,7 @@ const App = () => {
                                     <div className="flex justify-between">
                                       <div>
                                         <p className="text-sm font-medium">{uiName(player1?.name)} vs {uiName(player2?.name)}</p>
-                                        <p className="text-xs text-gray-500">{formatDate(match.date)} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
+                                        <p className="text-xs text-gray-500">{formatDate(new Date(match.date))} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
                                       </div>
                                       <div className="text-right">
                                         <p className="text-sm font-medium">
@@ -5793,7 +6571,7 @@ const App = () => {
                               return (
                                 <tr key={m.id} className="hover:bg-gray-50">
                                   <td className="px-4 py-2">
-                                    {formatDate(m.date)} {m.time ? `· ${m.time.slice(0,5)}` : ''}
+                                    {formatDate(new Date(m.date))} {m.time ? `· ${m.time.slice(0,5)}` : ''}
                                   </td>
                                   <td className="px-4 py-2">
                                     {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
@@ -6575,7 +7353,7 @@ const App = () => {
                         ].filter(Boolean).join(' - ') || 'TBD';
                         return (
                           <tr key={m.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(m.date)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(new Date(m.date))}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(p1?.name)} vs {uiName(p2?.name)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{selectedDivision.name}</td>
