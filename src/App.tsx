@@ -2871,6 +2871,14 @@ const App = () => {
     return map[name] || '/ppc-logo.png';
   }
 
+  function tournamentLogoSrc(name: string) {
+    if (/^PPC Winter/i.test(name)) return '/ppc-logo.png';            // PPC Winter 2025/2026
+    if (/^WPPC Winter/i.test(name)) return '/wppc-logo-transparente.png';          // WPPC Winter 2025/2026
+    if (/PPC Cup/i.test(name)) return '/ppc-cup-trophy-transparente.png';          // PPC Cup 2025
+    return '/ppc-logo.png';
+  }
+
+
   function formatPendingShare(m: Match) {
     const creator = profiles.find(p => p.id === m.created_by)?.name || 'Alguien';
     const divName = divisions.find(d => d.id === m.division_id)?.name || '';
@@ -5077,8 +5085,24 @@ const App = () => {
                   onClick={() => setSelectedTournament(tournament)}
                 >
                   <div className="p-6">
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">{tournament.name}</h3>
-                    <p className="text-gray-600 mb-4">Compete in our premier tennis championship</p>
+                    <div className="flex items-center gap-3 mb-4">
+                      {/* Contenedor cuadrado: asegura tamaño idéntico en todos los logos */}
+                      <div className="shrink-0 flex items-center justify-center
+                                      h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16
+                                      rounded">
+                        <img
+                          src={tournamentLogoSrc(tournament.name)}
+                          alt={`${tournament.name} logo`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+
+                      {/* Título arriba, descripción abajo */}
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold text-gray-800 leading-tight">{tournament.name}</h3>
+                        <p className="text-gray-600">Compete in our premier tennis championship</p>
+                      </div>
+                    </div>
                     
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
