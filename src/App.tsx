@@ -5044,7 +5044,7 @@ const App = () => {
                   setSelectedDivision(null);
                   setSelectedPlayer(null);
                 }}
-                className="ml-4 inline-flex items-center px-3 py-3.5 border border-green-700 text-white rounded-lg text-base font-medium hover:bg-green-400"
+                className="ml-2 mt-3 inline-flex items-center px-3 py-3.5 border border-green-700 text-white rounded-lg text-base font-medium hover:bg-green-400"
               >
                 Reservas automáticas Better
               </button>
@@ -5308,7 +5308,7 @@ const App = () => {
     );
   }
 
-  
+
   if (selectedTournament && selectedTournament.format === 'knockout' && !selectedDivision) {
     const tournamentMatches = matches.filter(m => m.tournament_id === selectedTournament.id    );
 
