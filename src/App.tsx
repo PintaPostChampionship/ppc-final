@@ -1584,6 +1584,35 @@ const App = () => {
     return `${start}–${end}`;
   };
 
+  const shortCourt = (name?: string | null) => {
+    if (!name) return null;
+    const m = /(\d+)$/.exec(name);
+    // Si quieres “Court 11” en vez de solo “11”, cambia el return a: `Court ${m ? m[1] : name}`
+    return m ? m[1] : name;
+  };
+
+  const joinCourtsShort = (
+    c1?: string | null,
+    c2?: string | null,
+    c3?: string | null
+  ) => {
+    const parts = [shortCourt(c1), shortCourt(c2), shortCourt(c3)].filter(Boolean) as string[];
+    return parts.length ? parts.join(', ') : '—';
+  };
+
+  const shortStatus = (s?: string | null) => {
+    switch (s) {
+      case 'SEARCHING': return 'Searching';
+      case 'PENDING':   return 'Pending';
+      case 'CREATED':   return 'Created';
+      case 'BOOKED':    return 'Booked';
+      case 'CANCELLED': return 'Cancelled';
+      case 'EXPIRED':   return 'Expired';
+      case 'CLOSED':    return 'Closed';
+      default:          return s || '—';
+    }
+  }; 
+
   async function reloadCourtRequests() {
     const { data, error } = await supabase
       .from('court_booking_requests')
@@ -4834,74 +4863,70 @@ const App = () => {
                       No hay reservas automáticas activas.
                     </p>
                   ) : (
-                    <ul className="space-y-2 text-sm">
-                      {visibleActiveRequests.map((req) => (
-                        <li
-                          key={req.id}
-                          className="flex items-start justify-between gap-3 border border-green-100 rounded-lg bg-white px-3 py-2"
-                        >
-                          <div>
-                            <div className="font-medium text-gray-900">
-                              {req.target_date} · {formatTimeRange(req)}
-                            </div>
-                            <div className="text-xs text-gray-600">
-                              Cuenta:{' '}
-                              {
-                                bookingAccounts.find(
-                                  (a) => a.id === req.better_account_id,
-                                )?.label
-                              }{' '}
-                              · Canchas preferidas:{' '}
-                              {[
-                                req.preferred_court_name_1,
-                                req.preferred_court_name_2,
-                                req.preferred_court_name_3,
-                              ]
-                                .filter(Boolean)
-                                .join(' · ') || '—'}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Estado: {req.status}{' '}
-                              {req.last_error
-                                ? `· Último error: ${req.last_error}`
-                                : ''}
-                            </div>
-                          </div>
-                          <div className="mt-3 flex items-center gap-2">
-                            {(isBookingAdmin || req.profile_id === currentUser?.id) && (
-                              <>
-                                <button
-                                  className="px-3 py-1 rounded-md border border-gray-300 hover:bg-gray-50"
-                                  onClick={() => {
-                                    // Cargar la reserva al formulario para editar
-                                    setEditingRequestId(req.id);
-                                    setNewBooking({
-                                      better_account_id: req.better_account_id ?? '',
-                                      venue_slug: req.venue_slug ?? 'islington-tennis-centre',
-                                      activity_slug: req.activity_slug ?? 'highbury-tennis',
-                                      target_date: req.target_date ?? '',
-                                      start_time: (req.target_start_time ?? '19:00:00').slice(0,5), // HH:MM
-                                      preferred_court_name_1: req.preferred_court_name_1 ?? 'Court 11',
-                                      preferred_court_name_2: req.preferred_court_name_2 ?? 'Court 10',
-                                      preferred_court_name_3: req.preferred_court_name_3 ?? 'Court 9',
-                                    });
-                                  }}
-                                >
-                                  Modificar
-                                </button>
+                    <div className="overflow-x-auto -mx-2 sm:mx-0">
+                      <table className="min-w-[640px] w-full text-sm">
+                        <thead className="bg-green-50 text-gray-700">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Fecha</th>
+                            <th className="px-3 py-2 text-left">Hora</th>
+                            <th className="px-3 py-2 text-left">Cuenta</th>
+                            <th className="px-3 py-2 text-left">Canchas</th>
+                            <th className="px-3 py-2 text-left">Estado</th>
+                            <th className="px-3 py-2 text-left">Detalles</th>
+                            <th className="px-3 py-2 text-right">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {activeRequests.map((req) => {
+                            const account = bookingAccounts.find(a => a.id === req.better_account_id);
+                            const courts = [req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
+                              .filter(Boolean)
+                              .join(' · ') || '—';
+                            return (
+                              <tr key={req.id} className="bg-white">
+                                <td className="px-3 py-2 whitespace-nowrap">{tituloFechaEs(req.target_date)}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{formatTimeRange(req)}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{account?.label ?? '—'}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {joinCourtsShort(req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3)}
+                                </td>
 
-                                <button
-                                  className="px-3 py-1 rounded-md bg-rose-600 text-white hover:bg-rose-700"
-                                  onClick={() => handleCancelBooking(req)}
-                                >
-                                  Cancelar
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {shortStatus(req.status)}
+                                </td>
+
+                                <td className="px-3 py-2">
+                                  <details>
+                                    <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
+                                    <div className="mt-2 text-xs text-gray-600 space-y-1">
+                                      {req.last_error && <div>Último: {req.last_error}</div>}
+                                      {req.booked_court_name && <div>Booked: {req.booked_court_name}</div>}
+                                      {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
+                                      {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
+                                      <div>Preferidas: {[req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
+                                        .filter(Boolean).join(' · ') || '—'}
+                                      </div>
+                                    </div>
+                                  </details>
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap text-right">
+                                  <div className="inline-flex gap-2">
+                                    {/* Si ya tienes botón Modificar en otra parte, pon aquí tu handler de edición */}
+                                    {/* <button onClick={() => TU_HANDLER_DE_EDITAR(req)} className="text-xs px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50">Modificar</button> */}
+                                    <button
+                                      onClick={() => handleCancelBooking(req)}
+                                      className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               </div>
@@ -4915,43 +4940,60 @@ const App = () => {
                   Aún no hay historial de reservas.
                 </p>
               ) : (
-                <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
-                  {visibleHistoricalRequests.map((req) => (
-                    <li
-                      key={req.id}
-                      className="border border-gray-100 rounded-lg px-3 py-2"
-                    >
-                      <div className="flex justify-between">
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {tituloFechaEs(req.target_date)} ·{' '}
-                            {formatTimeRange(req)}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            Cuenta:{' '}
-                            {
-                              bookingAccounts.find(
-                                (a) => a.id === req.better_account_id,
-                              )?.label
-                            }{' '}
-                            · Cancha:{' '}
-                            {req.booked_court_name ||
-                              req.preferred_court_name_1 ||
-                              '—'}
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-500">
-                          {req.status}
-                        </span>
-                      </div>
-                      {req.last_error && (
-                        <p className="mt-1 text-xs text-red-600">
-                          Último error: {req.last_error}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <div className="overflow-x-auto -mx-2 sm:mx-0">
+                  <table className="min-w-[640px] w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-700">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Fecha</th>
+                        <th className="px-3 py-2 text-left">Hora</th>
+                        <th className="px-3 py-2 text-left">Cuenta</th>
+                        <th className="px-3 py-2 text-left">Cancha</th>
+                        <th className="px-3 py-2 text-left">Estado</th>
+                        <th className="px-3 py-2 text-left">Detalles</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {historicalRequests.map((req) => {
+                        const account = bookingAccounts.find(a => a.id === req.better_account_id);
+                        return (
+                          <tr key={req.id} className="bg-white">
+                            <td className="px-3 py-2 whitespace-nowrap">{tituloFechaEs(req.target_date)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{formatTimeRange(req)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{account?.label ?? '—'}</td>
+
+                            {/* Cancha (número corto) */}
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {shortCourt(req.booked_court_name || req.preferred_court_name_1) || '—'}
+                            </td>
+
+                            {/* Estado corto */}
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {shortStatus(req.status)}
+                            </td>
+
+                            {/* Detalles expandibles */}
+                            <td className="px-3 py-2">
+                              <details>
+                                <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
+                                <div className="mt-2 text-xs text-gray-600 space-y-1">
+                                  {req.last_error && <div>Último: {req.last_error}</div>}
+                                  {req.booked_court_name && <div>Booked: {req.booked_court_name}</div>}
+                                  {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
+                                  {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
+                                  <div>
+                                    Preferidas: {[req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
+                                      .filter(Boolean)
+                                      .join(' · ') || '—'}
+                                  </div>
+                                </div>
+                              </details>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </section>
