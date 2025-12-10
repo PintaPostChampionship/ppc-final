@@ -2884,7 +2884,7 @@ const App = () => {
       'Hierro': '⚙️',
       'Elite': '⭐',
     };
-    return map[name] || '🎾';
+    return map[name] || '🏆';
   }
 
   function divisionLogoSrc(name: string) {
