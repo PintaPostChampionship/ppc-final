@@ -4,6 +4,66 @@ import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 import FindTennisCourt from './components/FindTennisCourt';
 
+
+// 🔹 CARRUSEL DE FOTOS ANTERIORES (home)
+const PHOTOS_BASE_PATH = '/fotos-anteriores';
+
+const highlightPhotos = [
+  // PPC 2 – Foto 1 a 3
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto1.jpeg`,
+    alt: 'Final PPC versión 2',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC2-Foto2.jpeg`,
+    alt: 'Final PPC versión 2',
+    caption: '',
+  },
+
+  // PPC 3 – Foto 1 a 3
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto1.jpeg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto2.jpeg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto3.jpg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC3-Foto4.jpeg`,
+    alt: 'Final PPC versión 3',
+    caption: '',
+  },
+
+  // PPC 4 – Foto 1 a 3
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto1.jpeg`,
+    alt: 'Final PPC versión 4',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto2.jpeg`,
+    alt: 'Final PPC versión 4',
+    caption: '',
+  },
+  {
+    src: `${PHOTOS_BASE_PATH}/PPC4-Foto3.jpeg`,
+    alt: 'Final PPC versión 4',
+    caption: '',
+  },
+
+];
+
+
+
 // ---------- Onboarding storage helpers (sessionStorage + tamaño mínimo) ----------
 const PENDING_KEY = 'pending_onboarding';
 
@@ -141,6 +201,7 @@ interface Tournament {
   start_date: string;
   end_date: string;
   status: string;
+  format?: 'league' | 'knockout';
 }
 
 interface Division {
@@ -180,6 +241,8 @@ interface Match {
   player2_pints: number;
   created_by: string;
   created_at: string;
+  knockout_round?: string | null;
+  bracket_position?: number | null
 }
 
 interface MatchSet {
@@ -205,6 +268,50 @@ interface Standings {
   points: number;
   name?: string;
 }
+
+type BookingAdmin = {
+  id: string;
+  profile_id: string;
+  created_at: string | null;
+};
+
+type BookingAccount = {
+  id: string;
+  label?: string | null;
+  env_username_key: string;
+  env_password_key: string;
+  owner_profile_id: string;
+  is_active?: boolean | null;
+  created_at: string | null;
+};
+
+type CourtBookingRequest = {
+  id: string;
+  profile_id: string;
+  better_account_id: string;
+  venue_slug: string;
+  activity_slug: string;
+  target_date: string;              // 'YYYY-MM-DD'
+  target_start_time: string;        // 'HH:MM:SS'
+  target_end_time: string;          // 'HH:MM:SS'
+  search_start_date: string | null;
+  search_window_start_time: string | null;
+  search_window_end_time: string | null;
+  preferred_court_name_1: string | null;
+  preferred_court_name_2: string | null;
+  preferred_court_name_3: string | null;
+  status: string;
+  booked_court_name: string | null;
+  booked_slot_start: string | null;
+  booked_slot_end: string | null;
+  last_run_at: string | null;
+  attempt_count: number | null;
+  last_error: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 
 // Helper function to convert data URI to Blob
 const dataURItoBlob = (dataURI: string) => {
@@ -270,6 +377,545 @@ function avatarSrc(p?: Profile | null) {
   const { data } = supabase.storage.from('avatars').getPublicUrl(`${p.id}.jpg`);
   return data?.publicUrl || '/default-avatar.png';
 }
+
+
+// ---- NOMBRES: visual solo ----
+const toTitleCase = (str: string) => {
+  if (!str) return '';
+
+  return str
+    .normalize('NFC') // <-- AÑADE ESTA LÍNEA
+    .toLowerCase()
+    .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
+};
+
+const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
+
+
+function getNextMatchPosition(round: string | null | undefined, pos: number | null | undefined) {
+  if (!round || !pos) return null;
+
+  // R16 -> QF
+  if (round === 'R16') {
+    // 1-2 -> QF1, 3-4 -> QF2, 5-6 -> QF3, 7-8 -> QF4
+    return {
+      nextRound: 'QF',
+      nextPos: Math.ceil(pos / 2),
+    };
+  }
+
+  // QF -> SF
+  if (round === 'QF') {
+    return {
+      nextRound: 'SF',
+      nextPos: Math.ceil(pos / 2), // QF1,2 -> SF1 ; QF3,4 -> SF2
+    };
+  }
+
+  // SF -> Final
+  if (round === 'SF') {
+    return {
+      nextRound: 'F',
+      nextPos: 1,
+    };
+  }
+
+  return null;
+}
+
+
+async function advanceWinner(match: Match, supabase: any) {
+  if (!match || match.status !== 'played') return;
+
+  const { home_player_id, away_player_id } = match;
+  const { player1_sets_won, player2_sets_won } = match;
+
+  if (!home_player_id || !away_player_id) return;
+
+  // Obtener ganador
+  let winner: string | null = null;
+
+  if (player1_sets_won > player2_sets_won) {
+    winner = home_player_id;
+  } else if (player2_sets_won > player1_sets_won) {
+    winner = away_player_id;
+  } else {
+    return; // empate no avanza
+  }
+
+  // Calcular el partido siguiente
+  const meta = getNextMatchPosition(match.knockout_round, match.bracket_position);
+  if (!meta) return; // Final no tiene siguiente ronda
+
+  const { nextRound, nextPos } = meta;
+
+  // Buscar si ya existe el partido de la siguiente ronda
+  const { data: existing, error: existingErr } = await supabase
+    .from('matches')
+    .select('*')
+    .eq('tournament_id', match.tournament_id)
+    .eq('knockout_round', nextRound)
+    .eq('bracket_position', nextPos)
+    .maybeSingle();
+
+  // 1) Si NO existe → crear el partido
+  if (!existing) {
+    // Fechas por defecto según la ronda
+    let defaultDate = new Date().toISOString().split('T')[0];
+
+    if (nextRound === 'QF') {
+      defaultDate = '2026-01-31';
+    } else if (nextRound === 'SF') {
+      defaultDate = '2026-02-28';
+    } else if (nextRound === 'F') {
+      defaultDate = '2026-03-31';
+    }
+
+    await supabase.from('matches').insert({
+      tournament_id: match.tournament_id,
+      division_id: match.division_id,
+      knockout_round: nextRound,
+      bracket_position: nextPos,
+      home_player_id: winner,
+      away_player_id: null,
+      date: defaultDate,      // 👈 aquí usamos la fecha por defecto
+      status: 'pending',
+    });
+
+    return;
+  }
+
+  // 2) Si existe → actualizamos home/away según disponibilidad
+  const updatePayload: any = {};
+
+  if (!existing.home_player_id) {
+    updatePayload.home_player_id = winner;
+  } else if (!existing.away_player_id) {
+    updatePayload.away_player_id = winner;
+  } else {
+    return; // Ya tiene ambos jugadores, no hacemos nada
+  }
+
+  await supabase
+    .from('matches')
+    .update(updatePayload)
+    .eq('id', existing.id);
+}
+
+
+// ---------------- Bracket (vista KO) ----------------
+
+type BracketViewProps = {
+  tournament: Tournament;
+  matches: Match[];
+  profiles: Profile[];
+  matchSets: MatchSet[]; 
+  onBack: () => void;
+  onEditSchedule: (m: Match) => void;  
+  onEditResult: (m: Match) => void;     
+  canEditSchedule: (m: Match) => boolean; 
+};
+
+type BracketPlayerSlotProps = {
+  player?: Profile | null;
+  isWinner?: boolean;
+  isLoser?: boolean;
+};
+
+function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps) {
+  const base =
+    'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all duration-150 min-w-[150px]';
+
+  let cls =
+    'bg-slate-900/70 border-slate-700 text-slate-100 shadow-sm';
+
+  if (!player) {
+    // Slot vacío (por ejemplo, rondas futuras sin jugador aún)
+    cls =
+      'bg-slate-900/40 border-dashed border-slate-600 text-slate-400 italic';
+  }
+
+  if (isWinner) {
+    cls =
+      'bg-lime-400/90 border-lime-300 text-slate-900 font-semibold shadow-md';
+  } else if (isLoser) {
+    // Perdedor más oscuro
+    cls =
+      'bg-slate-900/95 border-slate-800 text-slate-500 opacity-70';
+  }
+
+  return (
+    <div className={`${base} ${cls}`}>
+      <div className="h-7 w-7 rounded-full overflow-hidden ring-1 ring-slate-600 bg-slate-800 flex-shrink-0">
+        {player?.avatar_url ? (
+          <img
+            src={player.avatar_url}
+            alt={player.name}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="h-full w-full flex items-center justify-center text-xs">
+            🎾
+          </div>
+        )}
+      </div>
+      <div className="text-sm truncate">
+        {player ? player.name : '—'}
+      </div>
+    </div>
+  );
+}
+
+type BracketMatchCardProps = {
+  match: Match | null;
+  player1?: Profile | null;
+  player2?: Profile | null;
+  header?: string;
+  sets?: MatchSet[]; 
+};
+
+const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
+  match,
+  player1,
+  player2,
+  header,
+  sets = [],
+}) => {
+  // Detectar ganador / perdedor si el partido ya está jugado
+  let winnerId: string | null = null;
+  let loserId: string | null = null;
+
+  if (match && match.status === 'played') {
+    if (match.player1_sets_won > match.player2_sets_won) {
+      winnerId = match.home_player_id;
+      loserId = match.away_player_id ?? null;
+    } else if (match.player2_sets_won > match.player1_sets_won) {
+      winnerId = match.away_player_id ?? null;
+      loserId = match.home_player_id;
+    }
+  }
+
+  const isWinner = (p?: Profile | null) =>
+    !!winnerId && p?.id === winnerId;
+  const isLoser = (p?: Profile | null) =>
+    !!loserId && p?.id === loserId;
+
+  // Crear línea de marcador, ej: "6-4  3-6  10-8"
+  const orderedSets = [...sets].sort(
+    (a, b) => (a.set_number ?? 0) - (b.set_number ?? 0)
+  );
+  const scoreLine =
+    orderedSets.length > 0
+      ? orderedSets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ')
+      : '';
+
+  return (
+    <div className="flex flex-col gap-2">
+      {header && (
+        <div className="text-[11px] uppercase tracking-[0.2em] text-yellow-300 mb-1 text-center">
+          {header}
+        </div>
+      )}
+
+      <div className="bg-white/10 border border-white/30 rounded-xl p-3 text-white text-sm flex flex-col gap-2 min-h-[80px]">
+        <BracketPlayerSlot
+          player={player1}
+          isWinner={isWinner(player1)}
+          isLoser={isLoser(player1)}
+        />
+        <BracketPlayerSlot
+          player={player2}
+          isWinner={isWinner(player2)}
+          isLoser={isLoser(player2)}
+        />
+
+        {scoreLine && (
+          <div className="mt-1 text-[11px] text-slate-200 text-center tracking-[0.12em]">
+            {scoreLine}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+
+
+function BracketView({
+  tournament,
+  matches,
+  profiles,
+  matchSets,
+  onBack,
+  onEditSchedule,
+  onEditResult,
+  canEditSchedule,
+}: BracketViewProps) {
+  const getProfile = (id?: string | null) =>
+    id ? profiles.find(p => p.id === id) ?? null : null;
+
+  const byRound = (
+    round: 'R16' | 'QF' | 'SF' | 'F',
+    pos: number
+  ): Match | null =>
+    matches.find(
+      m =>
+        m.knockout_round === round &&
+        (m.bracket_position ?? 0) === pos
+    ) || null;
+
+  // Colocamos siempre los slots, aunque no haya partido en BD → se ve el “esqueleto” completo
+  const r16Left = [1, 2, 3, 4].map(pos => byRound('R16', pos));
+  const r16Right = [5, 6, 7, 8].map(pos => byRound('R16', pos));
+  const qfLeft = [1, 2].map(pos => byRound('QF', pos));
+  const qfRight = [3, 4].map(pos => byRound('QF', pos));
+  const sf = [1, 2].map(pos => byRound('SF', pos));
+  const finalMatch = byRound('F', 1);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Botón volver a torneos */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 text-sm text-slate-200 hover:text-white"
+          >
+            <span className="text-lg">←</span>
+            <span>Volver a torneos</span>
+          </button>
+        </div>
+
+        {/* Cabecera con copa */}
+        <div className="flex flex-col items-center mb-10">
+          {/* Pon aquí la imagen que quieras (trophy o layout) en /public */}
+          <img
+            src="/ppc-cup-trophy.jpg"
+            alt="PPC Cup Trophy"
+            className="h-40 w-auto mb-3 object-contain"
+          />
+          <h1 className="text-3xl font-extrabold tracking-wide">
+            {tournament.name}
+          </h1>
+          <p className="text-sm text-slate-300 mt-1">
+            Knockout · 16 jugadores
+          </p>
+        </div>
+
+        {/* Grid del bracket */}
+        <div className="overflow-x-auto">
+          <div className="min-w-[900px] grid grid-cols-[1.1fr,1fr,1.2fr,1fr,1.1fr] gap-x-6">
+          {/* R16 izquierda */}
+          <div className="space-y-6">
+            {r16Left.map((m, idx) => (
+              <BracketMatchCard
+                key={`r16-L-${idx}`}
+                match={m}
+                player1={getProfile(m?.home_player_id)}
+                player2={getProfile(m?.away_player_id)}
+                header={idx === 0 ? 'Round of 16' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
+          </div>
+
+          {/* QF izquierda */}
+          <div className="space-y-12 mt-12">
+            {qfLeft.map((m, idx) => (
+              <BracketMatchCard
+                key={`qf-L-${idx}`}
+                match={m}
+                player1={getProfile(m?.home_player_id)}
+                player2={getProfile(m?.away_player_id)}
+                header={idx === 0 ? 'Quarter-finals' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
+          </div>
+
+          {/* Centro: SF + Final */}
+          <div className="flex flex-col items-center justify-between py-4">
+            <div className="space-y-12">
+              {sf.map((m, idx) => (
+                <BracketMatchCard
+                  key={`sf-${idx}`}
+                  match={m}
+                  player1={getProfile(m?.home_player_id)}
+                  player2={getProfile(m?.away_player_id)}
+                  header={idx === 0 ? 'Semi-finals' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                />
+              ))}
+            </div>
+
+            <div className="mt-10">
+              <div className="text-center mb-2 text-[11px] uppercase tracking-[0.2em] text-yellow-300">
+                Final
+              </div>
+              <BracketMatchCard
+                match={finalMatch}
+                player1={getProfile(finalMatch?.home_player_id)}
+                player2={getProfile(finalMatch?.away_player_id)}
+                sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
+              />
+            </div>
+          </div>
+
+          {/* QF derecha */}
+          <div className="space-y-12 mt-12">
+            {qfRight.map((m, idx) => (
+              <BracketMatchCard
+                key={`qf-R-${idx}`}
+                match={m}
+                player1={getProfile(m?.home_player_id)}
+                player2={getProfile(m?.away_player_id)}
+                header={idx === 0 ? 'Quarter-finals' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
+          </div>
+
+          {/* R16 derecha */}
+          <div className="space-y-6">
+            {r16Right.map((m, idx) => (
+              <BracketMatchCard
+                key={`r16-R-${idx}`}
+                match={m}
+                player1={getProfile(m?.home_player_id)}
+                player2={getProfile(m?.away_player_id)}
+                header={idx === 0 ? 'Round of 16' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
+          </div>
+        </div>
+        
+        {/* Logo abajo */}
+        <div className="mt-12 flex flex-col items-center gap-4">
+          <img
+            src="/ppc-cup-logo.png"
+            alt="PPC Cup Logo"
+            className="h-42 w-auto opacity-90"
+          />
+        </div>
+        </div>
+      </div>
+
+      {/* Panel inferior: lista de partidos y acciones */}
+      <div className="px-4 pb-8 mt-6">
+        <h2 className="text-sm sm:text-base font-semibold text-white mb-3">
+          Partidos y resultados
+        </h2>
+
+        <div className="bg-slate-900/80 border border-white/10 rounded-xl overflow-hidden">
+          <table className="min-w-full text-xs sm:text-sm">
+            <thead className="bg-slate-900/90 text-slate-300 uppercase text-[11px]">
+              <tr>
+                <th className="px-3 py-2 text-left">Ronda</th>
+                <th className="px-3 py-2 text-left">Partido</th>
+                <th className="px-3 py-2 text-middle">Fecha</th>
+                <th className="px-3 py-2 text-middle">Lugar</th>
+                <th className="px-3 py-2 text-middle">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {["R16", "QF", "SF", "F"].map((round) => {
+                const roundLabel =
+                  round === "R16"
+                    ? "Round of 16"
+                    : round === "QF"
+                    ? "Quarter-finals"
+                    : round === "SF"
+                    ? "Semi-finals"
+                    : "Final";
+
+                const roundMatches = matches
+                  .filter((m) => m.knockout_round === round)
+                  .sort((a, b) => {
+                    const da = a.date || "";
+                    const db = b.date || "";
+                    if (da !== db) return da.localeCompare(db);
+                    const ta = a.time || "";
+                    const tb = b.time || "";
+                    return ta.localeCompare(tb);
+                  });
+
+                if (roundMatches.length === 0) return null;
+
+                return roundMatches.map((m) => {
+                  const p1 = profiles.find((p) => p.id === m.home_player_id) || null;
+                  const p2 = m.away_player_id
+                    ? profiles.find((p) => p.id === m.away_player_id) || null
+                    : null;
+
+                  const dateText = m.date ? m.date.slice(0, 10) : "Por definir";
+                  const timeText = m.time ? m.time.slice(0, 5) : "";
+                  const placeText = m.location_details || "Por definir";
+
+                  return (
+                    <tr key={m.id} className="hover:bg-slate-800/60">
+                      <td className="px-3 py-2 align-top text-slate-300">
+                        {roundLabel}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                          <span>
+                            {p1?.name ?? "Por definir"}
+                            {p2 ? ` vs ${p2.name}` : " vs —"}
+                          </span>
+                          {m.status === "played" && (
+                            <span className="text-[15px] text-lime-300 font-semibold">
+                              (jugado)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-top text-slate-200">
+                        {dateText}
+                        {timeText && (
+                          <span className="ml-1 text-slate-400">· {timeText}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 align-top text-slate-200">
+                        {placeText}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex flex-wrap gap-2 justify-end">
+                        {canEditSchedule(m) && (
+                          <button
+                            onClick={() => onEditSchedule(m)}
+                            className="px-2 py-1 rounded-full bg-slate-800 text-blue-300 hover:bg-slate-700 hover:text-blue-100 text-[11px] sm:text-xs"
+                          >
+                            Editar horario
+                          </button>
+                        )}
+                        {canEditSchedule(m) && (
+                          <button
+                            onClick={() => onEditResult(m)}
+                            className="px-2 py-1 rounded-full bg-green-600 text-white hover:bg-green-700 text-[11px] sm:text-xs"
+                          >
+                            Agregar resultados
+                          </button>
+                        )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+
+    </div>
+  );
+}
+
+
 
 const App = () => {
   // Initialize all state with proper types
@@ -374,8 +1020,60 @@ const App = () => {
     rsvp_url: string | null;
     is_active: boolean;
   };
+
+  const [bookingAdmins, setBookingAdmins] = useState<BookingAdmin[]>([]);
+  const [bookingAccounts, setBookingAccounts] = useState<BookingAccount[]>([]);
+  const [courtRequests, setCourtRequests] = useState<CourtBookingRequest[]>([]);
+
+  const [showBookingPanel, setShowBookingPanel] = useState(false);
+  const [savingBooking, setSavingBooking] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+
+  const [newBooking, setNewBooking] = useState<{
+    better_account_id: string;
+    venue_slug: string;
+    activity_slug: string;
+    target_date: string;     // input date 'YYYY-MM-DD'
+    start_time: string;      // 'HH:MM' (ej. '19:00')
+    preferred_court_name_1: string;
+    preferred_court_name_2: string,
+    preferred_court_name_3: string,
+  }>({
+    better_account_id: '',
+    venue_slug: 'islington-tennis-centre',
+    activity_slug: 'highbury-tennis',
+    target_date: '',
+    start_time: '19:00',
+    preferred_court_name_1: 'Court 11',
+    preferred_court_name_2: 'Court 10',
+    preferred_court_name_3: 'Court 9',  
+  });
+  const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
+  const courtNames = Array.from({ length: 11 }, (_, i) => `Court ${i + 1}`);
+
   const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
 
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+  const goToNextPhoto = () => {
+    if (highlightPhotos.length === 0) return;
+    setCurrentPhotoIndex((prev) => (prev + 1) % highlightPhotos.length);
+  };
+
+  const goToPrevPhoto = () => {
+    if (highlightPhotos.length === 0) return;
+    setCurrentPhotoIndex((prev) =>
+      (prev - 1 + highlightPhotos.length) % highlightPhotos.length
+    );
+  };
+
+  // Auto-play del carrusel cada 5s
+  useEffect(() => {
+    if (highlightPhotos.length <= 1) return;
+
+    const interval = setInterval(goToNextPhoto, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -490,7 +1188,16 @@ const App = () => {
     return `${y}-${m}-${d}`; // YYYY-MM-DD (local)
   }
 
-  const formatDate = (dateString: string) => formatDateLocal(dateString);
+  const formatDate = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  const todayPlus7 = (() => {
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 7);
+    return d;
+  })();
+  const minDate = formatDate(todayPlus7);
 
   function hasActiveMatchWith(
     meId: string,
@@ -596,40 +1303,28 @@ const App = () => {
     return 0; // sin desempate
   }
 
-  function compareStandings(a: any, b: any, divisionId: string, tournamentId: string, matches: any[]) {
-    // 1) victorias
-    const aw = wins(a), bw = wins(b);
-    if (bw !== aw) return bw - aw;
-
-    // 2) h2h si el empate es de 2 (este comparator se llama par a par)
-    const h2h = headToHead(a.profile_id, b.profile_id, divisionId, tournamentId, matches);
-    if (h2h !== 0) return h2h;
-
-    // 3) ratio de sets
-    const asr = setRatio(a), bsr = setRatio(b);
-    if (bsr !== asr) return (bsr - asr) * 1000000; // evita flotantes casi iguales
-
-    // 4) ratio de games
-    const agr = gameRatio(a), bgr = gameRatio(b);
-    if (bgr !== agr) return (bgr - agr) * 1000000;
-
-    // 5) fallback: puntos y nombre
-    const ap = Number(a.points || 0), bp = Number(b.points || 0);
-    if (bp !== ap) return bp - ap;
-    const an = (a.player_name || a.name || '').toString();
-    const bn = (b.player_name || b.name || '').toString();
-    return an.localeCompare(bn, 'es');
-  }
-
-
   function canEditSchedule(m: Match) {
     if (!currentUser) return false;
-    const isPlayer = currentUser.id === m.home_player_id || currentUser.id === (m.away_player_id ?? '');
+
+    const isPlayer =
+      currentUser.id === m.home_player_id ||
+      currentUser.id === (m.away_player_id ?? '');
+
     const isCreator = currentUser.id === m.created_by;
     const isAdmin = (currentUser as any).role === 'admin';
-    const editable = m.status === 'pending' || m.status === 'scheduled';
-    return editable && (isPlayer || isCreator || isAdmin);
+
+    const canEditUser = isPlayer || isCreator || isAdmin;
+    if (!canEditUser) return false;
+
+    // 👇 aquí permitimos también partidos ya jugados
+    const editableStatus =
+      m.status === 'pending' ||
+      m.status === 'scheduled' ||
+      m.status === 'played';
+
+    return editableStatus;
   }
+
 
   // Determinístico: para un par (a,b) siempre decide quién es Home en esa división/torneo
   function computeHomeForPair(divisionId: string, tournamentId: string, a: string, b: string) {
@@ -801,6 +1496,271 @@ const App = () => {
     return () => { supabase.removeChannel(channel); };
     // Nota: dependencias por id, no por objetos completos
   }, [selectedDivision?.id, selectedTournament?.id]);
+
+  // --- Datos de reservas automáticas Better ---
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const loadBookingData = async () => {
+      try {
+        const [adminsRes, accountsRes, requestsRes] = await Promise.all([
+          supabase.from('booking_admins').select('id, profile_id, created_at'),
+          supabase
+            .from('booking_accounts')
+            .select('id,label,env_username_key,env_password_key,owner_profile_id,is_active,created_at')
+            .order('label', { ascending: true }),
+          supabase
+            .from('court_booking_requests')
+            .select('*')
+            .order('target_date', { ascending: true })
+            .order('target_start_time', { ascending: true }),
+        ]);
+
+        if (adminsRes.error) throw adminsRes.error;
+        if (accountsRes.error) throw accountsRes.error;
+        if (requestsRes.error) throw requestsRes.error;
+
+        // IMPORTANTE: usa los *mismos* setters que ya tienes en el componente
+        setBookingAdmins((adminsRes.data ?? []) as BookingAdmin[]);
+        setBookingAccounts((accountsRes.data ?? []) as BookingAccount[]);
+        setCourtRequests((requestsRes.data ?? []) as CourtBookingRequest[]);
+      } catch (err) {
+        console.error('loadBookingData error:', err);
+      }
+    };
+
+    loadBookingData();
+  console.log('admins:', bookingAdmins?.length, bookingAdmins?.slice?.(0,3));
+  console.log('accounts:', bookingAccounts?.length, bookingAccounts?.slice?.(0,3));
+  console.log('requests:', courtRequests?.length, courtRequests?.slice?.(0,3));
+  console.log('isBookingAdmin?', isBookingAdmin, 'currentUser:', currentUser?.id);
+  }, [session?.user?.id]);
+
+  const uid: string | null = currentUser?.id ? String(currentUser.id) : null;
+  const role: string = currentUser?.role ?? 'user';
+
+  const isBookingAdmin: boolean =
+    uid !== null && (
+      role === 'admin' ||
+      (bookingAdmins?.some?.(a => String(a.profile_id) === uid) === true)
+    );
+
+  const betterTimeOptions = [
+    '08:00',
+    '09:00',
+    '10:00',
+    '11:00',
+    '12:00',
+    '13:00',
+    '14:00',
+    '15:00',
+    '16:00',
+    '17:00',
+    '18:00',
+    '19:00',
+    '20:00',
+    '21:00',
+    '22:00',
+  ];
+
+  const ACTIVE_STATES = ['PENDING','SEARCHING','QUEUED','CREATED'];
+
+  const activeRequests = courtRequests.filter(
+    (r) => r.is_active && r.status && ACTIVE_STATES.includes(r.status)
+  );
+  const historicalRequests = courtRequests.filter(
+    (r) => !r.is_active || !r.status || !ACTIVE_STATES.includes(r.status)
+  );
+
+  const myActiveRequests = activeRequests.filter(r => r.profile_id === currentUser?.id);
+  const myHistoricalRequests = historicalRequests.filter(r => r.profile_id === currentUser?.id);
+
+  const visibleActiveRequests = isBookingAdmin ? activeRequests : myActiveRequests;
+  const visibleHistoricalRequests = isBookingAdmin ? historicalRequests : myHistoricalRequests;
+
+  const formatTimeRange = (req: CourtBookingRequest) => {
+    const start = req.target_start_time?.slice(0, 5) ?? '';
+    const end = req.target_end_time?.slice(0, 5) ?? '';
+    return `${start}–${end}`;
+  };
+
+  const shortCourt = (name?: string | null) => {
+    if (!name) return null;
+    const m = /(\d+)$/.exec(name);
+    // Si quieres “Court 11” en vez de solo “11”, cambia el return a: `Court ${m ? m[1] : name}`
+    return m ? m[1] : name;
+  };
+
+  const joinCourtsShort = (
+    c1?: string | null,
+    c2?: string | null,
+    c3?: string | null
+  ) => {
+    const parts = [shortCourt(c1), shortCourt(c2), shortCourt(c3)].filter(Boolean) as string[];
+    return parts.length ? parts.join(', ') : '—';
+  };
+
+  const shortStatus = (s?: string | null) => {
+    switch (s) {
+      case 'SEARCHING': return 'Searching';
+      case 'PENDING':   return 'Pending';
+      case 'CREATED':   return 'Created';
+      case 'BOOKED':    return 'Booked';
+      case 'CANCELLED': return 'Cancelled';
+      case 'EXPIRED':   return 'Expired';
+      case 'CLOSED':    return 'Closed';
+      default:          return s || '—';
+    }
+  }; 
+
+  async function reloadCourtRequests() {
+    const { data, error } = await supabase
+      .from('court_booking_requests')
+      .select('*')
+      .order('target_date', { ascending: true })
+      .order('target_start_time', { ascending: true });
+    if (error) {
+      console.error('Error reloading court_booking_requests', error);
+      return;
+    }
+    setCourtRequests((data as CourtBookingRequest[]) || []);
+  }
+
+  async function handleCreateBooking(e: React.FormEvent) {
+    e.preventDefault();
+    setBookingError(null);
+
+    if (!currentUser) {
+      setBookingError('Debes iniciar sesión para crear una reserva automática.');
+      return;
+    }
+    if (!isBookingAdmin) {
+      setBookingError('No tienes permisos para crear reservas automáticas.');
+      return;
+    }
+    if (!newBooking.better_account_id) {
+      setBookingError('Selecciona una cuenta Better.');
+      return;
+    }
+    if (!newBooking.target_date) {
+      setBookingError('Selecciona la fecha en que quieres jugar.');
+      return;
+    }
+
+    try {
+      setSavingBooking(true);
+
+      // target_date 'YYYY-MM-DD'
+      const targetDateStr = newBooking.target_date;
+      const startHHMM = newBooking.start_time; // '19:00'
+      const [hStr, mStr] = startHHMM.split(':');
+      const h = parseInt(hStr, 10);
+      const endH = h + 1;
+      const endHHMM = `${endH.toString().padStart(2, '0')}:${mStr}`;
+
+      // target_start_time / end_time en formato 'HH:MM:SS'
+      const target_start_time = `${startHHMM}:00`;
+      const target_end_time = `${endHHMM}:00`;
+
+      // search_start_date = target_date - 7 días
+      const baseDate = new Date(`${targetDateStr}T00:00:00`);
+      baseDate.setDate(baseDate.getDate() - 7);
+      const search_start_date = baseDate.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+      const normCourt = (s?: string | null) => {
+        if (!s) return null;
+        const t = s.trim();
+        // si viene como "Court 11" => "Highbury Fields Tennis Court 11"
+        if (/^Court\s*\d+$/i.test(t)) {
+          return `Highbury Fields Tennis ${t}`;
+        }
+        return t;
+      };
+
+      const insertPayload = {
+        profile_id: currentUser.id,
+        better_account_id:
+          newBooking.better_account_id && newBooking.better_account_id.trim() !== ''
+            ? newBooking.better_account_id
+            : null,
+        venue_slug: newBooking.venue_slug,
+        activity_slug: newBooking.activity_slug,
+        target_date: targetDateStr,
+        target_start_time,
+        target_end_time,
+        search_start_date,
+        search_window_start_time: '21:00:00',
+        search_window_end_time: '23:00:00',
+        preferred_court_name_1: normCourt(newBooking.preferred_court_name_1),
+        preferred_court_name_2: normCourt(newBooking.preferred_court_name_2),
+        preferred_court_name_3: normCourt(newBooking.preferred_court_name_3),
+        status: 'PENDING',
+        booked_court_name: null,
+        booked_slot_start: null,
+        booked_slot_end: null,
+        last_run_at: null,
+        attempt_count: 0,
+        last_error: null,
+        is_active: true,
+      };
+
+      const { error } = await supabase
+        .from('court_booking_requests')
+        .insert(insertPayload)
+        .single();
+
+      if (error) {
+        console.error('Error inserting court_booking_request', error);
+        setBookingError(error.message || 'Error creando la reserva.');
+        return;
+      }
+
+      // refrescamos lista
+      await reloadCourtRequests();
+
+      // reseteamos el formulario (dejamos misma cuenta/venue/actividad)
+      setNewBooking((prev) => ({
+        ...prev,
+        target_date: '',
+        start_time: '19:00',
+      }));
+
+      alert('Reserva automática creada correctamente.');
+    } catch (err: any) {
+      console.error(err);
+      setBookingError(err.message || String(err));
+    } finally {
+      setSavingBooking(false);
+    }
+  }
+
+  async function handleCancelBooking(req: CourtBookingRequest) {
+    if (!isBookingAdmin && currentUser?.id !== req.profile_id) {
+      alert('Solo el creador o un admin puede cancelar esta reserva.');
+      return;
+    }
+    if (!window.confirm('¿Seguro que quieres cancelar esta reserva automática?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('court_booking_requests')
+        .update({ is_active: false, status: 'CANCELLED' })
+        .eq('id', req.id);
+      if (error) {
+        console.error('Error cancelling court_booking_request', error);
+        alert(error.message || 'No se pudo cancelar la reserva.');
+        return;
+      }
+
+      await reloadCourtRequests();
+      alert('Reserva cancelada.');
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || String(err));
+    }
+  }
 
 
   // Load all initial data from Supabase
@@ -1095,14 +2055,27 @@ const App = () => {
     if (!editingMatch) return;
     setLoading(true);
     try {
-      // 1) preparar sets para el RPC
+      // 1) preparar sets para el RPC y contar sets ganados
+      let p1SetsWon = 0;
+      let p2SetsWon = 0;
+
       const setsForRPC = (editedMatchData?.sets || [])
         .filter(s => s.score1 !== '' && s.score2 !== '')
-        .map((s, idx) => ({
-          set_number: idx + 1,
-          p1_games: parseInt(s.score1, 10),
-          p2_games: parseInt(s.score2, 10),
-        }));
+        .map((s, idx) => {
+          const p1 = parseInt(s.score1, 10);
+          const p2 = parseInt(s.score2, 10);
+
+          if (!Number.isNaN(p1) && !Number.isNaN(p2)) {
+            if (p1 > p2) p1SetsWon += 1;
+            else if (p2 > p1) p2SetsWon += 1;
+          }
+
+          return {
+            set_number: idx + 1,
+            p1_games: p1,
+            p2_games: p2,
+          };
+        });
 
       // 2) ejecutar tu RPC existente
       const { error: rpcErr } = await supabase.rpc('update_match_result', {
@@ -1113,14 +2086,30 @@ const App = () => {
       });
       if (rpcErr) throw rpcErr;
 
-      // 3) forzar status = 'played' (clave para que salga de "agendados" y cuente puntos)
+      // 3) forzar status = 'played'
       const { error: upErr } = await supabase
         .from('matches')
-        .update({ status: 'played', anecdote: editedMatchData.anecdote?.trim() || null, })
+        .update({
+          status: 'played',
+          anecdote: editedMatchData.anecdote?.trim() || null,
+        })
         .eq('id', editingMatch.id)
         .select('id')
         .single();
       if (upErr) throw upErr;
+
+      // 🔹 SOLO PARA KO: avanzar ganador ANTES del fetchData
+      if (selectedTournament?.format === 'knockout') {
+        await advanceWinner(
+          {
+            ...editingMatch,
+            status: 'played',
+            player1_sets_won: p1SetsWon,
+            player2_sets_won: p2SetsWon,
+          } as Match,
+          supabase
+        );
+      }
 
       // 4) refrescar todo
       await fetchData(session?.user?.id);
@@ -1134,6 +2123,7 @@ const App = () => {
   };
 
 
+
   function openEditSchedule(m: Match) {
     const locName = locations.find(l => l.id === m.location_id)?.name || '';
     setEditingSchedule(m);
@@ -1145,17 +2135,25 @@ const App = () => {
     });
   }
 
-  // ---- NOMBRES: visual solo ----
-  const toTitleCase = (str: string) => {
-    if (!str) return '';
+    function openEditResult(m: Match) {
+    const currentSets = matchSets
+      .filter(s => s.match_id === m.id)
+      .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
+      .map(s => ({
+        score1: String(s.p1_games ?? ''),
+        score2: String(s.p2_games ?? ''),
+      }));
 
-    return str
-      .normalize('NFC') // <-- AÑADE ESTA LÍNEA
-      .toLowerCase()
-      .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
-  };
+    setEditedMatchData({
+      sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
+      hadPint: false,
+      pintsCount: 1,
+      anecdote: '',
+    });
 
-  const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
+    setEditingMatch(m);
+  }
+
 
   const displayNameForShare = (id: string) => {
     const p = profiles.find(pp => pp.id === id);
@@ -1470,7 +2468,7 @@ const App = () => {
   async function fetchTournamentsAndDivisions() {
     const { data: ts, error: tErr } = await supabase
       .from('tournaments')
-      .select('id,name,season,start_date,end_date,status')
+      .select('id,name,season,start_date,end_date,status,format')
       .order('start_date', { ascending: false });
     if (tErr) throw tErr;
 
@@ -1886,7 +2884,7 @@ const App = () => {
       'Hierro': '⚙️',
       'Elite': '⭐',
     };
-    return map[name] || '🎾';
+    return map[name] || '🏆';
   }
 
   function divisionLogoSrc(name: string) {
@@ -1901,6 +2899,14 @@ const App = () => {
     };
     return map[name] || '/ppc-logo.png';
   }
+
+  function tournamentLogoSrc(name: string) {
+    if (/^PPC Winter/i.test(name)) return '/ppc-logo.png';            // PPC Winter 2025/2026
+    if (/^WPPC Winter/i.test(name)) return '/wppc-logo-transparente.png';          // WPPC Winter 2025/2026
+    if (/PPC Cup/i.test(name)) return '/ppc-cup-trophy-transparente.png';          // PPC Cup 2025
+    return '/ppc-logo.png';
+  }
+
 
   function formatPendingShare(m: Match) {
     const creator = profiles.find(p => p.id === m.created_by)?.name || 'Alguien';
@@ -1920,37 +2926,58 @@ const App = () => {
   }
 
   async function joinPendingMatch(m: Match) {
-    if (!currentUser) return alert('Please log in.');
-
-    setLoading(true);
-    try {
-      // Evita unirse si ya existe un partido scheduled o played entre el creador y el que se quiere unir
-      const hostId = m.home_player_id || m.created_by;  // en pendings, away es null
-      if (currentUser && hasAnyMatchBetween(m.tournament_id, m.division_id, currentUser.id, hostId, ['scheduled','played'])) {
-        alert('No puedes unirte: ya existe un partido agendado o jugado entre ustedes.');
-        setLoading(false);
-        return;
-      }
-      // Concurrencia segura: solo se agenda si sigue "pending" y sin away_player
-      const { data, error } = await supabase
-        .from('matches')
-        .update({ away_player_id: currentUser.id, status: 'scheduled' })
-        .eq('id', m.id)
-        .is('away_player_id', null)
-        .eq('status', 'pending')
-        .select()
-        .single();
-
-      if (error) throw error;
-      await fetchData(session?.user.id);
-      alert('¡Te uniste al partido!');
-    } catch (e: any) {
-      // Si otro se adelantó, este update no encuentra filas
-      const msg = String(e.message || e);
-      alert(msg.includes('0 rows') ? 'Lo siento, alguien ya se unió a ese partido.' : `Error: ${msg}`);
-    } finally {
-      setLoading(false);
+    if (!session?.user) {
+      alert('Debes iniciar sesión.');
+      return;
     }
+    const uid = session.user.id;
+
+    // 1) No puedes unirte a tu propio pendiente
+    if (m.home_player_id === uid) {
+      alert('No puedes unirte a tu propio aviso de partido.');
+      return;
+    }
+
+    // 2) Debe seguir pendiente y sin rival asignado
+    if (m.status !== 'pending') {
+      alert('Este partido ya no está pendiente.');
+      return;
+    }
+    if (m.away_player_id) {
+      alert('Este partido ya tiene rival asignado.');
+      return;
+    }
+
+    // 3) Bloquear si ya existe scheduled/played entre creador y quien intenta unirse
+    const yaHayPartido = hasAnyMatchBetween(
+      m.tournament_id,
+      m.division_id,
+      m.home_player_id!, // creador del pending
+      uid,
+      ['scheduled', 'played']
+    );
+    if (yaHayPartido) {
+      alert('Ya existe un partido agendado o jugado entre ustedes en esta división/torneo.');
+      return;
+    }
+
+    // 4) Asignar rival y pasar a scheduled
+    const { error } = await supabase
+      .from('matches')
+      .update({
+        away_player_id: uid,
+        status: 'scheduled',
+      })
+      .eq('id', m.id);
+
+    if (error) {
+      console.error(error);
+      alert('No fue posible unirse al partido. Intenta de nuevo.');
+      return;
+    }
+
+    await fetchData(session.user.id);
+    alert('Te uniste al partido. ¡Suerte!');
   }
 
   function pushNotif(text: string, matchId?: string) {
@@ -2057,7 +3084,12 @@ const App = () => {
 
     if (all.length === 0) return alert('No scheduled matches to share');
 
-    let msg = `*Pinta Post Championship - Partidos Programados*\n\n`;
+    const tName =
+      tournaments.find(t => t.id === selectedTournament.id)?.name ||
+      selectedTournament.name ||
+      'Pinta Post Championship';
+
+    let msg = `*${tName} - Partidos programados*\n\n`;
     
     const grouped = all.reduce((acc, match) => {
       const key = dateKey(match.date);
@@ -2134,15 +3166,15 @@ const App = () => {
       !isNaN(parseInt(s.score1)) && !isNaN(parseInt(s.score2))
     );
     if (validSets.length === 0) {
-      alert('Please enter valid scores for at least one set');
+      alert('Porfavor ingresa al menos un set con puntajes válidos.');
       return;
     }
 
     // 2) Validación jugadores (IDs)
     const player1Id = newMatch.player1;
     const player2Id = newMatch.player2;
-    if (!player1Id || !player2Id) {
-      alert('Please select both players');
+    if (!player1Id) {
+      alert('Selecciona el Jugador 1');
       return;
     }
 
@@ -2151,7 +3183,7 @@ const App = () => {
     const isValidP1 = playersInDiv.some(p => p.id === player1Id);
     const isValidP2 = playersInDiv.some(p => p.id === player2Id);
     if (!isValidP1 || !isValidP2) {
-      alert('Selected players are not in this division/tournament');
+      alert('Jugadores no se encuentran dentro de la división/torneo seleccionados.');
       return;
     }
 
@@ -2408,6 +3440,7 @@ const App = () => {
     b: string,
     statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
   ) {
+    if (!a || !b) return false;
     return matches.some(m =>
       m.tournament_id === tournamentId &&
       m.division_id === divisionId &&
@@ -2673,6 +3706,23 @@ const App = () => {
     }
   };
 
+  const visibleTournaments = [...tournaments]
+    // 🔹 mostrar solo torneos vivos (por ahora: activos o próximos)
+    .filter(t => t.status === 'active' || t.status === 'upcoming')
+    // 🔹 primero ligas, luego KO, luego cualquier otro formato
+    .sort((a, b) => {
+      const order = (fmt?: string) => {
+        if (fmt === 'league') return 0;
+        if (fmt === 'knockout') return 1;
+        return 2;
+      };
+
+      const diff = order(a.format) - order(b.format);
+      if (diff !== 0) return diff;
+
+      // dentro del mismo tipo, más nuevo primero (start_date descendente)
+      return (b.start_date || '').localeCompare(a.start_date || '');
+    });
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const target = e.target;
@@ -3497,6 +4547,462 @@ const App = () => {
     );
   }
 
+  if (showBookingPanel && isBookingAdmin) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        <header className="bg-white shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/ppc-logo.png"
+                  alt="PPC Logo"
+                  className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain"
+                />
+                <div>
+                  <button
+                    onClick={() => {
+                      setShowBookingPanel(false); //ACA QUIERO VOLVER
+                      setSelectedTournament(null);
+                      setSelectedDivision(null);
+                      setSelectedPlayer(null);
+                    }}
+                    className="text-green-600 hover:text-green-800 font-semibold mb-2"
+                  >
+                    ← Volver a torneos
+                  </button>
+                  <h1 className="text-4xl font-bold text-gray-800">
+                    Pinta Post Championship
+                  </h1>
+                  <p className="text-gray-600">Reservas automáticas Better</p>
+                </div>
+              </div>
+
+              {currentUser && (
+                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-800">
+                      {uiName(currentUser.name)}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {registrations
+                        .filter((r) => r.profile_id === currentUser.id)
+                        .map((r) => tournaments.find((t) => t.id === r.tournament_id)?.name)
+                        .filter(Boolean)
+                        .join(', ') || 'No tournaments'}
+                    </p>
+                  </div>
+                  <img
+                    src={avatarSrc(currentUser)}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
+                    }}
+                    alt="Profile"
+                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                  />
+                  <button
+                    onClick={openEditProfile}
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Editar perfil"
+                    title="Editar perfil"
+                  >
+                    <svg
+                      className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                    >
+                      <circle cx="12" cy="7" r="4" strokeWidth="2" />
+                      <path
+                        d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+
+                  <button
+                    onClick={handleLogout}
+                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
+                  >
+                    <svg
+                      className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9 16l-4-4m0 0l4-4m-4 4h11"
+                      />
+                      <path
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <section className="bg-white/90 rounded-2xl shadow-lg p-6 border border-green-100">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Reservas automáticas Better
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Programa que el bot reserve automáticamente una cancha en Highbury
+                  7 días antes, usando el crédito de tu cuenta Better.
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Por ahora solo soporta Highbury Fields (Islington Tennis Centre) y
+                  reservas de 1 hora.
+                </p>
+              </div>
+              <div className="hidden sm:flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-700 text-2xl">
+                🎾
+              </div>
+            </div>
+
+            {/* --- AQUÍ VA EL PANEL QUE YA TENÍAS --- */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* FORMULARIO IZQUIERDA */}
+              <div className="border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-800 mb-3">
+                  Crear nueva reserva
+                </h3>
+
+                {bookingError && (
+                  <div className="mb-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                    {bookingError}
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateBooking} className="space-y-4">
+                  {/* Cuenta Better */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Cuenta Better
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={newBooking.better_account_id || ''}  // UI en string
+                      onChange={(e) => setNewBooking({ ...newBooking, better_account_id: e.target.value })}
+                      required
+                    >
+                      <option value="">Selecciona una cuenta</option>
+                      {bookingAccounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.label?.trim?.()
+                            || acc.env_username_key?.trim?.()
+                            || `Cuenta ${acc.id.slice(0,8)}…`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Venue / Actividad (fijos por ahora) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Lugar / Venue
+                      </label>
+                      <input
+                        type="text"
+                        value="Highbury Fields (Islington Tennis Centre)"
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Actividad
+                      </label>
+                      <input
+                        type="text"
+                        value="Highbury Tennis"
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Fecha y hora */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha de juego
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                        min={minDate}
+                        value={newBooking.target_date || minDate}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          // Si eligen antes de t+7, forzamos t+7
+                          setNewBooking({
+                            ...newBooking,
+                            target_date: v && v >= minDate ? v : minDate,
+                          });
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-amber-700">
+                        Solo se permiten reservas a partir de {minDate} (t+7).
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Hora de inicio
+                      </label>
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.start_time}
+                        onChange={(e) =>
+                          setNewBooking((prev) => ({
+                            ...prev,
+                            start_time: e.target.value,
+                          }))
+                        }
+                        required
+                      >
+                        {betterTimeOptions.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        La reserva será siempre de 1 hora (fin automático = inicio + 1h).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cancha preferida */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Canchas preferidas
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.preferred_court_name_1}
+                        onChange={(e) => setNewBooking({
+                          ...newBooking,
+                          preferred_court_name_1: e.target.value,
+                        })}
+                      >
+                        {courtNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.preferred_court_name_2}
+                        onChange={(e) => setNewBooking({
+                          ...newBooking,
+                          preferred_court_name_2: e.target.value,
+                        })}
+                      >
+                        <option value="">—</option>
+                        {courtNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        value={newBooking.preferred_court_name_3}
+                        onChange={(e) => setNewBooking({
+                          ...newBooking,
+                          preferred_court_name_3: e.target.value,
+                        })}
+                      >
+                        <option value="">—</option>
+                        {courtNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Primero intenta la 1ª, luego 2ª y 3ª. Si no hay, el bot elige la mejor alternativa disponible.
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={savingBooking}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-60"
+                    >
+                      {savingBooking ? 'Guardando…' : 'Crear reserva automática'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* LISTAS DERECHA */}
+              <div className="space-y-4">
+                <div className="border border-green-200 rounded-xl p-4 bg-green-50/50">
+                  <h3 className="font-semibold text-gray-800 mb-2">
+                    Bookings activos
+                  </h3>
+                  {visibleActiveRequests.length === 0 ? (
+                    <p className="text-sm text-gray-600">
+                      No hay reservas automáticas activas.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto -mx-2 sm:mx-0">
+                      <table className="min-w-[640px] w-full text-sm">
+                        <thead className="bg-green-50 text-gray-700">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Fecha</th>
+                            <th className="px-3 py-2 text-left">Hora</th>
+                            <th className="px-3 py-2 text-left">Cuenta</th>
+                            <th className="px-3 py-2 text-left">Canchas</th>
+                            <th className="px-3 py-2 text-left">Estado</th>
+                            <th className="px-3 py-2 text-left">Detalles</th>
+                            <th className="px-3 py-2 text-right">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {activeRequests.map((req) => {
+                            const account = bookingAccounts.find(a => a.id === req.better_account_id);
+                            const courts = [req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
+                              .filter(Boolean)
+                              .join(' · ') || '—';
+                            return (
+                              <tr key={req.id} className="bg-white">
+                                <td className="px-3 py-2 whitespace-nowrap">{tituloFechaEs(req.target_date)}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{formatTimeRange(req)}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{account?.label ?? '—'}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {joinCourtsShort(req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3)}
+                                </td>
+
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {shortStatus(req.status)}
+                                </td>
+
+                                <td className="px-3 py-2">
+                                  <details>
+                                    <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
+                                    <div className="mt-2 text-xs text-gray-600 space-y-1">
+                                      {req.last_error && <div>Último: {req.last_error}</div>}
+                                      {req.booked_court_name && <div>Booked: {req.booked_court_name}</div>}
+                                      {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
+                                      {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
+                                      <div>Preferidas: {[req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
+                                        .filter(Boolean).join(' · ') || '—'}
+                                      </div>
+                                    </div>
+                                  </details>
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap text-right">
+                                  <div className="inline-flex gap-2">
+                                    {/* Si ya tienes botón Modificar en otra parte, pon aquí tu handler de edición */}
+                                    {/* <button onClick={() => TU_HANDLER_DE_EDITAR(req)} className="text-xs px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50">Modificar</button> */}
+                                    <button
+                                      onClick={() => handleCancelBooking(req)}
+                                      className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 border border-gray-200 rounded-xl p-4 bg-white">
+              <h3 className="font-semibold text-gray-800 mb-2">
+                Historial de bookings
+              </h3>
+              {visibleHistoricalRequests.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  Aún no hay historial de reservas.
+                </p>
+              ) : (
+                <div className="overflow-x-auto -mx-2 sm:mx-0">
+                  <table className="min-w-[640px] w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-700">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Fecha</th>
+                        <th className="px-3 py-2 text-left">Hora</th>
+                        <th className="px-3 py-2 text-left">Cuenta</th>
+                        <th className="px-3 py-2 text-left">Cancha</th>
+                        <th className="px-3 py-2 text-left">Estado</th>
+                        <th className="px-3 py-2 text-left">Detalles</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {historicalRequests.map((req) => {
+                        const account = bookingAccounts.find(a => a.id === req.better_account_id);
+                        return (
+                          <tr key={req.id} className="bg-white">
+                            <td className="px-3 py-2 whitespace-nowrap">{tituloFechaEs(req.target_date)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{formatTimeRange(req)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{account?.label ?? '—'}</td>
+
+                            {/* Cancha (número corto) */}
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {shortCourt(req.booked_court_name || req.preferred_court_name_1) || '—'}
+                            </td>
+
+                            {/* Estado corto */}
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {shortStatus(req.status)}
+                            </td>
+
+                            {/* Detalles expandibles */}
+                            <td className="px-3 py-2">
+                              <details>
+                                <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
+                                <div className="mt-2 text-xs text-gray-600 space-y-1">
+                                  {req.last_error && <div>Último: {req.last_error}</div>}
+                                  {req.booked_court_name && <div>Booked: {req.booked_court_name}</div>}
+                                  {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
+                                  {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
+                                  <div>
+                                    Preferidas: {[req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
+                                      .filter(Boolean)
+                                      .join(' · ') || '—'}
+                                  </div>
+                                </div>
+                              </details>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {renderNotifs()}
+      </div>
+    );
+  }
 
   if (showMap) {
     return (
@@ -3579,12 +5085,26 @@ const App = () => {
             >
               Encontrar Cancha
             </button>
+            {isBookingAdmin && (
+              <button
+                onClick={() => {
+                  setShowBookingPanel(true);
+                  setShowMap(false);
+                  setSelectedTournament(null);
+                  setSelectedDivision(null);
+                  setSelectedPlayer(null);
+                }}
+                className="ml-2 mt-3 inline-flex items-center px-3 py-3.5 border border-green-700 text-white rounded-lg text-base font-medium hover:bg-green-400"
+              >
+                Reservas automáticas Better
+              </button>
+            )}
           </div>
-          </div>
+        </div>
 
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            {tournaments.map(tournament => {
+            {visibleTournaments.map(tournament => {
               // Get tournament registrations
               const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id);
               
@@ -3607,8 +5127,24 @@ const App = () => {
                   onClick={() => setSelectedTournament(tournament)}
                 >
                   <div className="p-6">
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">{tournament.name}</h3>
-                    <p className="text-gray-600 mb-4">Compete in our premier tennis championship</p>
+                    <div className="flex items-center gap-3 mb-4">
+                      {/* Contenedor cuadrado: asegura tamaño idéntico en todos los logos */}
+                      <div className="shrink-0 flex items-center justify-center
+                                      h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16
+                                      rounded">
+                        <img
+                          src={tournamentLogoSrc(tournament.name)}
+                          alt={`${tournament.name} logo`}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+
+                      {/* Título arriba, descripción abajo */}
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold text-gray-800 leading-tight">{tournament.name}</h3>
+                        <p className="text-gray-600">Compete in our premier tennis championship</p>
+                      </div>
+                    </div>
                     
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
@@ -3636,6 +5172,92 @@ const App = () => {
               );
             })}
           </div>
+          
+          {/* Carrusel de fotos de torneos anteriores */}
+          {highlightPhotos.length > 0 && (
+            <div className="mb-10">
+              <h3 className="text-2xl font-bold text-white mb-4 text-center">
+                Fotos de torneos anteriores
+              </h3>
+
+              <div className="relative max-w-4xl mx-auto rounded-2xl overflow-hidden shadow-2xl bg-black/40">
+                {/* Slides */}
+                <div className="relative w-full aspect-[16/9]">
+                  {highlightPhotos.map((photo, index) => (
+                    <div
+                      key={photo.src}
+                      className={`
+                        absolute inset-0
+                        transition-transform duration-700 ease-out
+                        ${index === 0 ? '' : ''}
+                      `}
+                      style={{
+                        transform: `translateX(${(index - currentPhotoIndex) * 100}%)`,
+                      }}
+                    >
+                      <img
+                        src={photo.src}
+                        alt={photo.alt}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Degradado para texto */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                      {/* Texto sobre la foto */}
+                      <div className="absolute bottom-4 left-4 right-4 md:left-6 md:bottom-6">
+                        <p className="text-sm md:text-base text-gray-100 font-medium drop-shadow">
+                          {photo.caption}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Flechas de navegación */}
+                {highlightPhotos.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={goToPrevPhoto}
+                      className="absolute inset-y-0 left-0 flex items-center px-3 md:px-4
+                                 text-white/80 hover:text-white focus:outline-none"
+                      aria-label="Foto anterior"
+                    >
+                      <span className="text-2xl md:text-3xl">‹</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={goToNextPhoto}
+                      className="absolute inset-y-0 right-0 flex items-center px-3 md:px-4
+                                 text-white/80 hover:text-white focus:outline-none"
+                      aria-label="Foto siguiente"
+                    >
+                      <span className="text-2xl md:text-3xl">›</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Dots inferiores */}
+                {highlightPhotos.length > 1 && (
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+                    {highlightPhotos.map((_, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setCurrentPhotoIndex(index)}
+                        className={`
+                          h-2.5 w-2.5 rounded-full border border-white/70
+                          transition-all duration-200
+                          ${index === currentPhotoIndex ? 'bg-white scale-110' : 'bg-white/20'}
+                        `}
+                        aria-label={`Ir a la foto ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
 
         {showJoinModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3752,6 +5374,51 @@ const App = () => {
     );
   }
 
+
+  if (selectedTournament && selectedTournament.format === 'knockout' && !selectedDivision) {
+    const tournamentMatches = matches.filter(m => m.tournament_id === selectedTournament.id    );
+
+    return (
+      <div className="flex flex-col gap-4">
+        <BracketView
+          tournament={selectedTournament}
+          matches={tournamentMatches}
+          profiles={profiles}
+          matchSets={matchSets}
+          onBack={() => {
+            setSelectedTournament(null);
+            setSelectedDivision(null);
+            setSelectedPlayer(null);
+          }}
+          onEditSchedule={openEditSchedule}
+          onEditResult={openEditResult}
+          canEditSchedule={canEditSchedule}
+        />
+
+        {/* Botón de compartir tabla de partidos de este torneo */}
+        <div className="px-4 pb-6 flex justify-end">
+          <button
+            onClick={shareAllScheduledMatches}
+            className="inline-flex items-center gap-2 rounded-full bg-emerald-500 text-slate-900 text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 hover:bg-emerald-400 shadow-md"
+          >
+            {/* Icono estilo WhatsApp */}
+            <svg
+              className="w-4 h-4 sm:w-5 sm:h-5"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M20.52 3.48A11.9 11.9 0 0012.06 0C5.67 0 .48 5.19.48 11.58c0 2.04.53 4.04 1.54 5.8L0 24l6.8-1.96a11.57 11.57 0 005.26 1.33h.01c6.39 0 11.58-5.19 11.58-11.58 0-3.09-1.2-6-3.4-8.21zM12.06 21.1h-.01a9.5 9.5 0 01-4.84-1.33l-.35-.2-4.03 1.16 1.15-3.93-.23-.4a9.55 9.55 0 01-1.45-5.08c0-5.26 4.28-9.54 9.55-9.54 2.55 0 4.95.99 6.76 2.8a9.49 9.49 0 012.79 6.75c0 5.27-4.28 9.55-9.54 9.55zm5.23-7.16c-.28-.14-1.66-.82-1.92-.91-.26-.1-.45-.14-.64.14-.19.29-.74.91-.91 1.09-.17.19-.34.21-.62.07-.28-.14-1.18-.44-2.25-1.4-.83-.74-1.39-1.66-1.55-1.94-.16-.28-.02-.43.12-.57.12-.12.28-.31.42-.46.14-.16.18-.26.28-.44.1-.19.05-.35-.02-.5-.07-.14-.64-1.54-.88-2.11-.23-.55-.47-.47-.64-.48h-.55c-.19 0-.5.07-.76.35s-1 1-1 2.43 1.02 2.82 1.16 3.02c.14.19 2.01 3.07 4.86 4.3.68.29 1.21.46 1.62.59.68.22 1.3.19 1.79.12.55-.08 1.66-.68 1.9-1.33.23-.65.23-1.21.16-1.33-.07-.12-.26-.19-.54-.33z" />
+            </svg>
+            <span>Compartir partidos</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+
+
   if (selectedTournament && !selectedDivision) {
     // Tournament View with all divisions
     const tournamentDivisions = divisions.filter(d => d.tournament_id === selectedTournament.id);
@@ -3838,13 +5505,13 @@ const App = () => {
                   onClick={() => setSelectedTournament(null)}
                   className="text-green-600 hover:text-green-800 font-semibold mb-2"
                 >
-                  ← Back to Tournaments
+                  ← Volver a torneos
                 </button>
                 <div className="flex items-center gap-3 mt-1">
                   <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
                   <div>
                     <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
-                    <p className="text-gray-600">All divisions and player details</p>
+                    <p className="text-gray-600">Detalles de divisiones y jugadores</p>
                   </div>
                 </div>
               </div>
@@ -4214,10 +5881,40 @@ const App = () => {
     );
   }
 
+  // Knockout tournament view (sin divisiones)
+  if (
+    selectedTournament &&
+    (selectedTournament as any).format === 'knockout' &&
+    !selectedDivision
+  ) {
+    const tournamentMatches = matches.filter(
+      m => m.tournament_id === selectedTournament.id
+    );
+
+    return (
+      <BracketView
+        tournament={selectedTournament}
+        matches={tournamentMatches}
+        profiles={profiles}
+        matchSets={matchSets}             // 👈 NUEVO
+        onBack={() => {
+          setSelectedTournament(null);
+          setSelectedDivision(null);
+          setSelectedPlayer(null);
+        }}
+        onEditSchedule={openEditSchedule}
+        onEditResult={openEditResult}
+        canEditSchedule={canEditSchedule}
+      />
+    );
+  }
+
+
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
 
+  const PENDING_ID = '__PENDING_OPPONENT__';
   // Oculta rivales con los que ya hubo scheduled o played
   const eligibleP2Options =
     !newMatch.player1
@@ -4290,9 +5987,7 @@ const App = () => {
 
 
     // Usaremos el comparador único: victorias → H2H → ratio sets → ratio games
-    const rosterSorted = [...rosterRows].sort((a, b) =>
-      compareStandings(a, b, selectedDivision.id, selectedTournament.id, matches)
-    );
+    const rosterSorted = rosterRows;
 
     const divisionStandings = divisionStats;
     const divLeader = rosterRows[0] ?? null;
@@ -4868,7 +6563,7 @@ const App = () => {
                                     <div className="flex justify-between">
                                       <div>
                                         <p className="text-sm font-medium">{uiName(player1?.name)} vs {uiName(player2?.name)}</p>
-                                        <p className="text-xs text-gray-500">{formatDate(match.date)} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
+                                        <p className="text-xs text-gray-500">{formatDate(new Date(match.date))} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
                                       </div>
                                       <div className="text-right">
                                         <p className="text-sm font-medium">
@@ -4942,22 +6637,24 @@ const App = () => {
                               return (
                                 <tr key={m.id} className="hover:bg-gray-50">
                                   <td className="px-4 py-2">
-                                    {formatDate(m.date)} {m.time ? `· ${m.time.slice(0,5)}` : ''}
+                                    {formatDate(new Date(m.date))} {m.time ? `· ${m.time.slice(0,5)}` : ''}
                                   </td>
                                   <td className="px-4 py-2">
                                     {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
                                   </td>
                                   <td className="px-4 py-2">{loc}</td>
                                   <td className="px-4 py-2">
-                                    <div className="flex gap-3">
+                                    <div className="flex flex-wrap gap-2">
+                                      {/* Editar fecha / hora / lugar */}
                                       <button
-                                        onClick={() => openEditSchedule(m)}   // reutiliza tu modal existente
-                                        className="text-blue-600 hover:underline"
+                                        onClick={() => openEditSchedule(m)}
+                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700"
                                       >
-                                        Editar
+                                        Editar horario
                                       </button>
+
+                                      {/* Agregar resultados */}
                                       <button
-                                        className="text-green-600 hover:underline"
                                         onClick={() => {
                                           const currentSets = matchSets
                                             .filter(s => s.match_id === m.id)
@@ -4975,12 +6672,15 @@ const App = () => {
                                           });
                                           setEditingMatch(m);
                                         }}
+                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
                                       >
                                         Agregar resultados
                                       </button>
+
+                                      {/* Eliminar partido (opcional, pero útil) */}
                                       <button
-                                        onClick={() => handleDeleteScheduledMatch(m)} // reutiliza tu delete/cancel existente
-                                        className="text-red-600 hover:underline"
+                                        onClick={() => handleDeleteScheduledMatch(m)}
+                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700"
                                       >
                                         Eliminar
                                       </button>
@@ -5479,13 +7179,13 @@ const App = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
                   {/* Jugador 2 (Opcional) */}
                   <select
-                    value={newMatch.player2}
+                    value={newMatch.player2 ?? PENDING_ID}
                     onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    required
+                    //required    -- Jugador 2 es opcional
                     disabled={!newMatch.player1}
                   >
-                    <option value="">Jugador Pendiente</option>
+                    <option value={PENDING_ID}>— Rival pendiente (publicar aviso) —</option>
                     {eligibleP2Options.map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
@@ -5719,7 +7419,7 @@ const App = () => {
                         ].filter(Boolean).join(' - ') || 'TBD';
                         return (
                           <tr key={m.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(m.date)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(new Date(m.date))}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(p1?.name)} vs {uiName(p2?.name)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{selectedDivision.name}</td>
@@ -5762,5 +7462,8 @@ const App = () => {
 
   return null;
 };
+
+
+
 export default App;
 

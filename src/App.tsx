@@ -998,7 +998,7 @@ const App = () => {
   const [editedMatchData, setEditedMatchData] = useState({
     sets: [{ score1: '', score2: '' }],
     hadPint: false,
-    pintsCount: 1,
+    pintsCount: '1',
     anecdote : '',
   });
   const [editingSchedule, setEditingSchedule] = useState<Match | null>(null);
@@ -2147,7 +2147,7 @@ const App = () => {
     setEditedMatchData({
       sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
       hadPint: false,
-      pintsCount: 1,
+      pintsCount: '1',
       anecdote: '',
     });
 
@@ -3073,47 +3073,67 @@ const App = () => {
 
 
   const shareAllScheduledMatches = () => {
-    if (!selectedTournament) return;
+    // 1) Torneos activos
+    const active = tournaments.filter(t => t.status === 'active');
+
+    // 2) Orden WPPC → PPC → PPC Cup (por nombre)
+    const orderTournament = (t: Tournament) => {
+      const n = (t.name || '').toLowerCase();
+      if (n.includes('wppc')) return 0;
+      if (n.includes('ppc cup')) return 2;
+      return 1; // PPC (hombres) por defecto
+    };
+
+    const ordered = [...active].sort((a, b) => orderTournament(a) - orderTournament(b));
+
+    // 3) Partido agendado desde hoy en adelante, agrupado por torneo
+    const blocks: string[] = [];
+
+    ordered.forEach(t => {
       const all = matches
         .filter(m =>
-          m.tournament_id === selectedTournament.id &&
+          m.tournament_id === t.id &&
           m.status === 'scheduled' &&
           isTodayOrFuture(m.date)
         )
         .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
 
-    if (all.length === 0) return alert('No scheduled matches to share');
+      if (all.length === 0) return; // no mostramos torneo sin partidos
 
-    const tName =
-      tournaments.find(t => t.id === selectedTournament.id)?.name ||
-      selectedTournament.name ||
-      'Pinta Post Championship';
+      // Agrupar por fecha (misma lógica tuya)
+      const grouped = all.reduce((acc, match) => {
+        const key = dateKey(match.date);
+        (acc[key] ||= []).push(match);
+        return acc;
+      }, {} as Record<string, Match[]>);
 
-    let msg = `*${tName} - Partidos programados*\n\n`;
-    
-    const grouped = all.reduce((acc, match) => {
-      const key = dateKey(match.date);
-      (acc[key] ||= []).push(match);
-      return acc;
-    }, {} as Record<string, Match[]>);
+      // Construir bloque del torneo
+      let msg = `*${t.name}*\n\n`;
 
-    Object.keys(grouped).sort().forEach(date => {
-      msg += `*${tituloFechaEs(date)}*\n`;
-      grouped[date].forEach(m => {
-        const p1 = displayNameForShare(m.home_player_id);
-        const p2 = displayNameForShare(m.away_player_id ?? '');
-        const divName = divisions.find(d => d.id === m.division_id)?.name || '';
-        const icon = divisionIcon(divName);
-        // MENSAJE SIMPLIFICADO
-        msg += `• ${p1} vs ${p2} ${icon}\n`;
+      Object.keys(grouped).sort().forEach(date => {
+        msg += `*${tituloFechaEs(date)}*\n`;
+        grouped[date].forEach(m => {
+          const p1 = displayNameForShare(m.home_player_id);
+          const p2 = displayNameForShare(m.away_player_id ?? '');
+          const divName = divisions.find(d => d.id === m.division_id)?.name || '';
+          const icon = divisionIcon(divName);
+          msg += `• ${p1} vs ${p2} ${icon}\n`;
+        });
+        msg += '\n';
       });
-      msg += '\n';
-    });
-    const siteUrl = window.location.origin; // o tu dominio fijo
-    msg = msg.trimEnd() + `\n\n${siteUrl}`;
 
-    safeShareOnWhatsApp(msg);
+      blocks.push(msg.trimEnd());
+    });
+
+    if (blocks.length === 0) return alert('No scheduled matches to share');
+
+    const siteUrl = window.location.origin;
+    const finalMsg = blocks.join('\n\n') + `\n\n${siteUrl}`;
+
+    safeShareOnWhatsApp(finalMsg);
   };
+
+
 
   const copyTableToClipboard = () => {
     if (!selectedTournament) return alert('Primero elige un torneo');
@@ -4482,7 +4502,7 @@ const App = () => {
                   min="1"
                   value={editedMatchData.pintsCount}
                   onChange={(e) =>
-                    setEditedMatchData({ ...editedMatchData, pintsCount: parseInt(e.target.value) || 1 })
+                    setEditedMatchData({ ...editedMatchData, pintsCount: e.target.value})
                   }
                   className="w-24 h-11 text-base px-3 border border-gray-300 rounded-lg text-center ml-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
@@ -6360,7 +6380,7 @@ const App = () => {
                                     setEditedMatchData({
                                       sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
                                       hadPint: match.player1_had_pint,
-                                      pintsCount: match.player1_pints || 1,
+                                      pintsCount: String(match.player1_pints ?? 1),
                                       anecdote: '',
                                     });
                                     setEditingMatch(match);
@@ -6667,7 +6687,7 @@ const App = () => {
                                           setEditedMatchData({
                                             sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
                                             hadPint: false,
-                                            pintsCount: 1,
+                                            pintsCount: '1',
                                             anecdote: '',
                                           });
                                           setEditingMatch(m);
