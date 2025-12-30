@@ -723,28 +723,16 @@ function BracketView({
 
           {/* QF izquierda */}
           <div className="space-y-12 mt-12">
-            {qfLeft.map((m, idx) => {
-              const hasOnlyOne = !!m?.home_player_id && !m?.away_player_id;
-
-              // SOLO el QF de abajo (idx 1) debe mostrar el único jugador abajo
-              const forceSingleBottom = idx === 1;
-
-              const pTop = hasOnlyOne && forceSingleBottom ? null : getProfile(m?.home_player_id);
-              const pBottom = hasOnlyOne && forceSingleBottom
-                ? getProfile(m?.home_player_id)
-                : getProfile(m?.away_player_id);
-
-              return (
-                <BracketMatchCard
-                  key={`qf-L-${idx}`}
-                  match={m}
-                  player1={pTop}
-                  player2={pBottom}
-                  header={idx === 0 ? 'Quarter-finals' : undefined}
-                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-                />
-              );
-            })}
+            {qfLeft.map((m, idx) => (
+              <BracketMatchCard
+                key={`qf-L-${idx}`}
+                match={m}
+                player1={getProfile(m?.home_player_id)}
+                player2={getProfile(m?.away_player_id)}
+                header={idx === 0 ? 'Quarter-finals' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
           </div>
 
           {/* Centro: SF + Final */}
@@ -777,28 +765,16 @@ function BracketView({
 
           {/* QF derecha */}
           <div className="space-y-12 mt-12">
-            {qfRight.map((m, idx) => {
-              const hasOnlyOne = !!m?.home_player_id && !m?.away_player_id;
-
-              // SOLO el QF de arriba (idx 0) debe mostrar el único jugador abajo
-              const forceSingleBottom = idx === 0;
-
-              const pTop = hasOnlyOne && forceSingleBottom ? null : getProfile(m?.home_player_id);
-              const pBottom = hasOnlyOne && forceSingleBottom
-                ? getProfile(m?.home_player_id)
-                : getProfile(m?.away_player_id);
-
-              return (
-                <BracketMatchCard
-                  key={`qf-R-${idx}`}
-                  match={m}
-                  player1={pTop}
-                  player2={pBottom}
-                  header={idx === 0 ? 'Quarter-finals' : undefined}
-                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-                />
-              );
-            })}
+            {qfRight.map((m, idx) => (
+              <BracketMatchCard
+                key={`qf-R-${idx}`}
+                match={m}
+                player1={getProfile(m?.home_player_id)}
+                player2={getProfile(m?.away_player_id)}
+                header={idx === 0 ? 'Quarter-finals' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
           </div>
 
           {/* R16 derecha */}
@@ -3094,6 +3070,7 @@ const App = () => {
     const dateNum  = y * 10000 + m * 100 + d;
     return dateNum >= todayNum;
   }
+
 
   const shareAllScheduledMatches = () => {
     // 1) Torneos activos
