@@ -202,6 +202,7 @@ interface Tournament {
   end_date: string;
   status: string;
   format?: 'league' | 'knockout';
+  sort_order?: number;
 }
 
 interface Division {
@@ -2492,8 +2493,10 @@ const App = () => {
   async function fetchTournamentsAndDivisions() {
     const { data: ts, error: tErr } = await supabase
       .from('tournaments')
-      .select('id,name,season,start_date,end_date,status,format')
+      .select('id,name,season,start_date,end_date,status,format,sort_order')
+      .order('sort_order', { ascending: true })
       .order('start_date', { ascending: false });
+
     if (tErr) throw tErr;
 
     const { data: ds, error: dErr } = await supabase
@@ -2510,6 +2513,7 @@ const App = () => {
     });
     setDivisionsByTournament(map);
   }
+
 
 
   async function persistOnboarding(uid: string, onboarding: {
@@ -2906,7 +2910,8 @@ const App = () => {
       'Bronce': '🥉',
       'Cobre': '⚜️',
       'Hierro': '⚙️',
-      'Elite': '⭐',
+      'Élite': '⭐',
+      'Calibraciones': '🔥',
     };
     return map[name] || '🏆';
   }
@@ -3752,8 +3757,13 @@ const App = () => {
   const visibleTournaments = [...tournaments]
     // 🔹 mostrar solo torneos vivos (por ahora: activos o próximos)
     .filter(t => t.status === 'active' || t.status === 'upcoming')
-    // 🔹 primero ligas, luego KO, luego cualquier otro formato
     .sort((a, b) => {
+      // 0 arriba, 999 abajo (Calibraciones queda último)
+      const soA = a.sort_order ?? 0;
+      const soB = b.sort_order ?? 0;
+      if (soA !== soB) return soA - soB;
+
+      // 🔹 primero ligas, luego KO, luego cualquier otro formato
       const order = (fmt?: string) => {
         if (fmt === 'league') return 0;
         if (fmt === 'knockout') return 1;
