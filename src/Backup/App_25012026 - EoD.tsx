@@ -202,6 +202,7 @@ interface Tournament {
   end_date: string;
   status: string;
   format?: 'league' | 'knockout';
+  sort_order?: number;
 }
 
 interface Division {
@@ -723,16 +724,28 @@ function BracketView({
 
           {/* QF izquierda */}
           <div className="space-y-12 mt-12">
-            {qfLeft.map((m, idx) => (
-              <BracketMatchCard
-                key={`qf-L-${idx}`}
-                match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
-                header={idx === 0 ? 'Quarter-finals' : undefined}
-                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-              />
-            ))}
+            {qfLeft.map((m, idx) => {
+              const hasOnlyOne = !!m?.home_player_id && !m?.away_player_id;
+
+              // SOLO el QF de abajo (idx 1) debe mostrar el único jugador abajo
+              const forceSingleBottom = idx === 1;
+
+              const pTop = hasOnlyOne && forceSingleBottom ? null : getProfile(m?.home_player_id);
+              const pBottom = hasOnlyOne && forceSingleBottom
+                ? getProfile(m?.home_player_id)
+                : getProfile(m?.away_player_id);
+
+              return (
+                <BracketMatchCard
+                  key={`qf-L-${idx}`}
+                  match={m}
+                  player1={pTop}
+                  player2={pBottom}
+                  header={idx === 0 ? 'Quarter-finals' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                />
+              );
+            })}
           </div>
 
           {/* Centro: SF + Final */}
@@ -765,16 +778,28 @@ function BracketView({
 
           {/* QF derecha */}
           <div className="space-y-12 mt-12">
-            {qfRight.map((m, idx) => (
-              <BracketMatchCard
-                key={`qf-R-${idx}`}
-                match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
-                header={idx === 0 ? 'Quarter-finals' : undefined}
-                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-              />
-            ))}
+            {qfRight.map((m, idx) => {
+              const hasOnlyOne = !!m?.home_player_id && !m?.away_player_id;
+
+              // SOLO el QF de arriba (idx 0) debe mostrar el único jugador abajo
+              const forceSingleBottom = idx === 0;
+
+              const pTop = hasOnlyOne && forceSingleBottom ? null : getProfile(m?.home_player_id);
+              const pBottom = hasOnlyOne && forceSingleBottom
+                ? getProfile(m?.home_player_id)
+                : getProfile(m?.away_player_id);
+
+              return (
+                <BracketMatchCard
+                  key={`qf-R-${idx}`}
+                  match={m}
+                  player1={pTop}
+                  player2={pBottom}
+                  header={idx === 0 ? 'Quarter-finals' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                />
+              );
+            })}
           </div>
 
           {/* R16 derecha */}
@@ -955,6 +980,7 @@ const App = () => {
     postal_code: '',
   });
   const [hasCommitted, setHasCommitted] = useState(false);
+  const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
 
   const [newMatch, setNewMatch] = useState({ 
     player1: '', 
@@ -1191,13 +1217,13 @@ const App = () => {
   const formatDate = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-  const todayPlus7 = (() => {
+  const todayPlus2 = (() => {
     const d = new Date();
     d.setHours(0,0,0,0);
-    d.setDate(d.getDate() + 7);
+    d.setDate(d.getDate() + 2);
     return d;
   })();
-  const minDate = formatDate(todayPlus7);
+  const minDate = formatDate(todayPlus2);
 
   function hasActiveMatchWith(
     meId: string,
@@ -2468,8 +2494,10 @@ const App = () => {
   async function fetchTournamentsAndDivisions() {
     const { data: ts, error: tErr } = await supabase
       .from('tournaments')
-      .select('id,name,season,start_date,end_date,status,format')
+      .select('id,name,season,start_date,end_date,status,format,sort_order')
+      .order('sort_order', { ascending: true })
       .order('start_date', { ascending: false });
+
     if (tErr) throw tErr;
 
     const { data: ds, error: dErr } = await supabase
@@ -2486,6 +2514,7 @@ const App = () => {
     });
     setDivisionsByTournament(map);
   }
+
 
 
   async function persistOnboarding(uid: string, onboarding: {
@@ -2882,7 +2911,8 @@ const App = () => {
       'Bronce': '🥉',
       'Cobre': '⚜️',
       'Hierro': '⚙️',
-      'Elite': '⭐',
+      'Élite': '⭐',
+      'Calibraciones': '🔥',
     };
     return map[name] || '🏆';
   }
@@ -3071,49 +3101,68 @@ const App = () => {
     return dateNum >= todayNum;
   }
 
-
   const shareAllScheduledMatches = () => {
-    if (!selectedTournament) return;
+    // 1) Torneos activos
+    const active = tournaments.filter(t => t.status === 'active');
+
+    // 2) Orden WPPC → PPC → PPC Cup (por nombre)
+    const orderTournament = (t: Tournament) => {
+      const n = (t.name || '').toLowerCase();
+      if (n.includes('wppc')) return 0;
+      if (n.includes('ppc cup')) return 2;
+      return 1; // PPC (hombres) por defecto
+    };
+
+    const ordered = [...active].sort((a, b) => orderTournament(a) - orderTournament(b));
+
+    // 3) Partido agendado desde hoy en adelante, agrupado por torneo
+    const blocks: string[] = [];
+
+    ordered.forEach(t => {
       const all = matches
         .filter(m =>
-          m.tournament_id === selectedTournament.id &&
+          m.tournament_id === t.id &&
           m.status === 'scheduled' &&
           isTodayOrFuture(m.date)
         )
         .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
 
-    if (all.length === 0) return alert('No scheduled matches to share');
+      if (all.length === 0) return; // no mostramos torneo sin partidos
 
-    const tName =
-      tournaments.find(t => t.id === selectedTournament.id)?.name ||
-      selectedTournament.name ||
-      'Pinta Post Championship';
+      // Agrupar por fecha (misma lógica tuya)
+      const grouped = all.reduce((acc, match) => {
+        const key = dateKey(match.date);
+        (acc[key] ||= []).push(match);
+        return acc;
+      }, {} as Record<string, Match[]>);
 
-    let msg = `*${tName} - Partidos programados*\n\n`;
-    
-    const grouped = all.reduce((acc, match) => {
-      const key = dateKey(match.date);
-      (acc[key] ||= []).push(match);
-      return acc;
-    }, {} as Record<string, Match[]>);
+      // Construir bloque del torneo
+      let msg = `*${t.name}*\n\n`;
 
-    Object.keys(grouped).sort().forEach(date => {
-      msg += `*${tituloFechaEs(date)}*\n`;
-      grouped[date].forEach(m => {
-        const p1 = displayNameForShare(m.home_player_id);
-        const p2 = displayNameForShare(m.away_player_id ?? '');
-        const divName = divisions.find(d => d.id === m.division_id)?.name || '';
-        const icon = divisionIcon(divName);
-        // MENSAJE SIMPLIFICADO
-        msg += `• ${p1} vs ${p2} ${icon}\n`;
+      Object.keys(grouped).sort().forEach(date => {
+        msg += `*${tituloFechaEs(date)}*\n`;
+        grouped[date].forEach(m => {
+          const p1 = displayNameForShare(m.home_player_id);
+          const p2 = displayNameForShare(m.away_player_id ?? '');
+          const divName = divisions.find(d => d.id === m.division_id)?.name || '';
+          const icon = divisionIcon(divName);
+          msg += `• ${p1} vs ${p2} ${icon}\n`;
+        });
+        msg += '\n';
       });
-      msg += '\n';
-    });
-    const siteUrl = window.location.origin; // o tu dominio fijo
-    msg = msg.trimEnd() + `\n\n${siteUrl}`;
 
-    safeShareOnWhatsApp(msg);
+      blocks.push(msg.trimEnd());
+    });
+
+    if (blocks.length === 0) return alert('No scheduled matches to share');
+
+    const siteUrl = window.location.origin;
+    const finalMsg = blocks.join('\n\n') + `\n\n${siteUrl}`;
+
+    safeShareOnWhatsApp(finalMsg);
   };
+
+
 
   const copyTableToClipboard = () => {
     if (!selectedTournament) return alert('Primero elige un torneo');
@@ -3709,8 +3758,13 @@ const App = () => {
   const visibleTournaments = [...tournaments]
     // 🔹 mostrar solo torneos vivos (por ahora: activos o próximos)
     .filter(t => t.status === 'active' || t.status === 'upcoming')
-    // 🔹 primero ligas, luego KO, luego cualquier otro formato
     .sort((a, b) => {
+      // 0 arriba, 999 abajo (Calibraciones queda último)
+      const soA = a.sort_order ?? 0;
+      const soB = b.sort_order ?? 0;
+      if (soA !== soB) return soA - soB;
+
+      // 🔹 primero ligas, luego KO, luego cualquier otro formato
       const order = (fmt?: string) => {
         if (fmt === 'league') return 0;
         if (fmt === 'knockout') return 1;
@@ -3723,6 +3777,10 @@ const App = () => {
       // dentro del mismo tipo, más nuevo primero (start_date descendente)
       return (b.start_date || '').localeCompare(a.start_date || '');
     });
+
+  const historicTournaments = [...tournaments]
+    .filter(t => t.status === 'closed' || t.status === 'completed')
+    .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const target = e.target;
@@ -4661,8 +4719,8 @@ const App = () => {
                   Reservas automáticas Better
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Programa que el bot reserve automáticamente una cancha en Highbury
-                  7 días antes, usando el crédito de tu cuenta Better.
+                  Programa que el bot reserve automáticamente una cancha en Highbury,
+                  usando el crédito de tu cuenta Better. <strong className="font-bold text-gray-900">Se recomienda hacerlo 7 días antes.  </strong>
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
                   Por ahora solo soporta Highbury Fields (Islington Tennis Centre) y
@@ -4674,7 +4732,6 @@ const App = () => {
               </div>
             </div>
 
-            {/* --- AQUÍ VA EL PANEL QUE YA TENÍAS --- */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* FORMULARIO IZQUIERDA */}
               <div className="border border-gray-200 rounded-xl p-4">
@@ -4758,7 +4815,7 @@ const App = () => {
                         }}
                       />
                       <p className="mt-1 text-xs text-amber-700">
-                        Solo se permiten reservas a partir de {minDate} (t+7).
+                        Solo se permiten reservas a partir de {minDate} (t+2).
                       </p>
                     </div>
                     <div>
@@ -4783,7 +4840,7 @@ const App = () => {
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500">
-                        La reserva será siempre de 1 hora (fin automático = inicio + 1h).
+                        La reserva será siempre de 1 hora.
                       </p>
                     </div>
                   </div>
@@ -5173,6 +5230,117 @@ const App = () => {
             })}
           </div>
           
+
+          {/* Botón + bloque desplegable de torneos históricos */}
+          <div className="flex justify-center mt-6 mb-8">
+            <button
+              type="button"
+              onClick={() => setShowHistoricTournaments(v => !v)}
+              className="w-full max-w-md inline-flex items-center justify-between px-5 py-3 rounded-xl bg-slate-900/60 text-white border border-white/20 shadow-lg hover:bg-slate-900/75 transition"
+              aria-expanded={showHistoricTournaments}
+            >
+              <span className="font-semibold">
+                {showHistoricTournaments ? 'Ocultar Torneos Históricos' : 'Ver Torneos Históricos'}
+              </span>
+
+              <span className="text-white/90 text-lg leading-none">
+                {showHistoricTournaments ? '▲' : '▼'}
+              </span>
+            </button>
+          </div>
+
+          {showHistoricTournaments && (
+            <div className="mt-6">
+              <h2 className="text-white font-semibold mb-3 text-sm sm:text-base text-center">
+                Torneos Históricos
+              </h2>
+
+              {historicTournaments.length === 0 ? (
+                <p className="text-center text-white/70 text-sm">
+                  No hay torneos históricos todavía.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                  {historicTournaments.map(tournament => {
+                    const tournamentRegistrations = registrations.filter(
+                      r => r.tournament_id === tournament.id
+                    );
+
+                    const tournamentMatches = matches.filter(
+                      m => m.tournament_id === tournament.id
+                    );
+
+                    const allScheduled = tournamentMatches.filter(
+                      m => m.status === 'scheduled' && isTodayOrFuture(m.date)
+                    );
+
+                    const totalPints = tournamentMatches.reduce((sum, m) => {
+                      const p1 = Number(m.player1_pints ?? 0);
+                      const p2 = Number(m.player2_pints ?? 0);
+                      return sum + p1 + p2;
+                    }, 0);
+
+                    return (
+                      <div key={tournament.id} className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <div
+                          className="p-6 cursor-pointer hover:bg-gray-50 transition duration-200"
+                          onClick={() => setSelectedTournament(tournament)}
+                        >
+                          <div className="flex items-center gap-4 mb-6">
+                            <div className="w-14 h-14 flex items-center justify-center">
+                              <img
+                                src={tournamentLogoSrc(tournament.name)}
+                                alt={`${tournament.name} logo`}
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+
+                            <div className="flex-1">
+                              <h3 className="text-xl font-bold text-gray-800 leading-tight">
+                                {tournament.name}
+                              </h3>
+                              <p className="text-gray-600">Compete in our premier tennis championship</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {tournamentRegistrations.length}
+                              </div>
+                              <div className="text-sm text-gray-600">Players</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-green-600">
+                                {tournamentMatches.length}
+                              </div>
+                              <div className="text-sm text-gray-600">Matches</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                              <div className="text-sm text-gray-600">Total Pintas</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-orange-600">
+                                {allScheduled.length}
+                              </div>
+                              <div className="text-sm text-gray-600">Upcoming Matches</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+
+
           {/* Carrusel de fotos de torneos anteriores */}
           {highlightPhotos.length > 0 && (
             <div className="mb-10">

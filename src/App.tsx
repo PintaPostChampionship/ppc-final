@@ -177,6 +177,14 @@ interface Profile {
   nickname?: string | null;
 }
 
+interface HistoricPlayer {
+  id: string;
+  name: string;
+  email?: string | null;
+  avatar_url?: string | null;
+  created_at: string;
+}
+
 interface Location {
   id: string;
   name: string;
@@ -216,7 +224,8 @@ interface Registration {
   id: string;
   tournament_id: string;
   division_id: string;
-  profile_id: string;
+  profile_id: string | null;          
+  historic_player_id?: string | null;     
   seed?: number;
   created_at: string;
 }
@@ -232,6 +241,8 @@ interface Match {
   status: string;
   home_player_id: string;
   away_player_id: string | null;
+  home_historic_player_id?: string | null;
+  away_historic_player_id?: string | null;
   player1_sets_won: number;
   player2_sets_won: number;
   player1_games_won: number;
@@ -506,19 +517,26 @@ async function advanceWinner(match: Match, supabase: any) {
 
 // ---------------- Bracket (vista KO) ----------------
 
+type BracketAnyPlayer = {
+  id: string;
+  name?: string | null;
+  avatar_url?: string | null;
+};
+
 type BracketViewProps = {
   tournament: Tournament;
   matches: Match[];
   profiles: Profile[];
-  matchSets: MatchSet[]; 
+  historicPlayers: HistoricPlayer[];  
+  matchSets: MatchSet[];
   onBack: () => void;
-  onEditSchedule: (m: Match) => void;  
-  onEditResult: (m: Match) => void;     
-  canEditSchedule: (m: Match) => boolean; 
+  onEditSchedule: (m: Match) => void;
+  onEditResult: (m: Match) => void;
+  canEditSchedule: (m: Match) => boolean;
 };
 
 type BracketPlayerSlotProps = {
-  player?: Profile | null;
+  player?: BracketAnyPlayer | null;
   isWinner?: boolean;
   isLoser?: boolean;
 };
@@ -551,7 +569,7 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
         {player?.avatar_url ? (
           <img
             src={player.avatar_url}
-            alt={player.name}
+            alt={player?.name ?? 'Player'}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -569,10 +587,10 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
 
 type BracketMatchCardProps = {
   match: Match | null;
-  player1?: Profile | null;
-  player2?: Profile | null;
+  player1?: BracketAnyPlayer | null;
+  player2?: BracketAnyPlayer | null;
   header?: string;
-  sets?: MatchSet[]; 
+  sets?: MatchSet[];
 };
 
 const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
@@ -596,9 +614,9 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
     }
   }
 
-  const isWinner = (p?: Profile | null) =>
+  const isWinner = (p?: BracketAnyPlayer | null) =>
     !!winnerId && p?.id === winnerId;
-  const isLoser = (p?: Profile | null) =>
+  const isLoser = (p?: BracketAnyPlayer | null) =>
     !!loserId && p?.id === loserId;
 
   // Crear línea de marcador, ej: "6-4  3-6  10-8"
@@ -647,12 +665,26 @@ function BracketView({
   tournament,
   matches,
   profiles,
+  historicPlayers,
   matchSets,
   onBack,
   onEditSchedule,
   onEditResult,
   canEditSchedule,
 }: BracketViewProps) {
+
+  const getPlayer = (id?: string | null): BracketAnyPlayer | null => {
+    if (!id) return null;
+
+    const p = profiles.find(x => x.id === id);
+    if (p) return { id: p.id, name: p.name, avatar_url: p.avatar_url ?? null };
+
+    const h = historicPlayers.find(x => x.id === id);
+    if (h) return { id: h.id, name: h.name, avatar_url: h.avatar_url ?? null };
+
+    return null;
+  };
+
   const getProfile = (id?: string | null) =>
     id ? profiles.find(p => p.id === id) ?? null : null;
 
@@ -714,8 +746,8 @@ function BracketView({
               <BracketMatchCard
                 key={`r16-L-${idx}`}
                 match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
+                player1={getPlayer(m?.home_player_id)}
+                player2={getPlayer(m?.away_player_id)}
                 header={idx === 0 ? 'Round of 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
@@ -980,6 +1012,8 @@ const App = () => {
     postal_code: '',
   });
   const [hasCommitted, setHasCommitted] = useState(false);
+  const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
+  const [historicPlayers, setHistoricPlayers] = useState<HistoricPlayer[]>([]);
 
   const [newMatch, setNewMatch] = useState({ 
     player1: '', 
@@ -1090,6 +1124,51 @@ const App = () => {
     setCurrentPhotoIndex((prev) =>
       (prev - 1 + highlightPhotos.length) % highlightPhotos.length
     );
+  };
+
+  // -------- Helpers: resolve player from profiles OR historic_players --------
+
+  type AnyPlayer = {
+    id: string;
+    name?: string | null;
+    avatar_url?: string | null;
+  };
+
+  const getAnyPlayerById = (id?: string | null): AnyPlayer | null => {
+    if (!id) return null;
+
+    const p = profiles.find(x => x.id === id);
+    if (p) return p as AnyPlayer;
+
+    const h = historicPlayers.find(x => x.id === id);
+    if (h) return h as AnyPlayer;
+
+    return null;
+  };
+
+  const getAnyPlayerName = (id?: string | null): string => {
+    return getAnyPlayerById(id)?.name ?? '—';
+  };
+
+  const getAnyPlayerAvatarUrl = (id?: string | null): string | null => {
+    return getAnyPlayerById(id)?.avatar_url ?? null;
+  };
+
+  const getMatchHomeId = (m: any) => m?.home_player_id ?? m?.home_historic_player_id ?? null;
+  const getMatchAwayId = (m: any) => m?.away_player_id ?? m?.away_historic_player_id ?? null;
+
+
+  // Para tournament_registrations: profile_id OR historic_player_id
+  const getRegistrationName = (r: { profile_id?: string | null; historic_player_id?: string | null }): string => {
+    if (r.profile_id) return getAnyPlayerName(r.profile_id);
+    if (r.historic_player_id) return getAnyPlayerName(r.historic_player_id);
+    return '—';
+  };
+
+  const getRegistrationAvatarUrl = (r: { profile_id?: string | null; historic_player_id?: string | null }): string | null => {
+    if (r.profile_id) return getAnyPlayerAvatarUrl(r.profile_id);
+    if (r.historic_player_id) return getAnyPlayerAvatarUrl(r.historic_player_id);
+    return null;
   };
 
   // Auto-play del carrusel cada 5s
@@ -1379,6 +1458,7 @@ const App = () => {
         supabase.from('locations').select('*'),
         supabase.from('tournament_registrations').select('*'),
         supabase.from('match_sets').select('*'),
+        supabase.from('historic_players').select('*'),
       ];
       if (userId) {
         promises.push(supabase.from('availability').select('*').eq('profile_id', userId));
@@ -1395,8 +1475,9 @@ const App = () => {
       setLocations(responses[5].data || []);
       setRegistrations(responses[6].data || []);
       setMatchSets(responses[7].data || []);
-      if (userId && responses[8]) {
-        setAvailabilitySlots(responses[8].data || []);
+      setHistoricPlayers((responses[8].data || []) as any);
+      if (userId && responses[9]) {
+        setAvailabilitySlots(responses[9].data || []);
       }
     } catch (err: any) {
       setError(`Failed to load data: ${err.message}`);
@@ -1796,7 +1877,7 @@ const App = () => {
       
       // Fetch all required data
       const [tournamentsRes, divisionsRes, locationsRes, profilesRes, 
-        registrationsRes, matchesRes, standingsRes, matchSetsRes, availabilityRes] = 
+        registrationsRes, matchesRes, standingsRes, matchSetsRes, historicPlayersRes, availabilityRes] = 
         await Promise.all([
           supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
           supabase.from('divisions').select('*'),
@@ -1806,6 +1887,7 @@ const App = () => {
           supabase.from('matches').select('*'),
           supabase.from('v_standings').select('*'),
           supabase.from('match_sets').select('*'),
+          supabase.from('historic_players').select('*'),
           supabase.from('availability').select('*').eq('profile_id', userId)
         ]);
 
@@ -1818,6 +1900,7 @@ const App = () => {
       if (matchesRes.error) throw matchesRes.error;
       if (standingsRes.error) throw standingsRes.error;
       if (matchSetsRes.error) throw matchSetsRes.error;
+      if (historicPlayersRes.error) throw historicPlayersRes.error;
       if (availabilityRes.error) throw availabilityRes.error;
 
       // Set state
@@ -1829,6 +1912,7 @@ const App = () => {
       setMatches(matchesRes.data as Match[]);
       setStandings(standingsRes.data as Standings[]);
       setMatchSets(matchSetsRes.data || []);
+      setHistoricPlayers((historicPlayersRes.data || []) as any);
       setAvailabilitySlots(availabilityRes.data as AvailabilitySlot[]);
       
       // Set current user
@@ -3534,19 +3618,46 @@ const App = () => {
     setNewMatch(prev => ({ ...prev, sets: newSets }));
   };
 
-  const getDivisionPlayers = (divisionId: string, tournamentId: string) => {
+  const getDivisionPlayers = (divisionId: string, tournamentId: string): Profile[] => {
     if (!divisionId || !tournamentId) return [];
-    
-    // Get all registrations for this division and tournament
-    const divisionRegistrations = registrations.filter(r => 
+
+    const divisionRegistrations = registrations.filter(r =>
       r.division_id === divisionId && r.tournament_id === tournamentId
     );
-    
-    // Map to profiles
-    return divisionRegistrations
-      .map(reg => profiles.find(p => p.id === reg.profile_id))
-      .filter((p): p is Profile => p !== undefined);
+
+    const players: Profile[] = [];
+
+    divisionRegistrations.forEach(reg => {
+      // 1) Jugador real (profiles)
+      if (reg.profile_id) {
+        const p = profiles.find(x => x.id === reg.profile_id);
+        if (p) players.push(p);
+        return;
+      }
+
+      // 2) Jugador histórico (historic_players)
+      if (reg.historic_player_id) {
+        const h = historicPlayers.find(x => x.id === reg.historic_player_id);
+        if (!h) return;
+
+        // “Disfrazamos” historic como Profile mínimo para no romper la UI
+        players.push({
+          id: h.id,
+          name: h.name,
+          role: 'historic',
+          created_at: h.created_at,
+          email: h.email ?? undefined,
+          avatar_url: h.avatar_url ?? undefined,
+        });
+      }
+    });
+
+    // Evitar duplicados por seguridad
+    const unique = new Map<string, Profile>();
+    players.forEach(p => unique.set(p.id, p));
+    return Array.from(unique.values());
   };
+
 
   const getDivisionMatches = (divisionId: string, tournamentId: string) => {
     if (!divisionId || !tournamentId) return [];
@@ -3776,6 +3887,10 @@ const App = () => {
       // dentro del mismo tipo, más nuevo primero (start_date descendente)
       return (b.start_date || '').localeCompare(a.start_date || '');
     });
+
+  const historicTournaments = [...tournaments]
+    .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
+    .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const target = e.target;
@@ -4630,7 +4745,7 @@ const App = () => {
                   <p className="text-gray-600">Reservas automáticas Better</p>
                 </div>
               </div>
-
+                      
               {currentUser && (
                 <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
                   <div className="text-right">
@@ -5225,6 +5340,117 @@ const App = () => {
             })}
           </div>
           
+
+          {/* Botón + bloque desplegable de torneos históricos */}
+          <div className="flex justify-center mt-6 mb-8">
+            <button
+              type="button"
+              onClick={() => setShowHistoricTournaments(v => !v)}
+              className="w-full max-w-md inline-flex items-center justify-between px-5 py-3 rounded-xl bg-slate-900/60 text-white border border-white/20 shadow-lg hover:bg-slate-900/75 transition"
+              aria-expanded={showHistoricTournaments}
+            >
+              <span className="font-semibold">
+                {showHistoricTournaments ? 'Ocultar Torneos Históricos' : 'Ver Torneos Históricos'}
+              </span>
+
+              <span className="text-white/90 text-lg leading-none">
+                {showHistoricTournaments ? '▲' : '▼'}
+              </span>
+            </button>
+          </div>
+
+          {showHistoricTournaments && (
+            <div className="mt-6">
+              <h2 className="text-white font-semibold mb-3 text-sm sm:text-base text-center">
+                Torneos Históricos
+              </h2>
+
+              {historicTournaments.length === 0 ? (
+                <p className="text-center text-white/70 text-sm">
+                  No hay torneos históricos todavía.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                  {historicTournaments.map(tournament => {
+                    const tournamentRegistrations = registrations.filter(
+                      r => r.tournament_id === tournament.id
+                    );
+
+                    const tournamentMatches = matches.filter(
+                      m => m.tournament_id === tournament.id
+                    );
+
+                    const allScheduled = tournamentMatches.filter(
+                      m => m.status === 'scheduled' && isTodayOrFuture(m.date)
+                    );
+
+                    const totalPints = tournamentMatches.reduce((sum, m) => {
+                      const p1 = Number(m.player1_pints ?? 0);
+                      const p2 = Number(m.player2_pints ?? 0);
+                      return sum + p1 + p2;
+                    }, 0);
+
+                    return (
+                      <div key={tournament.id} className="bg-white rounded-2xl shadow-lg overflow-hidden">
+                        <div
+                          className="p-6 cursor-pointer hover:bg-gray-50 transition duration-200"
+                          onClick={() => setSelectedTournament(tournament)}
+                        >
+                          <div className="flex items-center gap-4 mb-6">
+                            <div className="w-14 h-14 flex items-center justify-center">
+                              <img
+                                src={tournamentLogoSrc(tournament.name)}
+                                alt={`${tournament.name} logo`}
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+
+                            <div className="flex-1">
+                              <h3 className="text-xl font-bold text-gray-800 leading-tight">
+                                {tournament.name}
+                              </h3>
+                              <p className="text-gray-600">Compete in our premier tennis championship</p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-blue-600">
+                                {tournamentRegistrations.length}
+                              </div>
+                              <div className="text-sm text-gray-600">Players</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-green-600">
+                                {tournamentMatches.length}
+                              </div>
+                              <div className="text-sm text-gray-600">Matches</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                              <div className="text-sm text-gray-600">Total Pintas</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-orange-600">
+                                {allScheduled.length}
+                              </div>
+                              <div className="text-sm text-gray-600">Upcoming Matches</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+
+
           {/* Carrusel de fotos de torneos anteriores */}
           {highlightPhotos.length > 0 && (
             <div className="mb-10">
@@ -5436,6 +5662,7 @@ const App = () => {
           tournament={selectedTournament}
           matches={tournamentMatches}
           profiles={profiles}
+          historicPlayers={historicPlayers}
           matchSets={matchSets}
           onBack={() => {
             setSelectedTournament(null);
@@ -5948,7 +6175,8 @@ const App = () => {
         tournament={selectedTournament}
         matches={tournamentMatches}
         profiles={profiles}
-        matchSets={matchSets}             // 👈 NUEVO
+        historicPlayers={historicPlayers}
+        matchSets={matchSets}         
         onBack={() => {
           setSelectedTournament(null);
           setSelectedDivision(null);
@@ -6003,7 +6231,7 @@ const App = () => {
       .filter(s => s.division_id === selectedDivision.id && s.tournament_id === selectedTournament.id)
       .map(s => ({
         ...s,
-        name: profiles.find(p => p.id === s.profile_id)?.name || ''
+        name: getAnyPlayerName(s.profile_id) 
       }));
 
     // Mapa rápido por id para mezclar stats con el roster completo
@@ -6361,8 +6589,8 @@ const App = () => {
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
-                        const player1 = profiles.find(p => p.id === match.home_player_id);
-                        const player2 = profiles.find(p => p.id === match.away_player_id);
+                        const player1 = getAnyPlayerById(getMatchHomeId(match));
+                        const player2 = getAnyPlayerById(getMatchAwayId(match));
                         const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
                         
                         return (
@@ -6607,8 +6835,8 @@ const App = () => {
                             
                             <div className="space-y-2">
                               {h2hMatches.map((match, index) => {
-                                const player1 = profiles.find(p => p.id === match.home_player_id);
-                                const player2 = profiles.find(p => p.id === match.away_player_id);
+                                const player1 = getAnyPlayerById(getMatchHomeId(match));
+                                const player2 = getAnyPlayerById(getMatchAwayId(match));
                                 
                                 return (
                                   <div key={index} className="border-t pt-2">
@@ -7314,7 +7542,7 @@ const App = () => {
               
               <div className="space-y-4">
                 {pendingMatches.map(match => {
-                  const player1 = profiles.find(p => p.id === match.home_player_id);
+                  const player1 = getAnyPlayerById(getMatchHomeId(match));
                   
                   return (
                     <div key={match.id} className="border rounded-lg p-4">
