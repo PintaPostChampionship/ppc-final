@@ -1158,6 +1158,7 @@ const App = () => {
   const getMatchAwayId = (m: any) => m?.away_player_id ?? m?.away_historic_player_id ?? null;
 
 
+
   // Para tournament_registrations: profile_id OR historic_player_id
   const getRegistrationName = (r: { profile_id?: string | null; historic_player_id?: string | null }): string => {
     if (r.profile_id) return getAnyPlayerName(r.profile_id);
@@ -3564,6 +3565,7 @@ const App = () => {
     return (data?.length ?? 0) > 0;
   }
 
+
   // ¿Existe ya partido entre dos jugadores en este torneo/división con alguno de estos estados?
   function hasAnyMatchBetween(
     tournamentId: string,
@@ -3573,15 +3575,19 @@ const App = () => {
     statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
   ) {
     if (!a || !b) return false;
-    return matches.some(m =>
-      m.tournament_id === tournamentId &&
-      m.division_id === divisionId &&
-      statuses.includes(m.status) &&
-      (
-        (m.home_player_id === a && m.away_player_id === b) ||
-        (m.home_player_id === b && m.away_player_id === a)
-      )
-    );
+    return matches.some(m => {
+      const h = getMatchHomeId(m);
+      const aw = getMatchAwayId(m);
+
+      return (
+        m.tournament_id === tournamentId &&
+        m.division_id === divisionId &&
+        statuses.includes(m.status as any) &&
+        h != null &&
+        aw != null &&
+        ((h === a && aw === b) || (h === b && aw === a))
+      );
+    });
   }
 
   // Lista de rivales elegibles para "playerId" (oculta con quienes ya hay scheduled/played)
@@ -3681,10 +3687,15 @@ const App = () => {
 
   const getHeadToHeadResult = (divisionId: string, tournamentId: string, playerAId: string, playerBId: string) => {
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
-    const h2hMatches = divisionMatches.filter(match => 
-      (match.home_player_id === playerAId && match.away_player_id === playerBId) || // <-- CORREGIDO
-      (match.home_player_id === playerBId && match.away_player_id === playerAId)    // <-- CORREGIDO
-    );
+    const h2hMatches = divisionMatches.filter(match => {
+      const h = getMatchHomeId(match);
+      const aw = getMatchAwayId(match);
+      return (
+        h != null &&
+        aw != null &&
+        ((h === playerAId && aw === playerBId) || (h === playerBId && aw === playerAId))
+      );
+    });
     
     if (h2hMatches.length === 0) return null;
     
@@ -3694,7 +3705,7 @@ const App = () => {
     h2hMatches.forEach(match => {
       // La lógica de victoria aquí ya usa player1_sets_won y player2_sets_won, lo cual es correcto
       // pero la asignación de quién es quién debe ser explícita
-      if (match.home_player_id === playerAId) {
+      if (getMatchHomeId(match) === playerAId) {
         if (match.player1_sets_won > match.player2_sets_won) playerAWins++; else playerBWins++;
       } else { // El jugador A es el away_player
         if (match.player2_sets_won > match.player1_sets_won) playerAWins++; else playerBWins++;
@@ -3708,6 +3719,77 @@ const App = () => {
     };
   };
 
+  function computeStandingsFromPlayedMatches(
+    played: Match[],
+    tournamentId: string,
+    divisionId: string
+  ): Standings[] {
+    const map = new Map<string, Standings>();
+
+    const ensure = (id: string) => {
+      if (!map.has(id)) {
+        map.set(id, {
+          profile_id: id, // usamos el mismo campo, aunque sea historic
+          tournament_id: tournamentId,
+          division_id: divisionId,
+          wins: 0,
+          losses: 0,
+          sets_won: 0,
+          sets_lost: 0,
+          games_won: 0,
+          games_lost: 0,
+          set_diff: 0,
+          pints: 0,
+          points: 0,
+        });
+      }
+      return map.get(id)!;
+    };
+
+    for (const m of played) {
+      const h = getMatchHomeId(m);
+      const aw = getMatchAwayId(m);
+      if (!h || !aw) continue;
+
+      const home = ensure(h);
+      const away = ensure(aw);
+
+      // sets/games (home = player1, away = player2)
+      home.sets_won += m.player1_sets_won || 0;
+      home.sets_lost += m.player2_sets_won || 0;
+      home.games_won += m.player1_games_won || 0;
+      home.games_lost += m.player2_games_won || 0;
+
+      away.sets_won += m.player2_sets_won || 0;
+      away.sets_lost += m.player1_sets_won || 0;
+      away.games_won += m.player2_games_won || 0;
+      away.games_lost += m.player1_games_won || 0;
+
+      // pintas
+      home.pints += m.player1_pints || 0;
+      away.pints += m.player2_pints || 0;
+
+      // W/L + points (sin empates en tenis)
+      if (m.player1_sets_won > m.player2_sets_won) {
+        home.wins += 1;
+        away.losses += 1;
+        home.points += 3;
+      } else {
+        away.wins += 1;
+        home.losses += 1;
+        away.points += 3;
+      }
+    }
+
+    // set diff
+    for (const s of map.values()) {
+      s.set_diff = (s.sets_won || 0) - (s.sets_lost || 0);
+    }
+
+    return Array.from(map.values());
+  }
+
+
   function compareByRules(
     a: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
     b: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
@@ -3716,12 +3798,6 @@ const App = () => {
   ) {
     // 1) Puntos
     if (b.points !== a.points) return b.points - a.points;
-
-    // 2) Head-to-Head (si hay al menos un partido entre ellos)
-    const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
-    if (h2h && h2h.playerAWins !== h2h.playerBWins) {
-      return h2h.winner === a.profile_id ? -1 : 1;
-    }
 
     // 3) Ratio de sets
     const aSetsTotal = a.sets_won + a.sets_lost;
@@ -3737,6 +3813,12 @@ const App = () => {
     const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
     if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
 
+    // 2) Head-to-Head (si hay al menos un partido entre ellos)
+    const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
+    if (h2h && h2h.playerAWins !== h2h.playerBWins) {
+      return h2h.winner === a.profile_id ? -1 : 1;
+    }
+
     // 5) Nombre (estable)
     const aName = profiles.find(p => p.id === a.profile_id)?.name || '';
     const bName = profiles.find(p => p.id === b.profile_id)?.name || '';
@@ -3747,17 +3829,29 @@ const App = () => {
     if (!divisionId || !tournamentId || !playerId) {
       return { played: [] as Match[], scheduled: [] as Match[], upcoming: [] as Profile[] };
     }
-    
+
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
     const scheduled = getScheduledMatches(divisionId, tournamentId);
-    
+
+    const isPlayerInMatch = (match: Match, pid: string) => {
+      const h = getMatchHomeId(match);
+      const a = getMatchAwayId(match);
+      return h === pid || a === pid;
+    };
+
+    const didPlayOpponent = (match: Match, pid: string, oppId: string) => {
+      const h = getMatchHomeId(match);
+      const a = getMatchAwayId(match);
+      return (h === pid && a === oppId) || (h === oppId && a === pid);
+    };
+
     const playerMatches = {
-      played: divisionMatches.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+      played: divisionMatches.filter(match =>
+        isPlayerInMatch(match, playerId) &&
         match.status === 'played'
       ),
-      scheduled: scheduled.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+      scheduled: scheduled.filter(match =>
+        isPlayerInMatch(match, playerId) &&
         match.status === 'scheduled'
       )
     };
@@ -3766,17 +3860,13 @@ const App = () => {
     const opponents = players.filter(player => player.id !== playerId);
 
     const upcoming = opponents.filter(opponent => {
-      return !playerMatches.played.some(match => 
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
-      ) && !playerMatches.scheduled.some(match =>
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
-      );
+      return !playerMatches.played.some(match => didPlayOpponent(match, playerId, opponent.id))
+        && !playerMatches.scheduled.some(match => didPlayOpponent(match, playerId, opponent.id));
     });
 
     return { ...playerMatches, upcoming };
   };
+
 
   const getDivisionHighlights = (divisionName: string, tournamentName: string) => {
     // Different highlights for PPC Cup divisions
@@ -5704,11 +5794,15 @@ const App = () => {
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
-      const totalPossibleMatches = players.length > 1 ? players.length - 1 : 0;
 
-      const divisionStandings = standings.filter(
-        s => s.division_id === division.id && s.tournament_id === selectedTournament.id
-      );     
+      const perOpp =
+        selectedTournament.id === '3c57c9af-57b8-476c-9923-54d36d4f7b8a' && division.name === 'Diamante'
+          ? 2
+          : 1;
+
+      const totalPossibleMatches = players.length > 1 ? (players.length - 1) * perOpp : 0;
+
+      const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
 
       // partidos jugados de ESTA división (para head-to-head)
       const playedInThisDiv = matches.filter(
@@ -5717,15 +5811,26 @@ const App = () => {
             m.status === 'played'
       );
 
+      const divisionStandings = hasHistoricInRoster
+        ? computeStandingsFromPlayedMatches(playedInThisDiv, selectedTournament.id, division.id)
+        : standings.filter(
+            s => s.division_id === division.id && s.tournament_id === selectedTournament.id
+          );
+
       // Stats por jugador (incluye wins/sets/games para los desempates)
       const playerRows = players.map(player => {
         const s = divisionStandings.find(st => st.profile_id === player.id);
         const played = (s?.wins || 0) + (s?.losses || 0);
-        const scheduled = matches.filter(m =>
-          m.division_id === division.id &&
-          (m.home_player_id === player.id || m.away_player_id === player.id) &&
-          m.status === 'scheduled'
-        ).length;
+        const scheduled = matches.filter(m => {
+          const h = getMatchHomeId(m);
+          const a = getMatchAwayId(m);
+          return (
+            m.division_id === division.id &&
+            m.tournament_id === selectedTournament.id &&
+            m.status === 'scheduled' &&
+            (h === player.id || a === player.id)
+          );
+        }).length;
 
         return {
           id: player.id,
@@ -5756,7 +5861,7 @@ const App = () => {
       return {
         division,
         players: players.length,
-        gamesPlayed: matches.filter(m => m.division_id === division.id && m.status === 'played').length,
+        gamesPlayed: matches.filter(m => m.division_id === division.id && m.tournament_id === selectedTournament.id && m.status === 'played').length,
         totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
         leader: sortedForLeader.length ? {
           id: sortedForLeader[0].id,
@@ -6227,21 +6332,37 @@ const App = () => {
 
 
     // Stats solo de quienes tienen partidos (como antes)
-    const divisionStats = standings
-      .filter(s => s.division_id === selectedDivision.id && s.tournament_id === selectedTournament.id)
-      .map(s => ({
-        ...s,
-        name: getAnyPlayerName(s.profile_id) 
-      }));
+    
+    const playedMatchesThisDivision = matches.filter(
+      m =>
+        m.tournament_id === selectedTournament.id &&
+        m.division_id === selectedDivision.id &&
+        m.status === 'played'
+    );
 
-    // Mapa rápido por id para mezclar stats con el roster completo
+    // Si hay historic players en el roster, calculamos standings local desde matches
+    const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
+
+    const divisionStatsBase = hasHistoricInRoster
+      ? computeStandingsFromPlayedMatches(
+          playedMatchesThisDivision,
+          selectedTournament.id,
+          selectedDivision.id
+        )
+      : standings.filter(
+          s =>
+            s.division_id === selectedDivision.id &&
+            s.tournament_id === selectedTournament.id
+        );
+
+    // Añadimos name desde profiles/historicPlayers usando tu resolver existente (si ya lo tienes),
+    // y si no, caemos al roster `players`.
+    const divisionStats = divisionStatsBase.map(s => ({
+      ...s,
+      name: players.find(p => p.id === s.profile_id)?.name || ''
+    }));
     const statsById = new Map(divisionStats.map(s => [s.profile_id, s]));
 
-    const playedMatchesThisDivision = matches.filter(
-      m => m.tournament_id === selectedTournament.id &&
-          m.division_id === selectedDivision.id &&
-          m.status === 'played'
-    );
 
     // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
     const rosterRows = players.map(p => {
@@ -6324,15 +6445,23 @@ const App = () => {
       const allOpponents = divisionPlayers.filter(p => p.id !== selectedPlayer.id);
       
       const upcomingMatches = allOpponents.filter(opponent => {
-        return !playerMatches.played.some(match => 
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
-        ) && !playerMatches.scheduled.some(match =>
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
-        );
+        return !playerMatches.played.some(match => {
+          const h = getMatchHomeId(match);
+          const a = getMatchAwayId(match);
+          return (
+            (h === selectedPlayer.id && a === opponent.id) ||
+            (h === opponent.id && a === selectedPlayer.id)
+          );
+        }) && !playerMatches.scheduled.some(match => {
+          const h = getMatchHomeId(match);
+          const a = getMatchAwayId(match);
+          return (
+            (h === selectedPlayer.id && a === opponent.id) ||
+            (h === opponent.id && a === selectedPlayer.id)
+          );
+        });
       });
-      
+
       return (
         <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
           <header className="bg-white shadow-lg">
@@ -6789,10 +6918,14 @@ const App = () => {
                   {divisionPlayers.length > 1 ? (
                     <div className="space-y-6">
                       {divisionPlayers.filter(p => p.id !== selectedPlayer.id).map(opponent => {
-                        const h2hMatches = playerMatches.played.filter(match => 
-                          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-                          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
-                        );
+                        const h2hMatches = playerMatches.played.filter(match => {
+                          const h = getMatchHomeId(match);
+                          const a = getMatchAwayId(match);
+                          return (
+                            (h === selectedPlayer.id && a === opponent.id) ||
+                            (h === opponent.id && a === selectedPlayer.id)
+                          );
+                        });
                         
                         if (h2hMatches.length === 0) return null;
                         
@@ -6803,7 +6936,7 @@ const App = () => {
                         let totalSetsLost = 0;
                         
                         h2hMatches.forEach(match => {
-                          if (match.home_player_id === selectedPlayer.id) {
+                          if (getMatchHomeId(match) === selectedPlayer.id) {
                             totalSetsWon += match.player1_sets_won;
                             totalSetsLost += match.player2_sets_won;
                             if (match.player1_sets_won > match.player2_sets_won) wins++;
@@ -7180,7 +7313,7 @@ const App = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {rosterSorted.length > 0 ? (
                         rosterSorted.map((stats, index) => {
-                          const player = profiles.find(p => p.id === stats.profile_id);
+                          const player = players.find(p => p.id === stats.profile_id);
                           if (!player) return null;
                           return (
                             <tr 
