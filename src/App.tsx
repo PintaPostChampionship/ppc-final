@@ -3076,6 +3076,43 @@ const App = () => {
     return '/ppc-logo.png';
   }
 
+  function isCupTournament(t: Tournament) {
+    return t.format === 'knockout' || /cup/i.test(t.name);
+  }
+
+  function getLatestTournamentForUser(profileId: string) {
+    const userTournaments = registrations
+      .filter(r => r.profile_id === profileId)
+      .map(r => tournaments.find(t => t.id === r.tournament_id))
+      .filter(Boolean) as Tournament[];
+
+    // Excluir Cups (PPC Cup, etc.)
+    const nonCup = userTournaments.filter(t => !isCupTournament(t));
+
+    // Preferir activos
+    const activeNonCup = nonCup.filter(t => t.status === 'active');
+
+    const candidates = activeNonCup.length
+      ? activeNonCup
+      : (nonCup.length ? nonCup : userTournaments);
+
+    if (candidates.length === 0) return null;
+
+    // Orden: activos primero (por si acaso), luego start_date desc, luego sort_order desc
+    const sorted = [...candidates].sort((a, b) => {
+      const aActive = a.status === 'active' ? 1 : 0;
+      const bActive = b.status === 'active' ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+
+      const byStart = (b.start_date || '').localeCompare(a.start_date || '');
+      if (byStart !== 0) return byStart;
+
+      return (b.sort_order ?? 0) - (a.sort_order ?? 0);
+    });
+
+    return sorted[0];
+  }
+
 
   function formatPendingShare(m: Match) {
     const creator = profiles.find(p => p.id === m.created_by)?.name || 'Alguien';
@@ -5414,12 +5451,10 @@ const App = () => {
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="text-sm text-gray-600">
-                      {/* Muestra todos los torneos en los que está inscrito */}
-                      {registrations
-                        .filter(r => r.profile_id === currentUser.id)
-                        .map(r => tournaments.find(t => t.id === r.tournament_id)?.name)
-                        .filter(Boolean)
-                        .join(', ') || 'No tournaments'}
+                      {(() => {
+                        const t = getLatestTournamentForUser(currentUser.id);
+                        return t ? t.name : 'No tournaments';
+                      })()}
                     </p>
                   </div>
                   <img
@@ -6032,13 +6067,10 @@ const App = () => {
                   <div className="text-right">
                     <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="text-sm text-gray-600">
-                      Division: {
-                        registrations
-                          .filter(r => r.profile_id === currentUser.id && r.tournament_id === selectedTournament.id)
-                          .map(r => divisions.find(d => d.id === r.division_id)?.name)
-                          .filter(Boolean) 
-                          .join(', ') || 'N/A'
-                      }
+                      {(() => {
+                        const t = getLatestTournamentForUser(currentUser.id);
+                        return t ? t.name : 'No tournaments';
+                      })()}
                     </p>
                   </div>
                   <img
