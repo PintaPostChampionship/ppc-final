@@ -706,6 +706,16 @@ function BracketView({
   const sf = [1, 2].map(pos => byRound('SF', pos));
   const finalMatch = byRound('F', 1);
 
+  const getMatchHomeId = (m?: Match | null): string | null => {
+    if (!m) return null;
+    return (m as any).home_player_id ?? (m as any).home_historic_player_id ?? null;
+  };
+
+  const getMatchAwayId = (m?: Match | null): string | null => {
+    if (!m) return null;
+    return (m as any).away_player_id ?? (m as any).away_historic_player_id ?? null;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
       <div className="max-w-6xl mx-auto px-4 py-8">
@@ -746,8 +756,8 @@ function BracketView({
               <BracketMatchCard
                 key={`r16-L-${idx}`}
                 match={m}
-                player1={getPlayer(m?.home_player_id)}
-                player2={getPlayer(m?.away_player_id)}
+                player1={getPlayer(getMatchHomeId(m))}
+                player2={getPlayer(getMatchAwayId(m))}
                 header={idx === 0 ? 'Round of 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
@@ -787,8 +797,8 @@ function BracketView({
                 <BracketMatchCard
                   key={`sf-${idx}`}
                   match={m}
-                  player1={getProfile(m?.home_player_id)}
-                  player2={getProfile(m?.away_player_id)}
+                  player1={getProfile(getMatchHomeId(m))}
+                  player2={getProfile(getMatchAwayId(m))}
                   header={idx === 0 ? 'Semi-finals' : undefined}
                   sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
                 />
@@ -801,8 +811,8 @@ function BracketView({
               </div>
               <BracketMatchCard
                 match={finalMatch}
-                player1={getProfile(finalMatch?.home_player_id)}
-                player2={getProfile(finalMatch?.away_player_id)}
+                player1={getProfile(getMatchHomeId(finalMatch))}
+                player2={getProfile(getMatchAwayId(finalMatch))}
                 sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
               />
             </div>
@@ -840,8 +850,8 @@ function BracketView({
               <BracketMatchCard
                 key={`r16-R-${idx}`}
                 match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
+                player1={getProfile(getMatchHomeId(m))}
+                player2={getProfile(getMatchAwayId(m))}
                 header={idx === 0 ? 'Round of 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
@@ -1335,20 +1345,43 @@ const App = () => {
   }
 
  
-  function setsLineFor(m: Match, perspectiveId?: string) {
+  function scoreLine(m: Match, perspectiveId?: string) {
+    // 1) Preferred: match_sets rows (new system)
     const sets = matchSets
       .filter(s => s.match_id === m.id)
       .sort((a, b) => a.set_number - b.set_number);
 
-    // Si aún no hay detalle guardado, cae a totales de games
-    if (sets.length === 0) return `${m.player1_games_won}-${m.player2_games_won}`;
+    // If showing from a player's perspective, invert when the player is not home
+    const invert = Boolean(perspectiveId && m.home_player_id !== perspectiveId);
 
-    // Si paso un 'perspectiveId', muestro el marcador desde ese jugador
-    const invert = perspectiveId && m.home_player_id !== perspectiveId;
-    return sets
-      .map(s => invert ? `${s.p2_games}-${s.p1_games}` : `${s.p1_games}-${s.p2_games}`)
-      .join(' ');
+    if (sets.length > 0) {
+      return sets
+        .map(s => (invert ? `${s.p2_games}-${s.p1_games}` : `${s.p1_games}-${s.p2_games}`))
+        .join('  ');
     }
+
+    // 2) Fallback: legacy columns on matches table (old system)
+    const legacySets: Array<[number | null, number | null]> = [
+      [(m as any).set1_home ?? null, (m as any).set1_away ?? null],
+      [(m as any).set2_home ?? null, (m as any).set2_away ?? null],
+      [(m as any).set3_home ?? null, (m as any).set3_away ?? null],
+    ];
+
+    const legacyLine = legacySets
+      .filter(([h, a]) => h !== null && a !== null)
+      .map(([h, a]) => (invert ? `${a}-${h}` : `${h}-${a}`))
+      .join('  ');
+
+    if (legacyLine) return legacyLine;
+
+    // 3) Last resort: show totals (but this should be rare)
+    const g1 = Number((m as any).player1_games_won ?? 0);
+    const g2 = Number((m as any).player2_games_won ?? 0);
+    if (g1 || g2) return `${invert ? g2 : g1}-${invert ? g1 : g2}`;
+
+    return '';
+  }
+
 
   function homeAwayBadge(match: Match, playerId: string) {
     const isHome = match.home_player_id === playerId;
@@ -1444,6 +1477,28 @@ const App = () => {
     return (h % 2 === 0) ? x : y;
   }
 
+  async function fetchAllRows<T>(table: string, selectClause = '*', pageSize = 1000): Promise<T[]> {
+    let all: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from(table)
+        .select(selectClause)
+        .range(from, to);
+
+      if (error) throw error;
+
+      const chunk = (data || []) as T[];
+      all = all.concat(chunk);
+
+      if (chunk.length < pageSize) break; // ya no quedan más filas
+      from += pageSize;
+    }
+
+    return all;
+  }
 
   // Esta es nuestra ÚNICA función para cargar todos los datos.
   const fetchData = async (userId?: string) => {
@@ -1458,7 +1513,7 @@ const App = () => {
         supabase.from('v_standings').select('*'),
         supabase.from('locations').select('*'),
         supabase.from('tournament_registrations').select('*'),
-        supabase.from('match_sets').select('*'),
+        (async () => ({ data: await fetchAllRows<MatchSet>('match_sets'), error: null }))(),
         supabase.from('historic_players').select('*'),
       ];
       if (userId) {
@@ -1887,7 +1942,7 @@ const App = () => {
           supabase.from('tournament_registrations').select('*'),
           supabase.from('matches').select('*'),
           supabase.from('v_standings').select('*'),
-          supabase.from('match_sets').select('*'),
+          (async () => ({ data: await fetchAllRows<MatchSet>('match_sets'), error: null }))(),
           supabase.from('historic_players').select('*'),
           supabase.from('availability').select('*').eq('profile_id', userId)
         ]);
@@ -3185,6 +3240,44 @@ const App = () => {
     return dateNum >= todayNum;
   }
 
+  // ✅ Head-to-head global (ALL tournaments) desde la perspectiva de playerA
+  function h2hWL(playerAId: string, playerBId: string) {
+    if (!playerAId || !playerBId) return { w: 0, l: 0 };
+
+    const playedBetween = matches.filter(m =>
+      m.status === 'played' &&
+      (
+        (m.home_player_id === playerAId && m.away_player_id === playerBId) ||
+        (m.home_player_id === playerBId && m.away_player_id === playerAId)
+      )
+    );
+
+    let w = 0;
+    let l = 0;
+
+    playedBetween.forEach(m => {
+      const homeWins = (m.player1_sets_won ?? 0) > (m.player2_sets_won ?? 0);
+      const awayWins = (m.player2_sets_won ?? 0) > (m.player1_sets_won ?? 0);
+
+      // Si por alguna razón viene empate/undefined, lo ignoramos (no suma a W/L)
+      if (!homeWins && !awayWins) return;
+
+      const aIsHome = m.home_player_id === playerAId;
+
+      if (aIsHome) {
+        if (homeWins) w++;
+        else l++;
+      } else {
+        // A es away
+        if (awayWins) w++;
+        else l++;
+      }
+    });
+
+    return { w, l };
+  }
+
+
   const shareAllScheduledMatches = () => {
     // 1) Torneos activos
     const active = tournaments.filter(t => t.status === 'active');
@@ -3228,9 +3321,12 @@ const App = () => {
         grouped[date].forEach(m => {
           const p1 = displayNameForShare(m.home_player_id);
           const p2 = displayNameForShare(m.away_player_id ?? '');
+
           const divName = divisions.find(d => d.id === m.division_id)?.name || '';
           const icon = divisionIcon(divName);
-          msg += `• ${p1} vs ${p2} ${icon}\n`;
+
+          const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
+          msg += `• ${p1} vs ${p2} (${w}-${l}) ${icon}\n`;
         });
         msg += '\n';
       });
@@ -3807,11 +3903,11 @@ const App = () => {
     if (bSetRatio !== aSetRatio) return bSetRatio - aSetRatio;
 
     // 4) Ratio de games
-    const aGamesTotal = a.games_won + a.games_lost;
-    const bGamesTotal = b.games_won + b.games_lost;
-    const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
-    const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
-    if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
+    //const aGamesTotal = a.games_won + a.games_lost;
+    //const bGamesTotal = b.games_won + b.games_lost;
+    //const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
+    //const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
+    //if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
 
     // 2) Head-to-Head (si hay al menos un partido entre ellos)
     const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
@@ -3866,6 +3962,37 @@ const App = () => {
 
     return { ...playerMatches, upcoming };
   };
+
+  // ✅ Global (ALL tournaments/divisions) matches for a player
+  const getPlayerMatchesAll = (playerId: string) => {
+    if (!playerId) {
+      return { played: [] as Match[], scheduled: [] as Match[] };
+    }
+
+    const played = matches
+      .filter(m =>
+        m.status === 'played' &&
+        (m.home_player_id === playerId || m.away_player_id === playerId)
+      )
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
+
+    const scheduled = matches
+      .filter(m =>
+        (m.status === 'scheduled' || m.status === 'pending') &&
+        (m.home_player_id === playerId || m.away_player_id === playerId || m.created_by === playerId)
+      )
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+
+    return { played, scheduled };
+  };
+
+  // ✅ Names for tournament/division from IDs (used in history + H2H rows)
+  const getTournamentNameById = (id?: string | null) =>
+    tournaments.find(t => t.id === id)?.name ?? '—';
+
+  const getDivisionNameById = (id?: string | null) =>
+    divisions.find(d => d.id === id)?.name ?? '';
+
 
 
   const getDivisionHighlights = (divisionName: string, tournamentName: string) => {
@@ -6438,7 +6565,8 @@ const App = () => {
         pints: 0,
       });
       
-      const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id);
+      const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id); 
+      const playerMatchesAll = getPlayerMatchesAll(selectedPlayer.id);
       
       // Calculate upcoming matches against all other players
       const divisionPlayers = getDivisionPlayers(selectedDivision.id, selectedTournament.id);
@@ -6715,9 +6843,9 @@ const App = () => {
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
                   <h2 className="text-2xl font-bold text-gray-800 mb-6">Match History</h2>
                   
-                  {playerMatches.played.length > 0 ? (
+                  {playerMatchesAll.played.length > 0 ? (
                     <div className="space-y-4">
-                      {playerMatches.played.map((match, index) => {
+                      {playerMatchesAll.played.map((match, index) => {
                         const player1 = getAnyPlayerById(getMatchHomeId(match));
                         const player2 = getAnyPlayerById(getMatchAwayId(match));
                         const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
@@ -6737,11 +6865,14 @@ const App = () => {
                                     );
                                   })()}
                                 </h4>
-                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
+                                <p className="text-sm text-gray-600">
+                                  {getTournamentNameById(match.tournament_id)}
+                                  {getDivisionNameById(match.division_id) ? ` · ${getDivisionNameById(match.division_id)}` : ''}
+                                </p>
                               </div>
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
-                                <div className="text-sm text-gray-600">{setsLineFor(match, selectedPlayer.id)}</div>
+                                <div className="text-sm text-gray-600">{scoreLine(match, selectedPlayer.id)}</div>
                               </div>
                             </div>
                             <div className="text-sm text-gray-600">
@@ -6914,73 +7045,115 @@ const App = () => {
                 {/* Head-to-Head Matches */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <h2 className="text-2xl font-bold text-gray-800 mb-6">Head-to-Head Matches</h2>
-                  
-                  {divisionPlayers.length > 1 ? (
+
+                  {playerMatchesAll.played.length > 0 ? (
                     <div className="space-y-6">
-                      {divisionPlayers.filter(p => p.id !== selectedPlayer.id).map(opponent => {
-                        const h2hMatches = playerMatches.played.filter(match => {
-                          const h = getMatchHomeId(match);
-                          const a = getMatchAwayId(match);
+                      {(() => {
+                        // Build opponent list from ALL played matches (across tournaments)
+                        const oppIds = new Set<string>();
+
+                        playerMatchesAll.played.forEach(m => {
+                          const a = m.home_player_id;
+                          const b = m.away_player_id;
+                          if (!b) return;
+
+                          if (a === selectedPlayer.id) oppIds.add(b);
+                          else if (b === selectedPlayer.id) oppIds.add(a);
+                        });
+
+                        const opponents = Array.from(oppIds)
+                          .map(id => getAnyPlayerById(id))
+                          .filter(Boolean) as { id: string; name?: string | null; avatar_url?: string | null }[];
+
+                        // Sort by most recent match vs that opponent (optional but nice)
+                        opponents.sort((o1, o2) => {
+                          const last1 = playerMatchesAll.played
+                            .filter(m =>
+                              (m.home_player_id === selectedPlayer.id && m.away_player_id === o1.id) ||
+                              (m.home_player_id === o1.id && m.away_player_id === selectedPlayer.id)
+                            )
+                            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date ?? '';
+                          const last2 = playerMatchesAll.played
+                            .filter(m =>
+                              (m.home_player_id === selectedPlayer.id && m.away_player_id === o2.id) ||
+                              (m.home_player_id === o2.id && m.away_player_id === selectedPlayer.id)
+                            )
+                            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date ?? '';
+                          return (last2 || '').localeCompare(last1 || '');
+                        });
+
+                        return opponents.map(opponent => {
+                          const h2hMatches = playerMatchesAll.played
+                            .filter(match =>
+                              (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
+                              (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
+                            )
+                            .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
+
+                          if (h2hMatches.length === 0) return null;
+
+                          // Calculate global head-to-head stats
+                          let wins = 0;
+                          let losses = 0;
+                          let totalSetsWon = 0;
+                          let totalSetsLost = 0;
+
+                          h2hMatches.forEach(match => {
+                            if (match.home_player_id === selectedPlayer.id) {
+                              totalSetsWon += match.player1_sets_won;
+                              totalSetsLost += match.player2_sets_won;
+                              if (match.player1_sets_won > match.player2_sets_won) wins++;
+                              else losses++;
+                            } else {
+                              totalSetsWon += match.player2_sets_won;
+                              totalSetsLost += match.player1_sets_won;
+                              if (match.player2_sets_won > match.player1_sets_won) wins++;
+                              else losses++;
+                            }
+                          });
+
                           return (
-                            (h === selectedPlayer.id && a === opponent.id) ||
-                            (h === opponent.id && a === selectedPlayer.id)
-                          );
-                        });
-                        
-                        if (h2hMatches.length === 0) return null;
-                        
-                        // Calculate head-to-head stats
-                        let wins = 0;
-                        let losses = 0;
-                        let totalSetsWon = 0;
-                        let totalSetsLost = 0;
-                        
-                        h2hMatches.forEach(match => {
-                          if (getMatchHomeId(match) === selectedPlayer.id) {
-                            totalSetsWon += match.player1_sets_won;
-                            totalSetsLost += match.player2_sets_won;
-                            if (match.player1_sets_won > match.player2_sets_won) wins++;
-                            else losses++;
-                          } else {
-                            totalSetsWon += match.player2_sets_won;
-                            totalSetsLost += match.player1_sets_won;
-                            if (match.player2_sets_won > match.player1_sets_won) wins++;
-                            else losses++;
-                          }
-                        });
-                        
-                        return (
-                          <div key={opponent.id} className="border rounded-lg p-4">
-                            <div className="flex justify-between items-center mb-4">
-                              <h3 className="font-semibold text-gray-800 text-lg">{uiName(opponent.name)}</h3>
-                              <div className="bg-gray-50 px-3 py-1 rounded-lg">
-                                <span className="text-green-600 font-medium">{wins}W</span> - 
-                                <span className="text-red-600 font-medium">{losses}L</span>
+                            <div key={opponent.id} className="border rounded-lg p-4">
+                              <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-semibold text-gray-800 text-lg">
+                                  {uiName(opponent.name)}
+                                </h3>
+                                <div className="bg-gray-50 px-3 py-1 rounded-lg">
+                                  <span className="text-green-600 font-medium">{wins}W</span> -{' '}
+                                  <span className="text-red-600 font-medium">{losses}L</span>
+                                </div>
                               </div>
-                            </div>
-                            
-                            <div className="space-y-3 mb-4">
-                              <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Total Sets:</span>
-                                <span className="font-medium">{totalSetsWon}-{totalSetsLost}</span>
+
+                              <div className="space-y-3 mb-4">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-gray-600">Total Sets:</span>
+                                  <span className="font-medium">{totalSetsWon}-{totalSetsLost}</span>
+                                </div>
                               </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              {h2hMatches.map((match, index) => {
-                                const player1 = getAnyPlayerById(getMatchHomeId(match));
-                                const player2 = getAnyPlayerById(getMatchAwayId(match));
-                                
-                                return (
+
+                              <div className="space-y-2">
+                                {h2hMatches.map((match, index) => (
                                   <div key={index} className="border-t pt-2">
-                                    <div className="flex justify-between">
+                                    <div className="flex justify-between items-start">
                                       <div>
-                                        <p className="text-sm font-medium">{uiName(player1?.name)} vs {uiName(player2?.name)}</p>
-                                        <p className="text-xs text-gray-500">{formatDate(new Date(match.date))} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
+                                        {/* ✅ Tournament (and division) instead of repeating names */}
+                                        <p className="text-sm font-medium text-gray-800">
+                                          {getTournamentNameById(match.tournament_id)}
+                                          {getDivisionNameById(match.division_id) ? ` · ${getDivisionNameById(match.division_id)}` : ''}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          {formatDate(new Date(match.date))}
+                                          {(() => {
+                                            const loc = match.location_details || locations.find(l => l.id === match.location_id)?.name;
+                                            return loc ? ` | ${loc}` : '';
+                                          })()}
+                                        </p>
                                       </div>
+
                                       <div className="text-right">
+                                        {/* ✅ Result on the right */}
                                         <p className="text-sm font-medium">
-                                          {setsLineFor(match)}
+                                          {scoreLine(match, selectedPlayer.id)}
                                         </p>
                                         {(match.player1_had_pint || match.player2_had_pint) && (
                                           <p className="text-xs text-purple-600 flex items-center justify-end">
@@ -6991,12 +7164,12 @@ const App = () => {
                                       </div>
                                     </div>
                                   </div>
-                                );
-                              })}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+                      })()}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
@@ -7004,6 +7177,8 @@ const App = () => {
                     </div>
                   )}
                 </div>
+
+
                 {/* Partidos agendados (todos) */}
                 {(() => {
                   if (!selectedPlayer || !selectedTournament || !selectedDivision) return null;
