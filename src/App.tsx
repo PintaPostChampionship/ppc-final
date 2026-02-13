@@ -3193,8 +3193,10 @@ const App = () => {
       'Cobre': '⚜️',
       'Hierro': '⚙️',
       'Élite': '⭐',
-      'Calibraciones': '🔥',
-    };
+      };
+
+    if (name.includes('Calibración')) return '🔥';
+
     return map[name] || '🏆';
   }
 
