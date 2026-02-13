@@ -1124,16 +1124,6 @@ const App = () => {
 
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
-  // Sub Fase de Grupos (Placement) – UI state (Edición 3)
-  const [placementGroup, setPlacementGroup] = useState<'A' | 'B' | 'C' | 'D'>('A');
-  // Switch de vistas para Edición 3 (escalable a futuras fases)
-  const [e3View, setE3View] = useState<'main' | 'groups'>('main');
-
-  useEffect(() => {
-    setPlacementGroup('A');
-    setE3View('main');
-  }, [selectedTournament?.id]);
-
   const goToNextPhoto = () => {
     if (highlightPhotos.length === 0) return;
     setCurrentPhotoIndex((prev) => (prev + 1) % highlightPhotos.length);
@@ -1354,139 +1344,7 @@ const App = () => {
     return dt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
-  type GroupRow = {
-    playerId: string;
-    name: string;
-    P: number;   // played
-    W: number;
-    L: number;
-    Pts: number;
-    SW: number;  // sets won
-    SL: number;  // sets lost
-    SD: number;  // set diff
-    GW: number;  // games won
-    GL: number;  // games lost
-    GD: number;  // game diff
-  };
-
-  // Calcula sets ganados/perdidos del match DESDE LA PERSPECTIVA del playerId
-  function setsForPlayer(match: Match, playerId: string) {
-    const isHome = match.home_player_id === playerId;
-
-    const sw = isHome ? (match.player1_sets_won ?? 0) : (match.player2_sets_won ?? 0);
-    const sl = isHome ? (match.player2_sets_won ?? 0) : (match.player1_sets_won ?? 0);
-
-    return { sw, sl };
-  }
-
-  // Suma games por match desde match_sets (p1_games/p2_games) y los adapta a playerId
-  function gamesForPlayer(match: Match, playerId: string, matchSets: any[]) {
-    const isHome = match.home_player_id === playerId;
-
-    const sets = matchSets
-      .filter(s => s.match_id === match.id)
-      .sort((a, b) => a.set_number - b.set_number);
-
-    let gw = 0;
-    let gl = 0;
-
-    sets.forEach(s => {
-      const p1 = Number(s.p1_games ?? 0);
-      const p2 = Number(s.p2_games ?? 0);
-
-      if (isHome) {
-        gw += p1;
-        gl += p2;
-      } else {
-        gw += p2;
-        gl += p1;
-      }
-    });
-
-    return { gw, gl };
-  }
-
-  // Standings de un grupo usando partidos played
-  function buildPlacementStandings(groupMatches: Match[], matchSets: any[]) {
-    const played = groupMatches.filter(m => m.status === 'played' && getMatchHomeId(m) && getMatchAwayId(m));
-
-    // set de jugadores del grupo (solo los que aparecen en matches)
-    const playerIds = Array.from(
-      new Set(
-        played.flatMap(m => [getMatchHomeId(m), getMatchAwayId(m)].filter(Boolean) as string[])
-      )
-    );
-
-    const rows: Record<string, GroupRow> = {};
-
-    playerIds.forEach(pid => {
-      const p = getAnyPlayerById(pid);
-      rows[pid] = {
-        playerId: pid,
-        name: uiName(p?.name) || 'Unknown',
-        P: 0, W: 0, L: 0, Pts: 0,
-        SW: 0, SL: 0, SD: 0,
-        GW: 0, GL: 0, GD: 0,
-      };
-    });
-
-    played.forEach(m => {
-      const p1 = getMatchHomeId(m)!;
-      const p2 = getMatchAwayId(m)!;
-      if (!rows[p1] || !rows[p2]) return;
-
-      const p1Sets = setsForPlayer(m, p1);
-      const p2Sets = setsForPlayer(m, p2);
-
-      // winner por sets ganados (tu regla actual)
-      const p1Win = p1Sets.sw > p1Sets.sl;
-      const p2Win = p2Sets.sw > p2Sets.sl;
-
-      rows[p1].P += 1;
-      rows[p2].P += 1;
-
-      if (p1Win) {
-        rows[p1].W += 1; rows[p1].Pts += 3;
-        rows[p2].L += 1;
-      } else if (p2Win) {
-        rows[p2].W += 1; rows[p2].Pts += 3;
-        rows[p1].L += 1;
-      } else {
-        // en tenis no debería ocurrir, pero por seguridad:
-        // rows[p1].Pts += 1; rows[p2].Pts += 1;
-      }
-
-      rows[p1].SW += p1Sets.sw;
-      rows[p1].SL += p1Sets.sl;
-      rows[p2].SW += p2Sets.sw;
-      rows[p2].SL += p2Sets.sl;
-
-      const p1Games = gamesForPlayer(m, p1, matchSets);
-      const p2Games = gamesForPlayer(m, p2, matchSets);
-
-      rows[p1].GW += p1Games.gw;
-      rows[p1].GL += p1Games.gl;
-      rows[p2].GW += p2Games.gw;
-      rows[p2].GL += p2Games.gl;
-    });
-
-    Object.values(rows).forEach(r => {
-      r.SD = r.SW - r.SL;
-      r.GD = r.GW - r.GL;
-    });
-
-    // Orden: Pts desc, SD desc, GD desc, Name asc
-    const sorted = Object.values(rows).sort((a, b) => {
-      if (b.Pts !== a.Pts) return b.Pts - a.Pts;
-      if (b.SD !== a.SD) return b.SD - a.SD;
-      if (b.GD !== a.GD) return b.GD - a.GD;
-      return a.name.localeCompare(b.name);
-    });
-
-    return sorted;
-  }
-
-
+ 
   function scoreLine(m: Match, perspectiveId?: string) {
     // 1) Preferred: match_sets rows (new system)
     const sets = matchSets
@@ -1526,7 +1384,7 @@ const App = () => {
 
 
   function homeAwayBadge(match: Match, playerId: string) {
-    const isHome = getMatchHomeId(match) === playerId;
+    const isHome = match.home_player_id === playerId;
     return {
       text: isHome ? 'Local' : 'Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
@@ -6182,32 +6040,6 @@ const App = () => {
       };
     });
 
-    // ---- Sub Fase de Grupos (Placement) dentro de Edición 3 ----
-    const EDICION_3_ID = '3c57c9af-57b8-476c-9923-54d36d4f7b8a';
-    const isEdicion3 = selectedTournament.id === EDICION_3_ID;
-
-    const placementMatchesAll = isEdicion3
-      ? matches.filter(m => m.tournament_id === EDICION_3_ID && (m as any).phase === 'group_stage_pre')
-      : [];
-
-    const placementGroupCodes = Array.from(
-      new Set(
-        placementMatchesAll
-          .map(m => ((m as any).group_code as string | null) || null)
-          .filter(Boolean) as string[]
-      )
-    ).sort();
-
-    // Si el tab actual no existe (ej. no hay Grupo A), cae al primero disponible
-    const effectivePlacementGroup = placementGroupCodes.includes(placementGroup)
-      ? placementGroup
-      : (placementGroupCodes[0] as any) || placementGroup;
-
-    const placementMatchesForGroup = placementMatchesAll
-      .filter(m => (((m as any).group_code as string | null) || '') === effectivePlacementGroup)
-      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
-
-    const placementStandings = buildPlacementStandings(placementMatchesForGroup, matchSets);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
@@ -6277,332 +6109,148 @@ const App = () => {
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Tournament Summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-3xl font-bold text-blue-600">{divisionsData.reduce((sum, d) => sum + d.players, 0)}</div>
+                  <div className="text-sm text-gray-600">Total Players</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-3xl font-bold text-green-600">{divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}</div>
+                  <div className="text-sm text-gray-600">Total Games Played</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-3xl font-bold text-purple-600">{divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}</div>
+                  <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
+                  <div className="text-sm text-gray-600">Divisions</div>
+                </div>
+              </div>
+            </div>
 
-        {/* Switch de vistas (solo Edición 3 y solo si existe Sub Fase) */}
-        {isEdicion3 && placementMatchesAll.length > 0 && (
-          <div className="bg-white/90 backdrop-blur rounded-xl shadow-lg p-3 mb-6">
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setE3View('main')}
-                className={
-                  `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
-                  (e3View === 'main'
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
-                }
-              >
-                Liga principal
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setE3View('groups')}
-                className={
-                  `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
-                  (e3View === 'groups'
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
-                }
-              >
-                Sub Fase de Grupos
-              </button>
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
+              <div className="space-y-4">
+                {divisionsData.map(d => (
+                  <div
+                    key={d.division.id}
+                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
+                    onClick={() => setSelectedDivision(d.division)} 
+                  >
+                    <div className="flex justify-between">
+                      <span className="font-medium text-gray-800">
+                        {d.division.name}
+                        <span className="ml-2 text-sm text-purple-700">
+                          ({Number(d.totalPints || 0)} 🍺)
+                        </span>
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        )}
 
-          {(!isEdicion3 || e3View === 'main') && (
-            <>
-            {/* Tournament Summary */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-blue-600">{divisionsData.reduce((sum, d) => sum + d.players, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Players</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-green-600">{divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Games Played</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-purple-600">{divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
-                    <div className="text-sm text-gray-600">Divisions</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
-                <div className="space-y-4">
-                  {divisionsData.map(d => (
-                    <div
-                      key={d.division.id}
-                      className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
-                      onClick={() => setSelectedDivision(d.division)} 
-                    >
-                      <div className="flex justify-between">
-                        <span className="font-medium text-gray-800">
-                          {d.division.name}
-                          <span className="ml-2 text-sm text-purple-700">
-                            ({Number(d.totalPints || 0)} 🍺)
-                          </span>
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
-                        </span>
-                      </div>
+          {/* Division Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+            {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
+              <div 
+                key={division.id} 
+                className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
+                onClick={() => setSelectedDivision(division)}
+              >
+                <div className="p-6">
+                  <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
+                  <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-600">{players}</div>
+                      <div className="text-sm text-gray-600">Players</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Division Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
-              {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
-                <div 
-                  key={division.id} 
-                  className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
-                  onClick={() => setSelectedDivision(division)}
-                >
-                  <div className="p-6">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
-                    <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{players}</div>
-                        <div className="text-sm text-gray-600">Players</div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
-                        <div className="text-sm text-gray-600">Matches</div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                        <div className="text-sm text-gray-600">Total Pintas</div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
-                        <div className="text-sm text-gray-600">Pintas Máximas</div>
-                      </div>
-                    </div>
-                    {leader && (
-                      <div className="bg-yellow-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-yellow-800">Líder Actual</div>
-                        <div className="font-semibold text-yellow-900">{leader.name}</div>
-                        <div className="text-sm text-yellow-700">
-                          {leader.points} puntos
-                        </div>
-                      </div>
-                    )}
-                    {topPintsPlayer && (
-                      <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                        <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
-                        <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
-                      </div>
-                    )}
-                    
-                    {/* Match Status Table */}
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
-                      <table className="w-full">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
-                          </tr>
-                        </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {divisionsData
-                              .find(d => d.division.id === division.id)
-                              ?.playerStats
-                              // Orden descendente por %Av
-                              .slice() // crea copia para no mutar el array original
-                              .sort((a, b) => {
-                                const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
-                                const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
-                                const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
-                                const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
-                                return pctB - pctA; // Mayor a menor
-                              })
-                              .map(stats => (
-                                <tr key={stats.id} className="text-sm">
-                                  <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                                  <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
-                                </tr>
-                            ))}
-                          </tbody>
-                      </table>
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
+                      <div className="text-sm text-gray-600">Matches</div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-          {/* Sub Fase de Grupos (Placement) – solo Edición 3 */}
-          {isEdicion3 && placementMatchesAll.length > 0 && e3View === 'groups' && (
-            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-800">Sub Fase de Grupos</h3>
-                  <p className="text-sm text-gray-600">
-                    Fase previa dentro de {selectedTournament.name}
-                  </p>
-                </div>
-
-                {/* Tabs grupos */}
-                <div className="flex flex-wrap gap-2">
-                  {placementGroupCodes.map(code => (
-                    <button
-                      key={code}
-                      type="button"
-                      onClick={() => setPlacementGroup(code as any)}
-                      className={
-                        `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
-                        (effectivePlacementGroup === code
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
-                      }
-                    >
-                      Grupo {code}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-            {/* Standings del grupo */}
-            <div className="overflow-x-auto mb-6">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pts</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">P</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">W</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">L</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SW</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SL</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SD</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">GW</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">GL</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">GD</th>
-                  </tr>
-                </thead>
-
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {placementStandings.map((r, idx) => (
-                    <tr key={r.playerId} className={idx === 0 ? 'bg-emerald-50' : 'hover:bg-gray-50'}>
-                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">{r.name}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.Pts}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.P}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.W}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.L}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.SW}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.SL}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.SD}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.GW}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.GL}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.GD}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-
-              {/* Tabla de partidos del grupo */}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {placementMatchesForGroup.map(match => {
-                      const homeId = getMatchHomeId(match);
-                      const awayId = getMatchAwayId(match);
-
-                      const p1 = getAnyPlayerById(homeId);
-                      const p2 = getAnyPlayerById(awayId);
-
-                      const loc = [
-                        locations.find(l => l.id === match.location_id)?.name,
-                        match.location_details
-                      ].filter(Boolean).join(' - ') || 'TBD';
-
-                      const result = match.status === 'played'
-                        ? scoreLine(match)
-                        : '—';
-
-                      return (
-                        <tr key={match.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {match.date ? formatDateLocal(match.date) : '—'}
-                            {match.time ? ` ${match.time.slice(0, 5)}` : ''}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {uiName(p1?.name)} vs {uiName(p2?.name)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                            {result}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{loc}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
-                            {match.status === 'played' ? (
-                              (currentUser?.id === match.home_player_id ||
-                                currentUser?.id === match.away_player_id ||
-                                (currentUser as any)?.role === 'admin') && (
-                                <button
-                                  onClick={() => openEditResult(match)}
-                                  className="text-blue-600 hover:text-blue-800 underline"
-                                >
-                                  Edit Result
-                                </button>
-                              )
-                            ) : (
-                              canEditSchedule(match) && (
-                                <button
-                                  onClick={() => openEditSchedule(match)}
-                                  className="text-blue-600 hover:text-blue-800 underline"
-                                >
-                                  Edit Schedule
-                                </button>
-                              )
-                            )}
-                          </td>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                      <div className="text-sm text-gray-600">Total Pintas</div>
+                    </div>
+                    <div className="text-center p-3 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
+                      <div className="text-sm text-gray-600">Pintas Máximas</div>
+                    </div>
+                  </div>
+                  {leader && (
+                    <div className="bg-yellow-50 p-3 rounded-lg mb-4">
+                      <div className="text-sm text-yellow-800">Líder Actual</div>
+                      <div className="font-semibold text-yellow-900">{leader.name}</div>
+                      <div className="text-sm text-yellow-700">
+                        {leader.points} puntos
+                      </div>
+                    </div>
+                  )}
+                  {topPintsPlayer && (
+                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                      <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
+                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                    </div>
+                  )}
+                  
+                  {/* Match Status Table */}
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
+                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
+                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
+                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
+                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {divisionsData
+                            .find(d => d.division.id === division.id)
+                            ?.playerStats
+                            // Orden descendente por %Av
+                            .slice() // crea copia para no mutar el array original
+                            .sort((a, b) => {
+                              const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
+                              const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
+                              const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
+                              const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
+                              return pctB - pctA; // Mayor a menor
+                            })
+                            .map(stats => (
+                              <tr key={stats.id} className="text-sm">
+                                <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
+                                <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
+                                <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
+                                <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
+                                <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
+                              </tr>
+                          ))}
+                        </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-
+            ))}
+          </div>
 
           {/* Upcoming Matches Section */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
@@ -7227,9 +6875,9 @@ const App = () => {
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
                   <h2 className="text-2xl font-bold text-gray-800 mb-6">Match History</h2>
                   
-                  {playerMatches.played.length > 0 ? (
+                  {playerMatchesAll.played.length > 0 ? (
                     <div className="space-y-4">
-                      {playerMatches.played.map((match, index) => {
+                      {playerMatchesAll.played.map((match, index) => {
                         const player1 = getAnyPlayerById(getMatchHomeId(match));
                         const player2 = getAnyPlayerById(getMatchAwayId(match));
                         const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
@@ -7437,9 +7085,9 @@ const App = () => {
                         const oppIds = new Set<string>();
 
                         playerMatchesAll.played.forEach(m => {
-                          const a = getMatchHomeId(m);
-                          const b = getMatchAwayId(m);
-                          if (!a || !b) return;
+                          const a = m.home_player_id;
+                          const b = m.away_player_id;
+                          if (!b) return;
 
                           if (a === selectedPlayer.id) oppIds.add(b);
                           else if (b === selectedPlayer.id) oppIds.add(a);
@@ -7453,14 +7101,14 @@ const App = () => {
                         opponents.sort((o1, o2) => {
                           const last1 = playerMatchesAll.played
                             .filter(m =>
-                              (getMatchHomeId(m) === selectedPlayer.id && getMatchAwayId(m) === o1.id) ||
-                              (getMatchHomeId(m) === o1.id && getMatchAwayId(m) === selectedPlayer.id)
+                              (m.home_player_id === selectedPlayer.id && m.away_player_id === o1.id) ||
+                              (m.home_player_id === o1.id && m.away_player_id === selectedPlayer.id)
                             )
                             .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date ?? '';
                           const last2 = playerMatchesAll.played
                             .filter(m =>
-                              (getMatchHomeId(m) === selectedPlayer.id && getMatchAwayId(m) === o2.id) ||
-                              (getMatchHomeId(m) === o2.id && getMatchAwayId(m) === selectedPlayer.id)
+                              (m.home_player_id === selectedPlayer.id && m.away_player_id === o2.id) ||
+                              (m.home_player_id === o2.id && m.away_player_id === selectedPlayer.id)
                             )
                             .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date ?? '';
                           return (last2 || '').localeCompare(last1 || '');
@@ -7469,8 +7117,8 @@ const App = () => {
                         return opponents.map(opponent => {
                           const h2hMatches = playerMatchesAll.played
                             .filter(match =>
-                              (getMatchHomeId(match) === selectedPlayer.id && getMatchAwayId(match) === opponent.id) ||
-                              (getMatchHomeId(match) === opponent.id && getMatchAwayId(match) === selectedPlayer.id)
+                              (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
+                              (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
                             )
                             .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
 
@@ -7483,7 +7131,7 @@ const App = () => {
                           let totalSetsLost = 0;
 
                           h2hMatches.forEach(match => {
-                            if (getMatchHomeId(match) === selectedPlayer.id) {
+                            if (match.home_player_id === selectedPlayer.id) {
                               totalSetsWon += match.player1_sets_won;
                               totalSetsLost += match.player2_sets_won;
                               if (match.player1_sets_won > match.player2_sets_won) wins++;
