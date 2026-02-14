@@ -1183,6 +1183,12 @@ const App = () => {
   const isPlayoffsMatch = (m: Match) =>
     m.phase === 'finals_main' || m.phase === 'finals_repechage';
 
+  const isDivisionLeagueMatch = (m: Match, divisionId: string) => {
+    if (m.division_id !== divisionId) return false;
+    if (isPlayoffsMatch(m)) return false; // 👈 clave
+    return true;
+  };
+
   const getPlayoffsMatchesForTournament = (tournamentId: string) =>
     matches.filter(m => m.tournament_id === tournamentId && isPlayoffsMatch(m));
 
@@ -6214,7 +6220,8 @@ const App = () => {
       const playedInThisDiv = matches.filter(
         m => m.tournament_id === selectedTournament.id &&
             m.division_id === division.id &&
-            m.status === 'played'
+            m.status === 'played' &&
+            !isPlayoffsMatch(m)
       );
 
       const divisionStandings = hasHistoricInRoster
@@ -6226,7 +6233,13 @@ const App = () => {
       // Stats por jugador (incluye wins/sets/games para los desempates)
       const playerRows = players.map(player => {
         const s = divisionStandings.find(st => st.profile_id === player.id);
-        const played = (s?.wins || 0) + (s?.losses || 0);
+        const played = matches.filter(m =>
+          m.tournament_id === selectedTournament.id &&
+          m.division_id === division.id &&
+          m.status === 'played' &&
+          !isPlayoffsMatch(m) &&
+          (m.home_player_id === player.id || m.away_player_id === player.id)
+        ).length;
         const scheduled = matches.filter(m => {
           const h = getMatchHomeId(m);
           const a = getMatchAwayId(m);
@@ -6234,6 +6247,7 @@ const App = () => {
             m.division_id === division.id &&
             m.tournament_id === selectedTournament.id &&
             m.status === 'scheduled' &&
+            !isPlayoffsMatch(m) &&
             (h === player.id || a === player.id)
           );
         }).length;
@@ -6267,7 +6281,12 @@ const App = () => {
       return {
         division,
         players: players.length,
-        gamesPlayed: matches.filter(m => m.division_id === division.id && m.tournament_id === selectedTournament.id && m.status === 'played').length,
+        gamesPlayed: matches.filter(m =>
+          m.division_id === division.id &&
+          m.tournament_id === selectedTournament.id &&
+          m.status === 'played' &&
+          !isPlayoffsMatch(m)
+        ).length,
         totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
         leader: sortedForLeader.length ? {
           id: sortedForLeader[0].id,
