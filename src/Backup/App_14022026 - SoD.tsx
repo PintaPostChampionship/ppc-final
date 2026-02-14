@@ -241,6 +241,8 @@ interface Match {
   status: string;
   home_player_id: string;
   away_player_id: string | null;
+  home_historic_player_id?: string | null;
+  away_historic_player_id?: string | null;
   player1_sets_won: number;
   player2_sets_won: number;
   player1_games_won: number;
@@ -515,19 +517,26 @@ async function advanceWinner(match: Match, supabase: any) {
 
 // ---------------- Bracket (vista KO) ----------------
 
+type BracketAnyPlayer = {
+  id: string;
+  name?: string | null;
+  avatar_url?: string | null;
+};
+
 type BracketViewProps = {
   tournament: Tournament;
   matches: Match[];
   profiles: Profile[];
-  matchSets: MatchSet[]; 
+  historicPlayers: HistoricPlayer[];  
+  matchSets: MatchSet[];
   onBack: () => void;
-  onEditSchedule: (m: Match) => void;  
-  onEditResult: (m: Match) => void;     
-  canEditSchedule: (m: Match) => boolean; 
+  onEditSchedule: (m: Match) => void;
+  onEditResult: (m: Match) => void;
+  canEditSchedule: (m: Match) => boolean;
 };
 
 type BracketPlayerSlotProps = {
-  player?: Profile | null;
+  player?: BracketAnyPlayer | null;
   isWinner?: boolean;
   isLoser?: boolean;
 };
@@ -560,7 +569,7 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
         {player?.avatar_url ? (
           <img
             src={player.avatar_url}
-            alt={player.name}
+            alt={player?.name ?? 'Player'}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -578,10 +587,10 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
 
 type BracketMatchCardProps = {
   match: Match | null;
-  player1?: Profile | null;
-  player2?: Profile | null;
+  player1?: BracketAnyPlayer | null;
+  player2?: BracketAnyPlayer | null;
   header?: string;
-  sets?: MatchSet[]; 
+  sets?: MatchSet[];
 };
 
 const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
@@ -605,9 +614,9 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
     }
   }
 
-  const isWinner = (p?: Profile | null) =>
+  const isWinner = (p?: BracketAnyPlayer | null) =>
     !!winnerId && p?.id === winnerId;
-  const isLoser = (p?: Profile | null) =>
+  const isLoser = (p?: BracketAnyPlayer | null) =>
     !!loserId && p?.id === loserId;
 
   // Crear línea de marcador, ej: "6-4  3-6  10-8"
@@ -656,12 +665,26 @@ function BracketView({
   tournament,
   matches,
   profiles,
+  historicPlayers,
   matchSets,
   onBack,
   onEditSchedule,
   onEditResult,
   canEditSchedule,
 }: BracketViewProps) {
+
+  const getPlayer = (id?: string | null): BracketAnyPlayer | null => {
+    if (!id) return null;
+
+    const p = profiles.find(x => x.id === id);
+    if (p) return { id: p.id, name: p.name, avatar_url: p.avatar_url ?? null };
+
+    const h = historicPlayers.find(x => x.id === id);
+    if (h) return { id: h.id, name: h.name, avatar_url: h.avatar_url ?? null };
+
+    return null;
+  };
+
   const getProfile = (id?: string | null) =>
     id ? profiles.find(p => p.id === id) ?? null : null;
 
@@ -682,6 +705,16 @@ function BracketView({
   const qfRight = [3, 4].map(pos => byRound('QF', pos));
   const sf = [1, 2].map(pos => byRound('SF', pos));
   const finalMatch = byRound('F', 1);
+
+  const getMatchHomeId = (m?: Match | null): string | null => {
+    if (!m) return null;
+    return (m as any).home_player_id ?? (m as any).home_historic_player_id ?? null;
+  };
+
+  const getMatchAwayId = (m?: Match | null): string | null => {
+    if (!m) return null;
+    return (m as any).away_player_id ?? (m as any).away_historic_player_id ?? null;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
@@ -723,8 +756,8 @@ function BracketView({
               <BracketMatchCard
                 key={`r16-L-${idx}`}
                 match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
+                player1={getPlayer(getMatchHomeId(m))}
+                player2={getPlayer(getMatchAwayId(m))}
                 header={idx === 0 ? 'Round of 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
@@ -764,8 +797,8 @@ function BracketView({
                 <BracketMatchCard
                   key={`sf-${idx}`}
                   match={m}
-                  player1={getProfile(m?.home_player_id)}
-                  player2={getProfile(m?.away_player_id)}
+                  player1={getProfile(getMatchHomeId(m))}
+                  player2={getProfile(getMatchAwayId(m))}
                   header={idx === 0 ? 'Semi-finals' : undefined}
                   sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
                 />
@@ -778,8 +811,8 @@ function BracketView({
               </div>
               <BracketMatchCard
                 match={finalMatch}
-                player1={getProfile(finalMatch?.home_player_id)}
-                player2={getProfile(finalMatch?.away_player_id)}
+                player1={getProfile(getMatchHomeId(finalMatch))}
+                player2={getProfile(getMatchAwayId(finalMatch))}
                 sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
               />
             </div>
@@ -817,8 +850,8 @@ function BracketView({
               <BracketMatchCard
                 key={`r16-R-${idx}`}
                 match={m}
-                player1={getProfile(m?.home_player_id)}
-                player2={getProfile(m?.away_player_id)}
+                player1={getProfile(getMatchHomeId(m))}
+                player2={getProfile(getMatchAwayId(m))}
                 header={idx === 0 ? 'Round of 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
@@ -1091,6 +1124,16 @@ const App = () => {
 
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
 
+  // Sub Fase de Grupos (Placement) – UI state (Edición 3)
+  const [placementGroup, setPlacementGroup] = useState<'A' | 'B' | 'C' | 'D'>('A');
+  // Switch de vistas para Edición 3 (escalable a futuras fases)
+  const [e3View, setE3View] = useState<'main' | 'groups'>('main');
+
+  useEffect(() => {
+    setPlacementGroup('A');
+    setE3View('main');
+  }, [selectedTournament?.id]);
+
   const goToNextPhoto = () => {
     if (highlightPhotos.length === 0) return;
     setCurrentPhotoIndex((prev) => (prev + 1) % highlightPhotos.length);
@@ -1101,6 +1144,52 @@ const App = () => {
     setCurrentPhotoIndex((prev) =>
       (prev - 1 + highlightPhotos.length) % highlightPhotos.length
     );
+  };
+
+  // -------- Helpers: resolve player from profiles OR historic_players --------
+
+  type AnyPlayer = {
+    id: string;
+    name?: string | null;
+    avatar_url?: string | null;
+  };
+
+  const getAnyPlayerById = (id?: string | null): AnyPlayer | null => {
+    if (!id) return null;
+
+    const p = profiles.find(x => x.id === id);
+    if (p) return p as AnyPlayer;
+
+    const h = historicPlayers.find(x => x.id === id);
+    if (h) return h as AnyPlayer;
+
+    return null;
+  };
+
+  const getAnyPlayerName = (id?: string | null): string => {
+    return getAnyPlayerById(id)?.name ?? '—';
+  };
+
+  const getAnyPlayerAvatarUrl = (id?: string | null): string | null => {
+    return getAnyPlayerById(id)?.avatar_url ?? null;
+  };
+
+  const getMatchHomeId = (m: any) => m?.home_player_id ?? m?.home_historic_player_id ?? null;
+  const getMatchAwayId = (m: any) => m?.away_player_id ?? m?.away_historic_player_id ?? null;
+
+
+
+  // Para tournament_registrations: profile_id OR historic_player_id
+  const getRegistrationName = (r: { profile_id?: string | null; historic_player_id?: string | null }): string => {
+    if (r.profile_id) return getAnyPlayerName(r.profile_id);
+    if (r.historic_player_id) return getAnyPlayerName(r.historic_player_id);
+    return '—';
+  };
+
+  const getRegistrationAvatarUrl = (r: { profile_id?: string | null; historic_player_id?: string | null }): string | null => {
+    if (r.profile_id) return getAnyPlayerAvatarUrl(r.profile_id);
+    if (r.historic_player_id) return getAnyPlayerAvatarUrl(r.historic_player_id);
+    return null;
   };
 
   // Auto-play del carrusel cada 5s
@@ -1265,24 +1354,179 @@ const App = () => {
     return dt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
- 
-  function setsLineFor(m: Match, perspectiveId?: string) {
+  type GroupRow = {
+    playerId: string;
+    name: string;
+    P: number;   // played
+    W: number;
+    L: number;
+    Pts: number;
+    SW: number;  // sets won
+    SL: number;  // sets lost
+    SD: number;  // set diff
+    GW: number;  // games won
+    GL: number;  // games lost
+    GD: number;  // game diff
+  };
+
+  // Calcula sets ganados/perdidos del match DESDE LA PERSPECTIVA del playerId
+  function setsForPlayer(match: Match, playerId: string) {
+    const isHome = match.home_player_id === playerId;
+
+    const sw = isHome ? (match.player1_sets_won ?? 0) : (match.player2_sets_won ?? 0);
+    const sl = isHome ? (match.player2_sets_won ?? 0) : (match.player1_sets_won ?? 0);
+
+    return { sw, sl };
+  }
+
+  // Suma games por match desde match_sets (p1_games/p2_games) y los adapta a playerId
+  function gamesForPlayer(match: Match, playerId: string, matchSets: any[]) {
+    const isHome = match.home_player_id === playerId;
+
+    const sets = matchSets
+      .filter(s => s.match_id === match.id)
+      .sort((a, b) => a.set_number - b.set_number);
+
+    let gw = 0;
+    let gl = 0;
+
+    sets.forEach(s => {
+      const p1 = Number(s.p1_games ?? 0);
+      const p2 = Number(s.p2_games ?? 0);
+
+      if (isHome) {
+        gw += p1;
+        gl += p2;
+      } else {
+        gw += p2;
+        gl += p1;
+      }
+    });
+
+    return { gw, gl };
+  }
+
+  // Standings de un grupo usando partidos played
+  function buildPlacementStandings(groupMatches: Match[], matchSets: any[]) {
+    const played = groupMatches.filter(m => m.status === 'played' && getMatchHomeId(m) && getMatchAwayId(m));
+
+    // set de jugadores del grupo (solo los que aparecen en matches)
+    const playerIds = Array.from(
+      new Set(
+        played.flatMap(m => [getMatchHomeId(m), getMatchAwayId(m)].filter(Boolean) as string[])
+      )
+    );
+
+    const rows: Record<string, GroupRow> = {};
+
+    playerIds.forEach(pid => {
+      const p = getAnyPlayerById(pid);
+      rows[pid] = {
+        playerId: pid,
+        name: uiName(p?.name) || 'Unknown',
+        P: 0, W: 0, L: 0, Pts: 0,
+        SW: 0, SL: 0, SD: 0,
+        GW: 0, GL: 0, GD: 0,
+      };
+    });
+
+    played.forEach(m => {
+      const p1 = getMatchHomeId(m)!;
+      const p2 = getMatchAwayId(m)!;
+      if (!rows[p1] || !rows[p2]) return;
+
+      const p1Sets = setsForPlayer(m, p1);
+      const p2Sets = setsForPlayer(m, p2);
+
+      // winner por sets ganados (tu regla actual)
+      const p1Win = p1Sets.sw > p1Sets.sl;
+      const p2Win = p2Sets.sw > p2Sets.sl;
+
+      rows[p1].P += 1;
+      rows[p2].P += 1;
+
+      if (p1Win) {
+        rows[p1].W += 1; rows[p1].Pts += 3;
+        rows[p2].L += 1;
+      } else if (p2Win) {
+        rows[p2].W += 1; rows[p2].Pts += 3;
+        rows[p1].L += 1;
+      } else {
+        // en tenis no debería ocurrir, pero por seguridad:
+        // rows[p1].Pts += 1; rows[p2].Pts += 1;
+      }
+
+      rows[p1].SW += p1Sets.sw;
+      rows[p1].SL += p1Sets.sl;
+      rows[p2].SW += p2Sets.sw;
+      rows[p2].SL += p2Sets.sl;
+
+      const p1Games = gamesForPlayer(m, p1, matchSets);
+      const p2Games = gamesForPlayer(m, p2, matchSets);
+
+      rows[p1].GW += p1Games.gw;
+      rows[p1].GL += p1Games.gl;
+      rows[p2].GW += p2Games.gw;
+      rows[p2].GL += p2Games.gl;
+    });
+
+    Object.values(rows).forEach(r => {
+      r.SD = r.SW - r.SL;
+      r.GD = r.GW - r.GL;
+    });
+
+    // Orden: Pts desc, SD desc, GD desc, Name asc
+    const sorted = Object.values(rows).sort((a, b) => {
+      if (b.Pts !== a.Pts) return b.Pts - a.Pts;
+      if (b.SD !== a.SD) return b.SD - a.SD;
+      if (b.GD !== a.GD) return b.GD - a.GD;
+      return a.name.localeCompare(b.name);
+    });
+
+    return sorted;
+  }
+
+
+  function scoreLine(m: Match, perspectiveId?: string) {
+    // 1) Preferred: match_sets rows (new system)
     const sets = matchSets
       .filter(s => s.match_id === m.id)
       .sort((a, b) => a.set_number - b.set_number);
 
-    // Si aún no hay detalle guardado, cae a totales de games
-    if (sets.length === 0) return `${m.player1_games_won}-${m.player2_games_won}`;
+    // If showing from a player's perspective, invert when the player is not home
+    const invert = Boolean(perspectiveId && m.home_player_id !== perspectiveId);
 
-    // Si paso un 'perspectiveId', muestro el marcador desde ese jugador
-    const invert = perspectiveId && m.home_player_id !== perspectiveId;
-    return sets
-      .map(s => invert ? `${s.p2_games}-${s.p1_games}` : `${s.p1_games}-${s.p2_games}`)
-      .join(' ');
+    if (sets.length > 0) {
+      return sets
+        .map(s => (invert ? `${s.p2_games}-${s.p1_games}` : `${s.p1_games}-${s.p2_games}`))
+        .join('  ');
     }
 
+    // 2) Fallback: legacy columns on matches table (old system)
+    const legacySets: Array<[number | null, number | null]> = [
+      [(m as any).set1_home ?? null, (m as any).set1_away ?? null],
+      [(m as any).set2_home ?? null, (m as any).set2_away ?? null],
+      [(m as any).set3_home ?? null, (m as any).set3_away ?? null],
+    ];
+
+    const legacyLine = legacySets
+      .filter(([h, a]) => h !== null && a !== null)
+      .map(([h, a]) => (invert ? `${a}-${h}` : `${h}-${a}`))
+      .join('  ');
+
+    if (legacyLine) return legacyLine;
+
+    // 3) Last resort: show totals (but this should be rare)
+    const g1 = Number((m as any).player1_games_won ?? 0);
+    const g2 = Number((m as any).player2_games_won ?? 0);
+    if (g1 || g2) return `${invert ? g2 : g1}-${invert ? g1 : g2}`;
+
+    return '';
+  }
+
+
   function homeAwayBadge(match: Match, playerId: string) {
-    const isHome = match.home_player_id === playerId;
+    const isHome = getMatchHomeId(match) === playerId;
     return {
       text: isHome ? 'Local' : 'Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
@@ -1375,6 +1619,28 @@ const App = () => {
     return (h % 2 === 0) ? x : y;
   }
 
+  async function fetchAllRows<T>(table: string, selectClause = '*', pageSize = 1000): Promise<T[]> {
+    let all: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from(table)
+        .select(selectClause)
+        .range(from, to);
+
+      if (error) throw error;
+
+      const chunk = (data || []) as T[];
+      all = all.concat(chunk);
+
+      if (chunk.length < pageSize) break; // ya no quedan más filas
+      from += pageSize;
+    }
+
+    return all;
+  }
 
   // Esta es nuestra ÚNICA función para cargar todos los datos.
   const fetchData = async (userId?: string) => {
@@ -1389,7 +1655,8 @@ const App = () => {
         supabase.from('v_standings').select('*'),
         supabase.from('locations').select('*'),
         supabase.from('tournament_registrations').select('*'),
-        supabase.from('match_sets').select('*'),
+        (async () => ({ data: await fetchAllRows<MatchSet>('match_sets'), error: null }))(),
+        supabase.from('historic_players').select('*'),
       ];
       if (userId) {
         promises.push(supabase.from('availability').select('*').eq('profile_id', userId));
@@ -1406,8 +1673,9 @@ const App = () => {
       setLocations(responses[5].data || []);
       setRegistrations(responses[6].data || []);
       setMatchSets(responses[7].data || []);
-      if (userId && responses[8]) {
-        setAvailabilitySlots(responses[8].data || []);
+      setHistoricPlayers((responses[8].data || []) as any);
+      if (userId && responses[9]) {
+        setAvailabilitySlots(responses[9].data || []);
       }
     } catch (err: any) {
       setError(`Failed to load data: ${err.message}`);
@@ -1807,7 +2075,7 @@ const App = () => {
       
       // Fetch all required data
       const [tournamentsRes, divisionsRes, locationsRes, profilesRes, 
-        registrationsRes, matchesRes, standingsRes, matchSetsRes, availabilityRes] = 
+        registrationsRes, matchesRes, standingsRes, matchSetsRes, historicPlayersRes, availabilityRes] = 
         await Promise.all([
           supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
           supabase.from('divisions').select('*'),
@@ -1816,7 +2084,8 @@ const App = () => {
           supabase.from('tournament_registrations').select('*'),
           supabase.from('matches').select('*'),
           supabase.from('v_standings').select('*'),
-          supabase.from('match_sets').select('*'),
+          (async () => ({ data: await fetchAllRows<MatchSet>('match_sets'), error: null }))(),
+          supabase.from('historic_players').select('*'),
           supabase.from('availability').select('*').eq('profile_id', userId)
         ]);
 
@@ -1829,6 +2098,7 @@ const App = () => {
       if (matchesRes.error) throw matchesRes.error;
       if (standingsRes.error) throw standingsRes.error;
       if (matchSetsRes.error) throw matchSetsRes.error;
+      if (historicPlayersRes.error) throw historicPlayersRes.error;
       if (availabilityRes.error) throw availabilityRes.error;
 
       // Set state
@@ -1840,6 +2110,7 @@ const App = () => {
       setMatches(matchesRes.data as Match[]);
       setStandings(standingsRes.data as Standings[]);
       setMatchSets(matchSetsRes.data || []);
+      setHistoricPlayers((historicPlayersRes.data || []) as any);
       setAvailabilitySlots(availabilityRes.data as AvailabilitySlot[]);
       
       // Set current user
@@ -2922,8 +3193,10 @@ const App = () => {
       'Cobre': '⚜️',
       'Hierro': '⚙️',
       'Élite': '⭐',
-      'Calibraciones': '🔥',
-    };
+      };
+
+    if (name.includes('Calibración')) return '🔥';
+
     return map[name] || '🏆';
   }
 
@@ -2945,6 +3218,43 @@ const App = () => {
     if (/^WPPC Winter/i.test(name)) return '/wppc-logo-transparente.png';          // WPPC Winter 2025/2026
     if (/PPC Cup/i.test(name)) return '/ppc-cup-trophy-transparente.png';          // PPC Cup 2025
     return '/ppc-logo.png';
+  }
+
+  function isCupTournament(t: Tournament) {
+    return t.format === 'knockout' || /cup/i.test(t.name);
+  }
+
+  function getLatestTournamentForUser(profileId: string) {
+    const userTournaments = registrations
+      .filter(r => r.profile_id === profileId)
+      .map(r => tournaments.find(t => t.id === r.tournament_id))
+      .filter(Boolean) as Tournament[];
+
+    // Excluir Cups (PPC Cup, etc.)
+    const nonCup = userTournaments.filter(t => !isCupTournament(t));
+
+    // Preferir activos
+    const activeNonCup = nonCup.filter(t => t.status === 'active');
+
+    const candidates = activeNonCup.length
+      ? activeNonCup
+      : (nonCup.length ? nonCup : userTournaments);
+
+    if (candidates.length === 0) return null;
+
+    // Orden: activos primero (por si acaso), luego start_date desc, luego sort_order desc
+    const sorted = [...candidates].sort((a, b) => {
+      const aActive = a.status === 'active' ? 1 : 0;
+      const bActive = b.status === 'active' ? 1 : 0;
+      if (aActive !== bActive) return bActive - aActive;
+
+      const byStart = (b.start_date || '').localeCompare(a.start_date || '');
+      if (byStart !== 0) return byStart;
+
+      return (b.sort_order ?? 0) - (a.sort_order ?? 0);
+    });
+
+    return sorted[0];
   }
 
 
@@ -3111,6 +3421,44 @@ const App = () => {
     return dateNum >= todayNum;
   }
 
+  // ✅ Head-to-head global (ALL tournaments) desde la perspectiva de playerA
+  function h2hWL(playerAId: string, playerBId: string) {
+    if (!playerAId || !playerBId) return { w: 0, l: 0 };
+
+    const playedBetween = matches.filter(m =>
+      m.status === 'played' &&
+      (
+        (m.home_player_id === playerAId && m.away_player_id === playerBId) ||
+        (m.home_player_id === playerBId && m.away_player_id === playerAId)
+      )
+    );
+
+    let w = 0;
+    let l = 0;
+
+    playedBetween.forEach(m => {
+      const homeWins = (m.player1_sets_won ?? 0) > (m.player2_sets_won ?? 0);
+      const awayWins = (m.player2_sets_won ?? 0) > (m.player1_sets_won ?? 0);
+
+      // Si por alguna razón viene empate/undefined, lo ignoramos (no suma a W/L)
+      if (!homeWins && !awayWins) return;
+
+      const aIsHome = m.home_player_id === playerAId;
+
+      if (aIsHome) {
+        if (homeWins) w++;
+        else l++;
+      } else {
+        // A es away
+        if (awayWins) w++;
+        else l++;
+      }
+    });
+
+    return { w, l };
+  }
+
+
   const shareAllScheduledMatches = () => {
     // 1) Torneos activos
     const active = tournaments.filter(t => t.status === 'active');
@@ -3154,9 +3502,12 @@ const App = () => {
         grouped[date].forEach(m => {
           const p1 = displayNameForShare(m.home_player_id);
           const p2 = displayNameForShare(m.away_player_id ?? '');
+
           const divName = divisions.find(d => d.id === m.division_id)?.name || '';
           const icon = divisionIcon(divName);
-          msg += `• ${p1} vs ${p2} ${icon}\n`;
+
+          const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
+          msg += `• ${p1} vs ${p2} (${w}-${l}) ${icon}\n`;
         });
         msg += '\n';
       });
@@ -3491,6 +3842,7 @@ const App = () => {
     return (data?.length ?? 0) > 0;
   }
 
+
   // ¿Existe ya partido entre dos jugadores en este torneo/división con alguno de estos estados?
   function hasAnyMatchBetween(
     tournamentId: string,
@@ -3500,15 +3852,19 @@ const App = () => {
     statuses: Array<Match['status']> = ['scheduled','played'] // bloqueamos "agendado" y "jugado"
   ) {
     if (!a || !b) return false;
-    return matches.some(m =>
-      m.tournament_id === tournamentId &&
-      m.division_id === divisionId &&
-      statuses.includes(m.status) &&
-      (
-        (m.home_player_id === a && m.away_player_id === b) ||
-        (m.home_player_id === b && m.away_player_id === a)
-      )
-    );
+    return matches.some(m => {
+      const h = getMatchHomeId(m);
+      const aw = getMatchAwayId(m);
+
+      return (
+        m.tournament_id === tournamentId &&
+        m.division_id === divisionId &&
+        statuses.includes(m.status as any) &&
+        h != null &&
+        aw != null &&
+        ((h === a && aw === b) || (h === b && aw === a))
+      );
+    });
   }
 
   // Lista de rivales elegibles para "playerId" (oculta con quienes ya hay scheduled/played)
@@ -3545,19 +3901,46 @@ const App = () => {
     setNewMatch(prev => ({ ...prev, sets: newSets }));
   };
 
-  const getDivisionPlayers = (divisionId: string, tournamentId: string) => {
+  const getDivisionPlayers = (divisionId: string, tournamentId: string): Profile[] => {
     if (!divisionId || !tournamentId) return [];
-    
-    // Get all registrations for this division and tournament
-    const divisionRegistrations = registrations.filter(r => 
+
+    const divisionRegistrations = registrations.filter(r =>
       r.division_id === divisionId && r.tournament_id === tournamentId
     );
-    
-    // Map to profiles
-    return divisionRegistrations
-      .map(reg => profiles.find(p => p.id === reg.profile_id))
-      .filter((p): p is Profile => p !== undefined);
+
+    const players: Profile[] = [];
+
+    divisionRegistrations.forEach(reg => {
+      // 1) Jugador real (profiles)
+      if (reg.profile_id) {
+        const p = profiles.find(x => x.id === reg.profile_id);
+        if (p) players.push(p);
+        return;
+      }
+
+      // 2) Jugador histórico (historic_players)
+      if (reg.historic_player_id) {
+        const h = historicPlayers.find(x => x.id === reg.historic_player_id);
+        if (!h) return;
+
+        // “Disfrazamos” historic como Profile mínimo para no romper la UI
+        players.push({
+          id: h.id,
+          name: h.name,
+          role: 'historic',
+          created_at: h.created_at,
+          email: h.email ?? undefined,
+          avatar_url: h.avatar_url ?? undefined,
+        });
+      }
+    });
+
+    // Evitar duplicados por seguridad
+    const unique = new Map<string, Profile>();
+    players.forEach(p => unique.set(p.id, p));
+    return Array.from(unique.values());
   };
+
 
   const getDivisionMatches = (divisionId: string, tournamentId: string) => {
     if (!divisionId || !tournamentId) return [];
@@ -3581,10 +3964,15 @@ const App = () => {
 
   const getHeadToHeadResult = (divisionId: string, tournamentId: string, playerAId: string, playerBId: string) => {
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
-    const h2hMatches = divisionMatches.filter(match => 
-      (match.home_player_id === playerAId && match.away_player_id === playerBId) || // <-- CORREGIDO
-      (match.home_player_id === playerBId && match.away_player_id === playerAId)    // <-- CORREGIDO
-    );
+    const h2hMatches = divisionMatches.filter(match => {
+      const h = getMatchHomeId(match);
+      const aw = getMatchAwayId(match);
+      return (
+        h != null &&
+        aw != null &&
+        ((h === playerAId && aw === playerBId) || (h === playerBId && aw === playerAId))
+      );
+    });
     
     if (h2hMatches.length === 0) return null;
     
@@ -3594,7 +3982,7 @@ const App = () => {
     h2hMatches.forEach(match => {
       // La lógica de victoria aquí ya usa player1_sets_won y player2_sets_won, lo cual es correcto
       // pero la asignación de quién es quién debe ser explícita
-      if (match.home_player_id === playerAId) {
+      if (getMatchHomeId(match) === playerAId) {
         if (match.player1_sets_won > match.player2_sets_won) playerAWins++; else playerBWins++;
       } else { // El jugador A es el away_player
         if (match.player2_sets_won > match.player1_sets_won) playerAWins++; else playerBWins++;
@@ -3608,6 +3996,77 @@ const App = () => {
     };
   };
 
+  function computeStandingsFromPlayedMatches(
+    played: Match[],
+    tournamentId: string,
+    divisionId: string
+  ): Standings[] {
+    const map = new Map<string, Standings>();
+
+    const ensure = (id: string) => {
+      if (!map.has(id)) {
+        map.set(id, {
+          profile_id: id, // usamos el mismo campo, aunque sea historic
+          tournament_id: tournamentId,
+          division_id: divisionId,
+          wins: 0,
+          losses: 0,
+          sets_won: 0,
+          sets_lost: 0,
+          games_won: 0,
+          games_lost: 0,
+          set_diff: 0,
+          pints: 0,
+          points: 0,
+        });
+      }
+      return map.get(id)!;
+    };
+
+    for (const m of played) {
+      const h = getMatchHomeId(m);
+      const aw = getMatchAwayId(m);
+      if (!h || !aw) continue;
+
+      const home = ensure(h);
+      const away = ensure(aw);
+
+      // sets/games (home = player1, away = player2)
+      home.sets_won += m.player1_sets_won || 0;
+      home.sets_lost += m.player2_sets_won || 0;
+      home.games_won += m.player1_games_won || 0;
+      home.games_lost += m.player2_games_won || 0;
+
+      away.sets_won += m.player2_sets_won || 0;
+      away.sets_lost += m.player1_sets_won || 0;
+      away.games_won += m.player2_games_won || 0;
+      away.games_lost += m.player1_games_won || 0;
+
+      // pintas
+      home.pints += m.player1_pints || 0;
+      away.pints += m.player2_pints || 0;
+
+      // W/L + points (sin empates en tenis)
+      if (m.player1_sets_won > m.player2_sets_won) {
+        home.wins += 1;
+        away.losses += 1;
+        home.points += 3;
+      } else {
+        away.wins += 1;
+        home.losses += 1;
+        away.points += 3;
+      }
+    }
+
+    // set diff
+    for (const s of map.values()) {
+      s.set_diff = (s.sets_won || 0) - (s.sets_lost || 0);
+    }
+
+    return Array.from(map.values());
+  }
+
+
   function compareByRules(
     a: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
     b: { profile_id: string; points: number; sets_won: number; sets_lost: number; games_won: number; games_lost: number },
@@ -3617,12 +4076,6 @@ const App = () => {
     // 1) Puntos
     if (b.points !== a.points) return b.points - a.points;
 
-    // 2) Head-to-Head (si hay al menos un partido entre ellos)
-    const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
-    if (h2h && h2h.playerAWins !== h2h.playerBWins) {
-      return h2h.winner === a.profile_id ? -1 : 1;
-    }
-
     // 3) Ratio de sets
     const aSetsTotal = a.sets_won + a.sets_lost;
     const bSetsTotal = b.sets_won + b.sets_lost;
@@ -3631,11 +4084,17 @@ const App = () => {
     if (bSetRatio !== aSetRatio) return bSetRatio - aSetRatio;
 
     // 4) Ratio de games
-    const aGamesTotal = a.games_won + a.games_lost;
-    const bGamesTotal = b.games_won + b.games_lost;
-    const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
-    const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
-    if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
+    //const aGamesTotal = a.games_won + a.games_lost;
+    //const bGamesTotal = b.games_won + b.games_lost;
+    //const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
+    //const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
+    //if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
+
+    // 2) Head-to-Head (si hay al menos un partido entre ellos)
+    const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
+    if (h2h && h2h.playerAWins !== h2h.playerBWins) {
+      return h2h.winner === a.profile_id ? -1 : 1;
+    }
 
     // 5) Nombre (estable)
     const aName = profiles.find(p => p.id === a.profile_id)?.name || '';
@@ -3647,17 +4106,29 @@ const App = () => {
     if (!divisionId || !tournamentId || !playerId) {
       return { played: [] as Match[], scheduled: [] as Match[], upcoming: [] as Profile[] };
     }
-    
+
     const divisionMatches = getDivisionMatches(divisionId, tournamentId);
     const scheduled = getScheduledMatches(divisionId, tournamentId);
-    
+
+    const isPlayerInMatch = (match: Match, pid: string) => {
+      const h = getMatchHomeId(match);
+      const a = getMatchAwayId(match);
+      return h === pid || a === pid;
+    };
+
+    const didPlayOpponent = (match: Match, pid: string, oppId: string) => {
+      const h = getMatchHomeId(match);
+      const a = getMatchAwayId(match);
+      return (h === pid && a === oppId) || (h === oppId && a === pid);
+    };
+
     const playerMatches = {
-      played: divisionMatches.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+      played: divisionMatches.filter(match =>
+        isPlayerInMatch(match, playerId) &&
         match.status === 'played'
       ),
-      scheduled: scheduled.filter(match => 
-        (match.home_player_id === playerId || match.away_player_id === playerId) && // <-- CORREGIDO
+      scheduled: scheduled.filter(match =>
+        isPlayerInMatch(match, playerId) &&
         match.status === 'scheduled'
       )
     };
@@ -3666,17 +4137,44 @@ const App = () => {
     const opponents = players.filter(player => player.id !== playerId);
 
     const upcoming = opponents.filter(opponent => {
-      return !playerMatches.played.some(match => 
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
-      ) && !playerMatches.scheduled.some(match =>
-        (match.home_player_id === playerId && match.away_player_id === opponent.id) || // <-- CORREGIDO
-        (match.home_player_id === opponent.id && match.away_player_id === playerId)    // <-- CORREGIDO
-      );
+      return !playerMatches.played.some(match => didPlayOpponent(match, playerId, opponent.id))
+        && !playerMatches.scheduled.some(match => didPlayOpponent(match, playerId, opponent.id));
     });
 
     return { ...playerMatches, upcoming };
   };
+
+  // ✅ Global (ALL tournaments/divisions) matches for a player
+  const getPlayerMatchesAll = (playerId: string) => {
+    if (!playerId) {
+      return { played: [] as Match[], scheduled: [] as Match[] };
+    }
+
+    const played = matches
+      .filter(m =>
+        m.status === 'played' &&
+        (m.home_player_id === playerId || m.away_player_id === playerId)
+      )
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
+
+    const scheduled = matches
+      .filter(m =>
+        (m.status === 'scheduled' || m.status === 'pending') &&
+        (m.home_player_id === playerId || m.away_player_id === playerId || m.created_by === playerId)
+      )
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+
+    return { played, scheduled };
+  };
+
+  // ✅ Names for tournament/division from IDs (used in history + H2H rows)
+  const getTournamentNameById = (id?: string | null) =>
+    tournaments.find(t => t.id === id)?.name ?? '—';
+
+  const getDivisionNameById = (id?: string | null) =>
+    divisions.find(d => d.id === id)?.name ?? '';
+
+
 
   const getDivisionHighlights = (divisionName: string, tournamentName: string) => {
     // Different highlights for PPC Cup divisions
@@ -3789,7 +4287,7 @@ const App = () => {
     });
 
   const historicTournaments = [...tournaments]
-    .filter(t => t.status === 'closed' || t.status === 'completed')
+    .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
     .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -4645,14 +5143,14 @@ const App = () => {
                   <p className="text-gray-600">Reservas automáticas Better</p>
                 </div>
               </div>
-
+                      
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">
                       {uiName(currentUser.name)}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="truncate text-sm text-gray-600">
                       {registrations
                         .filter((r) => r.profile_id === currentUser.id)
                         .map((r) => tournaments.find((t) => t.id === r.tournament_id)?.name)
@@ -4660,63 +5158,68 @@ const App = () => {
                         .join(', ') || 'No tournaments'}
                     </p>
                   </div>
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
-                    }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg
-                      className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                    >
-                      <circle cx="12" cy="7" r="4" strokeWidth="2" />
-                      <path
-                        d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg
-                      className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
+                      }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
                     >
-                      <path
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M9 16l-4-4m0 0l4-4m-4 4h11"
-                      />
-                      <path
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                      >
+                        <circle cx="12" cy="7" r="4" strokeWidth="2" />
+                        <path
+                          d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg
+                        className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M9 16l-4-4m0 0l4-4m-4 4h11"
+                        />
+                        <path
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
@@ -5093,49 +5596,52 @@ const App = () => {
                 </div>
               </div>
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                    <p className="text-sm text-gray-600">
-                      {/* Muestra todos los torneos en los que está inscrito */}
-                      {registrations
-                        .filter(r => r.profile_id === currentUser.id)
-                        .map(r => tournaments.find(t => t.id === r.tournament_id)?.name)
-                        .filter(Boolean)
-                        .join(', ') || 'No tournaments'}
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">
+                      {(() => {
+                        const t = getLatestTournamentForUser(currentUser.id);
+                        return t ? t.name : 'No tournaments';
+                      })()}
                     </p>
                   </div>
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
-                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
@@ -5562,6 +6068,7 @@ const App = () => {
           tournament={selectedTournament}
           matches={tournamentMatches}
           profiles={profiles}
+          historicPlayers={historicPlayers}
           matchSets={matchSets}
           onBack={() => {
             setSelectedTournament(null);
@@ -5603,11 +6110,15 @@ const App = () => {
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
-      const totalPossibleMatches = players.length > 1 ? players.length - 1 : 0;
 
-      const divisionStandings = standings.filter(
-        s => s.division_id === division.id && s.tournament_id === selectedTournament.id
-      );     
+      const perOpp =
+        selectedTournament.id === '3c57c9af-57b8-476c-9923-54d36d4f7b8a' && division.name === 'Diamante'
+          ? 2
+          : 1;
+
+      const totalPossibleMatches = players.length > 1 ? (players.length - 1) * perOpp : 0;
+
+      const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
 
       // partidos jugados de ESTA división (para head-to-head)
       const playedInThisDiv = matches.filter(
@@ -5616,15 +6127,26 @@ const App = () => {
             m.status === 'played'
       );
 
+      const divisionStandings = hasHistoricInRoster
+        ? computeStandingsFromPlayedMatches(playedInThisDiv, selectedTournament.id, division.id)
+        : standings.filter(
+            s => s.division_id === division.id && s.tournament_id === selectedTournament.id
+          );
+
       // Stats por jugador (incluye wins/sets/games para los desempates)
       const playerRows = players.map(player => {
         const s = divisionStandings.find(st => st.profile_id === player.id);
         const played = (s?.wins || 0) + (s?.losses || 0);
-        const scheduled = matches.filter(m =>
-          m.division_id === division.id &&
-          (m.home_player_id === player.id || m.away_player_id === player.id) &&
-          m.status === 'scheduled'
-        ).length;
+        const scheduled = matches.filter(m => {
+          const h = getMatchHomeId(m);
+          const a = getMatchAwayId(m);
+          return (
+            m.division_id === division.id &&
+            m.tournament_id === selectedTournament.id &&
+            m.status === 'scheduled' &&
+            (h === player.id || a === player.id)
+          );
+        }).length;
 
         return {
           id: player.id,
@@ -5655,7 +6177,7 @@ const App = () => {
       return {
         division,
         players: players.length,
-        gamesPlayed: matches.filter(m => m.division_id === division.id && m.status === 'played').length,
+        gamesPlayed: matches.filter(m => m.division_id === division.id && m.tournament_id === selectedTournament.id && m.status === 'played').length,
         totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
         leader: sortedForLeader.length ? {
           id: sortedForLeader[0].id,
@@ -5672,6 +6194,32 @@ const App = () => {
       };
     });
 
+    // ---- Sub Fase de Grupos (Placement) dentro de Edición 3 ----
+    const EDICION_3_ID = '3c57c9af-57b8-476c-9923-54d36d4f7b8a';
+    const isEdicion3 = selectedTournament.id === EDICION_3_ID;
+
+    const placementMatchesAll = isEdicion3
+      ? matches.filter(m => m.tournament_id === EDICION_3_ID && (m as any).phase === 'group_stage_pre')
+      : [];
+
+    const placementGroupCodes = Array.from(
+      new Set(
+        placementMatchesAll
+          .map(m => ((m as any).group_code as string | null) || null)
+          .filter(Boolean) as string[]
+      )
+    ).sort();
+
+    // Si el tab actual no existe (ej. no hay Grupo A), cae al primero disponible
+    const effectivePlacementGroup = placementGroupCodes.includes(placementGroup)
+      ? placementGroup
+      : (placementGroupCodes[0] as any) || placementGroup;
+
+    const placementMatchesForGroup = placementMatchesAll
+      .filter(m => (((m as any).group_code as string | null) || '') === effectivePlacementGroup)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+
+    const placementStandings = buildPlacementStandings(placementMatchesForGroup, matchSets);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
@@ -5695,197 +6243,375 @@ const App = () => {
               </div>
               
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                    <p className="text-sm text-gray-600">
-                      Division: {
-                        registrations
-                          .filter(r => r.profile_id === currentUser.id && r.tournament_id === selectedTournament.id)
-                          .map(r => divisions.find(d => d.id === r.division_id)?.name)
-                          .filter(Boolean) 
-                          .join(', ') || 'N/A'
-                      }
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">
+                      {(() => {
+                        const t = getLatestTournamentForUser(currentUser.id);
+                        return t ? t.name : 'No tournaments';
+                      })()}
                     </p>
                   </div>
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />                  
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
-                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Tournament Summary */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
-              <div className="grid grid-cols-2 gap-6">
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <div className="text-3xl font-bold text-blue-600">{divisionsData.reduce((sum, d) => sum + d.players, 0)}</div>
-                  <div className="text-sm text-gray-600">Total Players</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <div className="text-3xl font-bold text-green-600">{divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}</div>
-                  <div className="text-sm text-gray-600">Total Games Played</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <div className="text-3xl font-bold text-purple-600">{divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}</div>
-                  <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
-                  <div className="text-sm text-gray-600">Divisions</div>
-                </div>
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
-              <div className="space-y-4">
-                {divisionsData.map(d => (
-                  <div
-                    key={d.division.id}
-                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
-                    onClick={() => setSelectedDivision(d.division)} 
-                  >
-                    <div className="flex justify-between">
-                      <span className="font-medium text-gray-800">
-                        {d.division.name}
-                        <span className="ml-2 text-sm text-purple-700">
-                          ({Number(d.totalPints || 0)} 🍺)
-                        </span>
-                      </span>
-                      <span className="text-sm text-gray-600">
-                        Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+        {/* Switch de vistas (solo Edición 3 y solo si existe Sub Fase) */}
+        {isEdicion3 && placementMatchesAll.length > 0 && (
+          <div className="bg-white/90 backdrop-blur rounded-xl shadow-lg p-3 mb-6">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setE3View('main')}
+                className={
+                  `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                  (e3View === 'main'
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+                }
+              >
+                Liga principal
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setE3View('groups')}
+                className={
+                  `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                  (e3View === 'groups'
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+                }
+              >
+                Sub Fase de Grupos
+              </button>
             </div>
           </div>
+        )}
 
-          {/* Division Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
-            {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
-              <div 
-                key={division.id} 
-                className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
-                onClick={() => setSelectedDivision(division)}
-              >
-                <div className="p-6">
-                  <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
-                  <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600">{players}</div>
-                      <div className="text-sm text-gray-600">Players</div>
-                    </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
-                      <div className="text-sm text-gray-600">Matches</div>
-                    </div>
+          {(!isEdicion3 || e3View === 'main') && (
+            <>
+            {/* Tournament Summary */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <div className="text-3xl font-bold text-blue-600">{divisionsData.reduce((sum, d) => sum + d.players, 0)}</div>
+                    <div className="text-sm text-gray-600">Total Players</div>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                      <div className="text-sm text-gray-600">Total Pintas</div>
-                    </div>
-                    <div className="text-center p-3 bg-gray-50 rounded-lg">
-                      <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
-                      <div className="text-sm text-gray-600">Pintas Máximas</div>
-                    </div>
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <div className="text-3xl font-bold text-green-600">{divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}</div>
+                    <div className="text-sm text-gray-600">Total Games Played</div>
                   </div>
-                  {leader && (
-                    <div className="bg-yellow-50 p-3 rounded-lg mb-4">
-                      <div className="text-sm text-yellow-800">Líder Actual</div>
-                      <div className="font-semibold text-yellow-900">{leader.name}</div>
-                      <div className="text-sm text-yellow-700">
-                        {leader.points} puntos
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <div className="text-3xl font-bold text-purple-600">{divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}</div>
+                    <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
+                  </div>
+                  <div className="text-center p-4 bg-gray-50 rounded-lg">
+                    <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
+                    <div className="text-sm text-gray-600">Divisions</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
+                <div className="space-y-4">
+                  {divisionsData.map(d => (
+                    <div
+                      key={d.division.id}
+                      className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
+                      onClick={() => setSelectedDivision(d.division)} 
+                    >
+                      <div className="flex justify-between">
+                        <span className="font-medium text-gray-800">
+                          {d.division.name}
+                          <span className="ml-2 text-sm text-purple-700">
+                            ({Number(d.totalPints || 0)} 🍺)
+                          </span>
+                        </span>
+                        <span className="text-sm text-gray-600">
+                          Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                        </span>
                       </div>
                     </div>
-                  )}
-                  {topPintsPlayer && (
-                    <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                      <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                      <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
-                      <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
-                    </div>
-                  )}
-                  
-                  {/* Match Status Table */}
-                  <div className="border rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
-                          <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
-                        </tr>
-                      </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {divisionsData
-                            .find(d => d.division.id === division.id)
-                            ?.playerStats
-                            // Orden descendente por %Av
-                            .slice() // crea copia para no mutar el array original
-                            .sort((a, b) => {
-                              const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
-                              const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
-                              const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
-                              const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
-                              return pctB - pctA; // Mayor a menor
-                            })
-                            .map(stats => (
-                              <tr key={stats.id} className="text-sm">
-                                <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
-                                <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                                <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
-                              </tr>
-                          ))}
-                        </tbody>
-                    </table>
-                  </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+
+            {/* Division Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+              {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
+                <div 
+                  key={division.id} 
+                  className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
+                  onClick={() => setSelectedDivision(division)}
+                >
+                  <div className="p-6">
+                    <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
+                    <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-blue-600">{players}</div>
+                        <div className="text-sm text-gray-600">Players</div>
+                      </div>
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
+                        <div className="text-sm text-gray-600">Matches</div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                        <div className="text-sm text-gray-600">Total Pintas</div>
+                      </div>
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
+                        <div className="text-sm text-gray-600">Pintas Máximas</div>
+                      </div>
+                    </div>
+                    {leader && (
+                      <div className="bg-yellow-50 p-3 rounded-lg mb-4">
+                        <div className="text-sm text-yellow-800">Líder Actual</div>
+                        <div className="font-semibold text-yellow-900">{leader.name}</div>
+                        <div className="text-sm text-yellow-700">
+                          {leader.points} puntos
+                        </div>
+                      </div>
+                    )}
+                    {topPintsPlayer && (
+                      <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                        <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                        <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
+                        <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                      </div>
+                    )}
+                    
+                    {/* Match Status Table */}
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
+                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
+                          </tr>
+                        </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {divisionsData
+                              .find(d => d.division.id === division.id)
+                              ?.playerStats
+                              // Orden descendente por %Av
+                              .slice() // crea copia para no mutar el array original
+                              .sort((a, b) => {
+                                const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
+                                const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
+                                const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
+                                const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
+                                return pctB - pctA; // Mayor a menor
+                              })
+                              .map(stats => (
+                                <tr key={stats.id} className="text-sm">
+                                  <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
+                                  <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
+                                  <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
+                                  <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
+                                  <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
+                                </tr>
+                            ))}
+                          </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+          {/* Sub Fase de Grupos (Placement) – solo Edición 3 */}
+          {isEdicion3 && placementMatchesAll.length > 0 && e3View === 'groups' && (
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-800">Sub Fase de Grupos</h3>
+                  <p className="text-sm text-gray-600">
+                    Fase previa dentro de {selectedTournament.name}
+                  </p>
+                </div>
+
+                {/* Tabs grupos */}
+                <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:gap-2">
+                  {placementGroupCodes.map(code => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setPlacementGroup(code as any)}
+                      className={
+                        `w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                        (effectivePlacementGroup === code
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+                      }
+                    >
+                      Grupo {code}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+            {/* Standings del grupo */}
+            <div className="overflow-x-auto mb-6">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Player</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Pts</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">P</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">W</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">L</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SW</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SL</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SD</th>
+                  </tr>
+                </thead>
+
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {placementStandings.map((r, idx) => (
+                    <tr key={r.playerId} className={idx === 0 ? 'bg-emerald-50' : 'hover:bg-gray-50'}>
+                      <td className="px-4 py-3 text-sm text-gray-900 font-medium">{r.name}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.Pts}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.P}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.W}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.L}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.SW}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.SL}</td>
+                      <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.SD}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+
+              {/* Tabla de partidos del grupo */}
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {placementMatchesForGroup.map(match => {
+                      const homeId = getMatchHomeId(match);
+                      const awayId = getMatchAwayId(match);
+
+                      const p1 = getAnyPlayerById(homeId);
+                      const p2 = getAnyPlayerById(awayId);
+
+                      const loc = [
+                        locations.find(l => l.id === match.location_id)?.name,
+                        match.location_details
+                      ].filter(Boolean).join(' - ') || 'TBD';
+
+                      const result = match.status === 'played'
+                        ? scoreLine(match)
+                        : '—';
+
+                      return (
+                        <tr key={match.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {match.date ? formatDateLocal(match.date) : '—'}
+                            {match.time ? ` ${match.time.slice(0, 5)}` : ''}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {uiName(p1?.name)} vs {uiName(p2?.name)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                            {result}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
+                            {match.status === 'played' ? (
+                              (currentUser?.id === match.home_player_id ||
+                                currentUser?.id === match.away_player_id ||
+                                (currentUser as any)?.role === 'admin') && (
+                                <button
+                                  onClick={() => openEditResult(match)}
+                                  className="text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  Edit Result
+                                </button>
+                              )
+                            ) : (
+                              canEditSchedule(match) && (
+                                <button
+                                  onClick={() => openEditSchedule(match)}
+                                  className="text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  Edit Schedule
+                                </button>
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
 
           {/* Upcoming Matches Section */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
@@ -6074,7 +6800,8 @@ const App = () => {
         tournament={selectedTournament}
         matches={tournamentMatches}
         profiles={profiles}
-        matchSets={matchSets}             // 👈 NUEVO
+        historicPlayers={historicPlayers}
+        matchSets={matchSets}         
         onBack={() => {
           setSelectedTournament(null);
           setSelectedDivision(null);
@@ -6125,21 +6852,37 @@ const App = () => {
 
 
     // Stats solo de quienes tienen partidos (como antes)
-    const divisionStats = standings
-      .filter(s => s.division_id === selectedDivision.id && s.tournament_id === selectedTournament.id)
-      .map(s => ({
-        ...s,
-        name: profiles.find(p => p.id === s.profile_id)?.name || ''
-      }));
+    
+    const playedMatchesThisDivision = matches.filter(
+      m =>
+        m.tournament_id === selectedTournament.id &&
+        m.division_id === selectedDivision.id &&
+        m.status === 'played'
+    );
 
-    // Mapa rápido por id para mezclar stats con el roster completo
+    // Si hay historic players en el roster, calculamos standings local desde matches
+    const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
+
+    const divisionStatsBase = hasHistoricInRoster
+      ? computeStandingsFromPlayedMatches(
+          playedMatchesThisDivision,
+          selectedTournament.id,
+          selectedDivision.id
+        )
+      : standings.filter(
+          s =>
+            s.division_id === selectedDivision.id &&
+            s.tournament_id === selectedTournament.id
+        );
+
+    // Añadimos name desde profiles/historicPlayers usando tu resolver existente (si ya lo tienes),
+    // y si no, caemos al roster `players`.
+    const divisionStats = divisionStatsBase.map(s => ({
+      ...s,
+      name: players.find(p => p.id === s.profile_id)?.name || ''
+    }));
     const statsById = new Map(divisionStats.map(s => [s.profile_id, s]));
 
-    const playedMatchesThisDivision = matches.filter(
-      m => m.tournament_id === selectedTournament.id &&
-          m.division_id === selectedDivision.id &&
-          m.status === 'played'
-    );
 
     // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
     const rosterRows = players.map(p => {
@@ -6215,22 +6958,31 @@ const App = () => {
         pints: 0,
       });
       
-      const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id);
+      const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id); 
+      const playerMatchesAll = getPlayerMatchesAll(selectedPlayer.id);
       
       // Calculate upcoming matches against all other players
       const divisionPlayers = getDivisionPlayers(selectedDivision.id, selectedTournament.id);
       const allOpponents = divisionPlayers.filter(p => p.id !== selectedPlayer.id);
       
       const upcomingMatches = allOpponents.filter(opponent => {
-        return !playerMatches.played.some(match => 
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
-        ) && !playerMatches.scheduled.some(match =>
-          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
-        );
+        return !playerMatches.played.some(match => {
+          const h = getMatchHomeId(match);
+          const a = getMatchAwayId(match);
+          return (
+            (h === selectedPlayer.id && a === opponent.id) ||
+            (h === opponent.id && a === selectedPlayer.id)
+          );
+        }) && !playerMatches.scheduled.some(match => {
+          const h = getMatchHomeId(match);
+          const a = getMatchAwayId(match);
+          return (
+            (h === selectedPlayer.id && a === opponent.id) ||
+            (h === opponent.id && a === selectedPlayer.id)
+          );
+        });
       });
-      
+
       return (
         <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
           <header className="bg-white shadow-lg">
@@ -6250,44 +7002,48 @@ const App = () => {
                 </div>
 
                 {currentUser && (
-                  <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                    <div className="text-right">
-                      <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                      <p className="text-sm text-gray-600">
+                  <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                    <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                      <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                      <p className="truncate text-sm text-gray-600">
                         Division: {selectedDivision.name}
                       </p>
                     </div>
-                    <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                    />
-                    <button
-                      onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
-                    </button>
 
-                    <button
-                      onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                      </svg>
-                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                      />
+                      <button
+                        onClick={openEditProfile}
+                        className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                        aria-label="Editar perfil"
+                        title="Editar perfil"
+                      >
+                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                          <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                        </svg>
+                      </button>
+
+                      <button
+                        onClick={handleLogout}
+                        className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                        aria-label="Cerrar sesión"
+                        title="Cerrar sesión"
+                      >
+                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 )}
+
               </div>
             </div>
           </header>
@@ -6487,8 +7243,8 @@ const App = () => {
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
-                        const player1 = profiles.find(p => p.id === match.home_player_id);
-                        const player2 = profiles.find(p => p.id === match.away_player_id);
+                        const player1 = getAnyPlayerById(getMatchHomeId(match));
+                        const player2 = getAnyPlayerById(getMatchAwayId(match));
                         const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
                         
                         return (
@@ -6506,11 +7262,14 @@ const App = () => {
                                     );
                                   })()}
                                 </h4>
-                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
+                                <p className="text-sm text-gray-600">
+                                  {getTournamentNameById(match.tournament_id)}
+                                  {getDivisionNameById(match.division_id) ? ` · ${getDivisionNameById(match.division_id)}` : ''}
+                                </p>
                               </div>
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
-                                <div className="text-sm text-gray-600">{setsLineFor(match, selectedPlayer.id)}</div>
+                                <div className="text-sm text-gray-600">{scoreLine(match, selectedPlayer.id)}</div>
                               </div>
                             </div>
                             <div className="text-sm text-gray-600">
@@ -6683,69 +7442,115 @@ const App = () => {
                 {/* Head-to-Head Matches */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <h2 className="text-2xl font-bold text-gray-800 mb-6">Head-to-Head Matches</h2>
-                  
-                  {divisionPlayers.length > 1 ? (
+
+                  {playerMatchesAll.played.length > 0 ? (
                     <div className="space-y-6">
-                      {divisionPlayers.filter(p => p.id !== selectedPlayer.id).map(opponent => {
-                        const h2hMatches = playerMatches.played.filter(match => 
-                          (match.home_player_id === selectedPlayer.id && match.away_player_id === opponent.id) ||
-                          (match.home_player_id === opponent.id && match.away_player_id === selectedPlayer.id)
-                        );
-                        
-                        if (h2hMatches.length === 0) return null;
-                        
-                        // Calculate head-to-head stats
-                        let wins = 0;
-                        let losses = 0;
-                        let totalSetsWon = 0;
-                        let totalSetsLost = 0;
-                        
-                        h2hMatches.forEach(match => {
-                          if (match.home_player_id === selectedPlayer.id) {
-                            totalSetsWon += match.player1_sets_won;
-                            totalSetsLost += match.player2_sets_won;
-                            if (match.player1_sets_won > match.player2_sets_won) wins++;
-                            else losses++;
-                          } else {
-                            totalSetsWon += match.player2_sets_won;
-                            totalSetsLost += match.player1_sets_won;
-                            if (match.player2_sets_won > match.player1_sets_won) wins++;
-                            else losses++;
-                          }
+                      {(() => {
+                        // Build opponent list from ALL played matches (across tournaments)
+                        const oppIds = new Set<string>();
+
+                        playerMatchesAll.played.forEach(m => {
+                          const a = getMatchHomeId(m);
+                          const b = getMatchAwayId(m);
+                          if (!a || !b) return;
+
+                          if (a === selectedPlayer.id) oppIds.add(b);
+                          else if (b === selectedPlayer.id) oppIds.add(a);
                         });
-                        
-                        return (
-                          <div key={opponent.id} className="border rounded-lg p-4">
-                            <div className="flex justify-between items-center mb-4">
-                              <h3 className="font-semibold text-gray-800 text-lg">{uiName(opponent.name)}</h3>
-                              <div className="bg-gray-50 px-3 py-1 rounded-lg">
-                                <span className="text-green-600 font-medium">{wins}W</span> - 
-                                <span className="text-red-600 font-medium">{losses}L</span>
+
+                        const opponents = Array.from(oppIds)
+                          .map(id => getAnyPlayerById(id))
+                          .filter(Boolean) as { id: string; name?: string | null; avatar_url?: string | null }[];
+
+                        // Sort by most recent match vs that opponent (optional but nice)
+                        opponents.sort((o1, o2) => {
+                          const last1 = playerMatchesAll.played
+                            .filter(m =>
+                              (getMatchHomeId(m) === selectedPlayer.id && getMatchAwayId(m) === o1.id) ||
+                              (getMatchHomeId(m) === o1.id && getMatchAwayId(m) === selectedPlayer.id)
+                            )
+                            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date ?? '';
+                          const last2 = playerMatchesAll.played
+                            .filter(m =>
+                              (getMatchHomeId(m) === selectedPlayer.id && getMatchAwayId(m) === o2.id) ||
+                              (getMatchHomeId(m) === o2.id && getMatchAwayId(m) === selectedPlayer.id)
+                            )
+                            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0]?.date ?? '';
+                          return (last2 || '').localeCompare(last1 || '');
+                        });
+
+                        return opponents.map(opponent => {
+                          const h2hMatches = playerMatchesAll.played
+                            .filter(match =>
+                              (getMatchHomeId(match) === selectedPlayer.id && getMatchAwayId(match) === opponent.id) ||
+                              (getMatchHomeId(match) === opponent.id && getMatchAwayId(match) === selectedPlayer.id)
+                            )
+                            .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
+
+                          if (h2hMatches.length === 0) return null;
+
+                          // Calculate global head-to-head stats
+                          let wins = 0;
+                          let losses = 0;
+                          let totalSetsWon = 0;
+                          let totalSetsLost = 0;
+
+                          h2hMatches.forEach(match => {
+                            if (getMatchHomeId(match) === selectedPlayer.id) {
+                              totalSetsWon += match.player1_sets_won;
+                              totalSetsLost += match.player2_sets_won;
+                              if (match.player1_sets_won > match.player2_sets_won) wins++;
+                              else losses++;
+                            } else {
+                              totalSetsWon += match.player2_sets_won;
+                              totalSetsLost += match.player1_sets_won;
+                              if (match.player2_sets_won > match.player1_sets_won) wins++;
+                              else losses++;
+                            }
+                          });
+
+                          return (
+                            <div key={opponent.id} className="border rounded-lg p-4">
+                              <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-semibold text-gray-800 text-lg">
+                                  {uiName(opponent.name)}
+                                </h3>
+                                <div className="bg-gray-50 px-3 py-1 rounded-lg">
+                                  <span className="text-green-600 font-medium">{wins}W</span> -{' '}
+                                  <span className="text-red-600 font-medium">{losses}L</span>
+                                </div>
                               </div>
-                            </div>
-                            
-                            <div className="space-y-3 mb-4">
-                              <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Total Sets:</span>
-                                <span className="font-medium">{totalSetsWon}-{totalSetsLost}</span>
+
+                              <div className="space-y-3 mb-4">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-gray-600">Total Sets:</span>
+                                  <span className="font-medium">{totalSetsWon}-{totalSetsLost}</span>
+                                </div>
                               </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              {h2hMatches.map((match, index) => {
-                                const player1 = profiles.find(p => p.id === match.home_player_id);
-                                const player2 = profiles.find(p => p.id === match.away_player_id);
-                                
-                                return (
+
+                              <div className="space-y-2">
+                                {h2hMatches.map((match, index) => (
                                   <div key={index} className="border-t pt-2">
-                                    <div className="flex justify-between">
+                                    <div className="flex justify-between items-start">
                                       <div>
-                                        <p className="text-sm font-medium">{uiName(player1?.name)} vs {uiName(player2?.name)}</p>
-                                        <p className="text-xs text-gray-500">{formatDate(new Date(match.date))} | {locations.find(l => l.id === match.location_id)?.name || ''}</p>
+                                        {/* ✅ Tournament (and division) instead of repeating names */}
+                                        <p className="text-sm font-medium text-gray-800">
+                                          {getTournamentNameById(match.tournament_id)}
+                                          {getDivisionNameById(match.division_id) ? ` · ${getDivisionNameById(match.division_id)}` : ''}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          {formatDate(new Date(match.date))}
+                                          {(() => {
+                                            const loc = match.location_details || locations.find(l => l.id === match.location_id)?.name;
+                                            return loc ? ` | ${loc}` : '';
+                                          })()}
+                                        </p>
                                       </div>
+
                                       <div className="text-right">
+                                        {/* ✅ Result on the right */}
                                         <p className="text-sm font-medium">
-                                          {setsLineFor(match)}
+                                          {scoreLine(match, selectedPlayer.id)}
                                         </p>
                                         {(match.player1_had_pint || match.player2_had_pint) && (
                                           <p className="text-xs text-purple-600 flex items-center justify-end">
@@ -6756,12 +7561,12 @@ const App = () => {
                                       </div>
                                     </div>
                                   </div>
-                                );
-                              })}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+                      })()}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
@@ -6769,6 +7574,8 @@ const App = () => {
                     </div>
                   )}
                 </div>
+
+
                 {/* Partidos agendados (todos) */}
                 {(() => {
                   if (!selectedPlayer || !selectedTournament || !selectedDivision) return null;
@@ -6904,45 +7711,48 @@ const App = () => {
               </div>
 
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                    <p className="text-sm text-gray-600">
-                      Division: {selectedDivision.name} 
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">
+                      Division: {selectedDivision.name}
                     </p>
                   </div>
-                  
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
-                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
@@ -7078,7 +7888,7 @@ const App = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                       {rosterSorted.length > 0 ? (
                         rosterSorted.map((stats, index) => {
-                          const player = profiles.find(p => p.id === stats.profile_id);
+                          const player = players.find(p => p.id === stats.profile_id);
                           if (!player) return null;
                           return (
                             <tr 
@@ -7440,7 +8250,7 @@ const App = () => {
               
               <div className="space-y-4">
                 {pendingMatches.map(match => {
-                  const player1 = profiles.find(p => p.id === match.home_player_id);
+                  const player1 = getAnyPlayerById(getMatchHomeId(match));
                   
                   return (
                     <div key={match.id} className="border rounded-lg p-4">

@@ -254,7 +254,9 @@ interface Match {
   created_by: string;
   created_at: string;
   knockout_round?: string | null;
-  bracket_position?: number | null
+  bracket_position?: number | null;
+  phase?: string | null;
+  group_code?: string | null;  
 }
 
 interface MatchSet {
@@ -1046,6 +1048,8 @@ const App = () => {
   const [pickedTournamentId, setPickedTournamentId] = useState<string>('');
   const [pickedDivisionId, setPickedDivisionId] = useState<string>('');
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [tournamentTab, setTournamentTab] = useState<'overview' | 'playoffs'>('overview');
+  const [playoffsDivisionFilter, setPlayoffsDivisionFilter] = useState<string>('all');
   const [showAvailability, setShowAvailability] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
   const [editUser, setEditUser] = useState({ 
@@ -1172,6 +1176,92 @@ const App = () => {
 
   const getAnyPlayerAvatarUrl = (id?: string | null): string | null => {
     return getAnyPlayerById(id)?.avatar_url ?? null;
+  };
+
+  // ---------------- Playoffs helpers ----------------
+
+  const isPlayoffsMatch = (m: Match) =>
+    m.phase === 'finals_main' || m.phase === 'finals_repechage';
+
+  const getPlayoffsMatchesForTournament = (tournamentId: string) =>
+    matches.filter(m => m.tournament_id === tournamentId && isPlayoffsMatch(m));
+
+  const winnerIdFromMatch = (m: Match): string | null => {
+    // OJO: asumimos el mapping actual de tu app:
+    // player1_* corresponde a home, player2_* corresponde a away.
+    // Si algún día esto cambia, lo ajustamos aquí (solo UI).
+    const a = m.player1_sets_won;
+    const b = m.player2_sets_won;
+    if (a == null || b == null) return null;
+    if (a > b) return m.home_player_id ?? null;
+    if (b > a) return m.away_player_id ?? null;
+    return null;
+  };
+
+  const scoreLineForMatch = (m: Match) => {
+    // 1) Prefer match_sets if present (set-by-set games)
+    const sets = (matchSets || [])
+      .filter(s => s.match_id === m.id)
+      .slice()
+      .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
+
+    if (sets.length > 0) {
+      return sets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ');
+    }
+
+    // 2) Fallback: total games from matches row if you didn't insert match_sets
+    if (typeof m.player1_games_won === 'number' && typeof m.player2_games_won === 'number') {
+      return `${m.player1_games_won}-${m.player2_games_won}`;
+    }
+
+    // 3) Last fallback: sets only
+    if (typeof m.player1_sets_won === 'number' && typeof m.player2_sets_won === 'number') {
+      return `${m.player1_sets_won}-${m.player2_sets_won}`;
+    }
+
+    return '—';
+  };
+
+
+  type PlayoffsBlock = {
+    sf1?: Match;
+    sf2?: Match;
+    final?: Match;
+    championId?: string | null;
+  };
+
+  // Arma el bracket principal (finals_main) usando knockout_round + bracket_position
+  const buildMainPlayoffsBlock = (tournamentId: string, divisionId: string): PlayoffsBlock => {
+    const list = matches.filter(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      m.phase === 'finals_main'
+    );
+
+    const sf = list.filter(m => m.knockout_round === 'SF');
+    const final = list.find(m => m.knockout_round === 'F' && (m.bracket_position ?? 1) === 1);
+
+    const sf1 = sf.find(m => (m.bracket_position ?? 1) === 1);
+    const sf2 = sf.find(m => (m.bracket_position ?? 2) === 2);
+
+    const championId = final ? winnerIdFromMatch(final) : null;
+
+    return { sf1, sf2, final, championId };
+  };
+
+  // Repechaje: lista (1 o varios)
+  const buildRepechageMatches = (tournamentId: string, divisionId: string): Match[] => {
+    return matches
+      .filter(m =>
+        m.tournament_id === tournamentId &&
+        m.division_id === divisionId &&
+        m.phase === 'finals_repechage'
+      )
+      .sort((a, b) => {
+        const da = new Date(a.date).getTime();
+        const db = new Date(b.date).getTime();
+        return (isNaN(da) ? 0 : da) - (isNaN(db) ? 0 : db);
+      });
   };
 
   const getMatchHomeId = (m: any) => m?.home_player_id ?? m?.home_historic_player_id ?? null;
@@ -5145,12 +5235,12 @@ const App = () => {
               </div>
                       
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">
                       {uiName(currentUser.name)}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="truncate text-sm text-gray-600">
                       {registrations
                         .filter((r) => r.profile_id === currentUser.id)
                         .map((r) => tournaments.find((t) => t.id === r.tournament_id)?.name)
@@ -5158,63 +5248,68 @@ const App = () => {
                         .join(', ') || 'No tournaments'}
                     </p>
                   </div>
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
-                    }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg
-                      className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                    >
-                      <circle cx="12" cy="7" r="4" strokeWidth="2" />
-                      <path
-                        d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg
-                      className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
+                      }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
                     >
-                      <path
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M9 16l-4-4m0 0l4-4m-4 4h11"
-                      />
-                      <path
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                      >
+                        <circle cx="12" cy="7" r="4" strokeWidth="2" />
+                        <path
+                          d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg
+                        className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M9 16l-4-4m0 0l4-4m-4 4h11"
+                        />
+                        <path
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
@@ -5591,47 +5686,52 @@ const App = () => {
                 </div>
               </div>
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                    <p className="text-sm text-gray-600">
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">
                       {(() => {
                         const t = getLatestTournamentForUser(currentUser.id);
                         return t ? t.name : 'No tournaments';
                       })()}
                     </p>
                   </div>
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
-                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
@@ -6233,52 +6333,89 @@ const App = () => {
               </div>
               
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                    <p className="text-sm text-gray-600">
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">
                       {(() => {
                         const t = getLatestTournamentForUser(currentUser.id);
                         return t ? t.name : 'No tournaments';
                       })()}
                     </p>
                   </div>
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />                  
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
-                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        {/* Tournament tabs */}
+        <div className="bg-white rounded-xl shadow-lg p-3 mb-6">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={() => setTournamentTab('overview')}
+              className={
+                `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                (tournamentTab === 'overview'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+              }
+            >
+              Overview
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTournamentTab('playoffs')}
+              className={
+                `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                (tournamentTab === 'playoffs'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+              }
+            >
+              Playoffs
+            </button>
+          </div>
+        </div>
+        
 
         {/* Switch de vistas (solo Edición 3 y solo si existe Sub Fase) */}
         {isEdicion3 && placementMatchesAll.length > 0 && (
@@ -6315,150 +6452,388 @@ const App = () => {
 
           {(!isEdicion3 || e3View === 'main') && (
             <>
-            {/* Tournament Summary */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-blue-600">{divisionsData.reduce((sum, d) => sum + d.players, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Players</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-green-600">{divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Games Played</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-purple-600">{divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
-                    <div className="text-sm text-gray-600">Divisions</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
-                <div className="space-y-4">
-                  {divisionsData.map(d => (
-                    <div
-                      key={d.division.id}
-                      className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
-                      onClick={() => setSelectedDivision(d.division)} 
-                    >
-                      <div className="flex justify-between">
-                        <span className="font-medium text-gray-800">
-                          {d.division.name}
-                          <span className="ml-2 text-sm text-purple-700">
-                            ({Number(d.totalPints || 0)} 🍺)
-                          </span>
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Division Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
-              {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
-                <div 
-                  key={division.id} 
-                  className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
-                  onClick={() => setSelectedDivision(division)}
-                >
-                  <div className="p-6">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
-                    <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{players}</div>
-                        <div className="text-sm text-gray-600">Players</div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
-                        <div className="text-sm text-gray-600">Matches</div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                        <div className="text-sm text-gray-600">Total Pintas</div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
-                        <div className="text-sm text-gray-600">Pintas Máximas</div>
-                      </div>
-                    </div>
-                    {leader && (
-                      <div className="bg-yellow-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-yellow-800">Líder Actual</div>
-                        <div className="font-semibold text-yellow-900">{leader.name}</div>
-                        <div className="text-sm text-yellow-700">
-                          {leader.points} puntos
+              {tournamentTab === 'overview' && (
+                <>
+                  {/* Tournament Summary */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-blue-600">
+                            {divisionsData.reduce((sum, d) => sum + d.players, 0)}
+                          </div>
+                          <div className="text-sm text-gray-600">Total Players</div>
+                        </div>
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-green-600">
+                            {divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}
+                          </div>
+                          <div className="text-sm text-gray-600">Total Games Played</div>
+                        </div>
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-purple-600">
+                            {divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}
+                          </div>
+                          <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
+                        </div>
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
+                          <div className="text-sm text-gray-600">Divisions</div>
                         </div>
                       </div>
-                    )}
-                    {topPintsPlayer && (
-                      <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                        <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
-                        <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
+                      <div className="space-y-4">
+                        {divisionsData.map(d => (
+                          <div
+                            key={d.division.id}
+                            className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all"
+                            onClick={() => setSelectedDivision(d.division)}
+                          >
+                            <div className="flex justify-between">
+                              <span className="font-medium text-gray-800">
+                                {d.division.name}
+                                <span className="ml-2 text-sm text-purple-700">
+                                  ({Number(d.totalPints || 0)} 🍺)
+                                </span>
+                              </span>
+                              <span className="text-sm text-gray-600">
+                                Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                    
-                    {/* Match Status Table */}
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
-                      <table className="w-full">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
-                          </tr>
-                        </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {divisionsData
-                              .find(d => d.division.id === division.id)
-                              ?.playerStats
-                              // Orden descendente por %Av
-                              .slice() // crea copia para no mutar el array original
-                              .sort((a, b) => {
-                                const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
-                                const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
-                                const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
-                                const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
-                                return pctB - pctA; // Mayor a menor
-                              })
-                              .map(stats => (
-                                <tr key={stats.id} className="text-sm">
-                                  <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                                  <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
+                    </div>
+                  </div>
+
+                  {/* Division Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+                    {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
+                      <div
+                        key={division.id}
+                        className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300"
+                        onClick={() => setSelectedDivision(division)}
+                      >
+                        <div className="p-6">
+                          <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
+                          <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
+
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-blue-600">{players}</div>
+                              <div className="text-sm text-gray-600">Players</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
+                              <div className="text-sm text-gray-600">Matches</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                              <div className="text-sm text-gray-600">Total Pintas</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-orange-600">
+                                {topPintsPlayer ? Number(topPintsPlayer.pints) : 0}
+                              </div>
+                              <div className="text-sm text-gray-600">Pintas Máximas</div>
+                            </div>
+                          </div>
+
+                          {leader && (
+                            <div className="bg-yellow-50 p-3 rounded-lg mb-4">
+                              <div className="text-sm text-yellow-800">Líder Actual</div>
+                              <div className="font-semibold text-yellow-900">{leader.name}</div>
+                              <div className="text-sm text-yellow-700">{leader.points} puntos</div>
+                            </div>
+                          )}
+
+                          {topPintsPlayer && (
+                            <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                              <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                              <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
+                              <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                            </div>
+                          )}
+
+                          {/* Match Status Table */}
+                          <div className="border rounded-lg overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
+                            <table className="w-full">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">%Av</th>
                                 </tr>
-                            ))}
-                          </tbody>
-                      </table>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {divisionsData
+                                  .find(d => d.division.id === division.id)
+                                  ?.playerStats
+                                  .slice()
+                                  .sort((a, b) => {
+                                    const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
+                                    const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
+                                    const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
+                                    const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
+                                    return pctB - pctA;
+                                  })
+                                  .map(stats => (
+                                    <tr key={stats.id} className="text-sm">
+                                      <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
+                                      <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
+                                      <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
+                                      <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
+                                      <td className="px-4 py-2 text-center">
+                                        {(
+                                          ((stats.gamesPlayed + stats.gamesScheduled) /
+                                            (stats.gamesPlayed + stats.gamesScheduled + stats.gamesNotScheduled)) *
+                                          100
+                                        ).toFixed(0)}
+                                        %
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {tournamentTab === 'playoffs' && (() => {
+            const tId = selectedTournament.id;
+
+            const divisionRank = (name?: string | null) => {
+              const n = (name || '').trim().toLowerCase();
+              if (n === 'oro') return 1;
+              if (n === 'plata') return 2;
+              if (n === 'bronce') return 3;
+              if (n === 'cobre') return 4;
+              if (n === 'hierro') return 5;
+              return 99;
+            };
+
+            const tournamentDivisions = (divisionsByTournament[tId] || [])
+              .slice()
+              .sort((a, b) => {
+                const ra = divisionRank(a.name);
+                const rb = divisionRank(b.name);
+                if (ra !== rb) return ra - rb;
+                return (a.name || '').localeCompare((b.name || ''), 'es');
+              });
+
+            const filteredDivisions =
+              playoffsDivisionFilter === 'all'
+                ? tournamentDivisions
+                : tournamentDivisions.filter(d => d.id === playoffsDivisionFilter);
+
+            const totalPlayoffs = getPlayoffsMatchesForTournament(tId);
+
+            return (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-800">Playoffs</h3>
+                      <p className="text-gray-600">
+                        Semifinales + Final por división (cuadro principal) y repechajes como lista.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-semibold text-gray-700">División:</label>
+                      <select
+                        value={playoffsDivisionFilter}
+                        onChange={(e) => setPlayoffsDivisionFilter(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="all">Todas</option>
+                        {tournamentDivisions.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
+
+                {totalPlayoffs.length === 0 ? (
+                  <div className="bg-white rounded-xl shadow-lg p-10 text-center text-gray-600">
+                    Aún no hay partidos cargados para playoffs en este torneo.
+                    <div className="mt-2 text-sm text-gray-500">
+                      Cuando los subas, usa <span className="font-mono">phase='finals_main'</span> para cuadro principal y <span className="font-mono">phase='finals_repechage'</span> para repechaje.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {filteredDivisions.map(div => {
+                      const main = buildMainPlayoffsBlock(tId, div.id);
+                      const rep = buildRepechageMatches(tId, div.id);
+
+                      const hasAnything = Boolean(main.sf1 || main.sf2 || main.final || rep.length);
+                      if (!hasAnything) return null;
+
+                      const isGold = (div.name || '').toLowerCase() === 'oro';
+                      const champ = main.championId ? getAnyPlayerById(main.championId) : null;
+
+                      const cardRing = isGold ? 'ring-2 ring-yellow-300' : 'ring-1 ring-gray-200';
+
+                      const MatchCard = ({ m, title }: { m?: Match; title: string }) => {
+                        if (!m) {
+                          return (
+                            <div className="border border-dashed rounded-xl p-4 bg-gray-50 text-gray-500">
+                              <div className="text-xs font-semibold uppercase tracking-wider mb-1">{title}</div>
+                              <div className="text-sm">No definido</div>
+                            </div>
+                          );
+                        }
+
+                        const p1 = getAnyPlayerById(m.home_player_id);
+                        const p2 = getAnyPlayerById(m.away_player_id);
+
+                        const wId = winnerIdFromMatch(m);
+                        const p1IsWinner = !!wId && wId === m.home_player_id;
+                        const p2IsWinner = !!wId && wId === m.away_player_id;
+
+                        const score = scoreLineForMatch(m);
+
+                        const rowClass = (isWinner: boolean) =>
+                          `flex items-center justify-between gap-3 rounded-lg px-3 py-2 ` +
+                          (isWinner
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-50 text-slate-700');
+
+                        return (
+                          <div className="border rounded-xl p-4 bg-white">
+                            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                              {title}
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className={rowClass(p1IsWinner)}>
+                                <div className={`text-sm truncate ${p1IsWinner ? 'font-bold' : 'font-medium'}`}>
+                                  {uiName(p1?.name)}
+                                </div>
+                              </div>
+
+                              <div className={rowClass(p2IsWinner)}>
+                                <div className={`text-sm truncate ${p2IsWinner ? 'font-bold' : 'font-medium'}`}>
+                                  {uiName(p2?.name)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between">
+                              <div className="text-xs text-gray-500">{m.status}</div>
+                              <div className="text-sm font-semibold text-slate-700 tracking-wide">{score}</div>
+                            </div>
+                          </div>
+                        );
+                      };
+
+
+                      return (
+                        <div key={div.id} className={`bg-white rounded-xl shadow-lg p-6 ${cardRing}`}>
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-xl font-bold text-gray-800">{div.name}</h4>
+                            {isGold && (
+                              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">
+                                División principal
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Main bracket */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+                            <div className="space-y-4">
+                              <MatchCard m={main.sf1} title="Semifinal 1" />
+                              <MatchCard m={main.sf2} title="Semifinal 2" />
+                            </div>
+
+                            <div className="flex">
+                              <div className="w-full self-center">
+                                <MatchCard m={main.final} title="Final" />
+                              </div>
+                            </div>
+
+                            <div className={`rounded-xl p-5 bg-white border ${isGold ? 'ring-2 ring-yellow-300' : 'ring-1 ring-emerald-100'}`}>
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Ganador</div>
+                              {champ ? (
+                                <div className="flex flex-col items-center text-center gap-3">
+                                  <div className="text-2xl">🏆</div>
+
+                                  <img
+                                    src={champ.avatar_url || '/default-avatar.png'}
+                                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                                    alt="Winner"
+                                    className={`rounded-full object-cover ${isGold ? 'w-24 h-24' : 'w-20 h-20'} ring-2 ${isGold ? 'ring-yellow-300' : 'ring-emerald-200'}`}
+                                  />
+
+                                  <div className={`font-extrabold text-gray-900 ${isGold ? 'text-lg' : 'text-base'} truncate max-w-[220px]`}>
+                                    {uiName(champ.name)}
+                                  </div>
+
+                                  <div className="text-xs text-gray-600">
+                                    Champion
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-gray-500">Sin definir</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Repechage */}
+                          {rep.length > 0 && (
+                            <div className="mt-6">
+                              <div className="text-sm font-semibold text-gray-800 mb-2">Repechaje</div>
+                              <div className="space-y-3">
+                                {rep.map(m => {
+                                  const p1 = getAnyPlayerById(m.home_player_id);
+                                  const p2 = getAnyPlayerById(m.away_player_id);
+                                  return (
+                                    <div key={m.id} className="border rounded-xl p-4 bg-white">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-gray-800 truncate">{uiName(p1?.name)} vs {uiName(p2?.name)}</div>
+                                          <div className="text-xs text-gray-500">
+                                            {m.date ? formatDateLocal(m.date) : '—'} {m.time ? `• ${m.time.slice(0,5)}` : ''}
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className="text-sm font-semibold text-slate-700 tracking-wide">{scoreLineForMatch(m)}</div>
+                                          <div className="text-xs text-gray-500">{m.status}</div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
 
           {/* Sub Fase de Grupos (Placement) – solo Edición 3 */}
           {isEdicion3 && placementMatchesAll.length > 0 && e3View === 'groups' && (
@@ -6472,14 +6847,14 @@ const App = () => {
                 </div>
 
                 {/* Tabs grupos */}
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:gap-2">
                   {placementGroupCodes.map(code => (
                     <button
                       key={code}
                       type="button"
                       onClick={() => setPlacementGroup(code as any)}
                       className={
-                        `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                        `w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
                         (effectivePlacementGroup === code
                           ? 'bg-emerald-600 text-white border-emerald-600'
                           : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
@@ -6504,9 +6879,6 @@ const App = () => {
                     <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SW</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SL</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">SD</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">GW</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">GL</th>
-                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">GD</th>
                   </tr>
                 </thead>
 
@@ -6521,9 +6893,6 @@ const App = () => {
                       <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.SW}</td>
                       <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.SL}</td>
                       <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.SD}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.GW}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right">{r.GL}</td>
-                      <td className="px-3 py-3 text-sm text-gray-900 text-right font-semibold">{r.GD}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -6539,7 +6908,6 @@ const App = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
@@ -6572,7 +6940,7 @@ const App = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                             {result}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{loc}</td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
                             {match.status === 'played' ? (
                               (currentUser?.id === match.home_player_id ||
@@ -6995,44 +7363,48 @@ const App = () => {
                 </div>
 
                 {currentUser && (
-                  <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                    <div className="text-right">
-                      <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                      <p className="text-sm text-gray-600">
+                  <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                    <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                      <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                      <p className="truncate text-sm text-gray-600">
                         Division: {selectedDivision.name}
                       </p>
                     </div>
-                    <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                    />
-                    <button
-                      onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
-                    </button>
 
-                    <button
-                      onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                      </svg>
-                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                      />
+                      <button
+                        onClick={openEditProfile}
+                        className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                        aria-label="Editar perfil"
+                        title="Editar perfil"
+                      >
+                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                          <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                        </svg>
+                      </button>
+
+                      <button
+                        onClick={handleLogout}
+                        className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                        aria-label="Cerrar sesión"
+                        title="Cerrar sesión"
+                      >
+                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 )}
+
               </div>
             </div>
           </header>
@@ -7700,45 +8072,48 @@ const App = () => {
               </div>
 
               {currentUser && (
-                <div className="flex items-center justify-center flex-wrap gap-2 md:space-x-4">
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-800">{uiName(currentUser.name)}</p>
-                    <p className="text-sm text-gray-600">
-                      Division: {selectedDivision.name} 
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">
+                      Division: {selectedDivision.name}
                     </p>
                   </div>
-                  
-                  <img
-                    src={avatarSrc(currentUser)}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                    alt="Profile"
-                    className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                  />
-                  <button
-                    onClick={openEditProfile}
-                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Editar perfil"
-                    title="Editar perfil"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                      <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                  </button>
 
-                  <button
-                    onClick={handleLogout}
-                    className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                    aria-label="Cerrar sesión"
-                    title="Cerrar sesión"
-                  >
-                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                      <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
-                    </svg>
-                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                    />
+                    <button
+                      onClick={openEditProfile}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Editar perfil"
+                      title="Editar perfil"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
+                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+
+                    <button
+                      onClick={handleLogout}
+                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Cerrar sesión"
+                      title="Cerrar sesión"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
+
             </div>
           </div>
         </header>
