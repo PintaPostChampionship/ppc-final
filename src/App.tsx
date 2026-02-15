@@ -6721,8 +6721,11 @@ const App = () => {
                           );
                         }
 
-                        const p1 = getAnyPlayerById(m.home_player_id);
-                        const p2 = getAnyPlayerById(m.away_player_id);
+                        const homeId = m.home_player_id ?? (m as any).home_historic_player_id ?? null;
+                        const awayId = m.away_player_id ?? (m as any).away_historic_player_id ?? null;
+
+                        const p1 = getAnyPlayerById(homeId);
+                        const p2 = getAnyPlayerById(awayId);
 
                         const wId = winnerIdFromMatch(m);
                         const p1IsWinner = !!wId && wId === m.home_player_id;
