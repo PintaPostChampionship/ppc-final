@@ -224,11 +224,10 @@ interface Registration {
   id: string;
   tournament_id: string;
   division_id: string;
-  profile_id: string | null;
-  historic_player_id?: string | null;
+  profile_id: string | null;          
+  historic_player_id?: string | null;     
   seed?: number;
   created_at: string;
-  status?: 'active' | 'retired' | null;
 }
 
 interface Match {
@@ -1625,7 +1624,7 @@ const App = () => {
   function homeAwayBadge(match: Match, playerId: string) {
     const isHome = getMatchHomeId(match) === playerId;
     return {
-      text: isHome ? 'jugó de Local' : 'jugó de Visita',
+      text: isHome ? 'Local' : 'Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
     };
   }
@@ -4038,46 +4037,6 @@ const App = () => {
     return Array.from(unique.values());
   };
 
-    const getRegistrationForPlayer = (
-      tournamentId: string,
-      divisionId: string,
-      profileId: string
-    ) => {
-      return registrations.find(r =>
-        r.tournament_id === tournamentId &&
-        r.division_id === divisionId &&
-        r.profile_id === profileId
-      );
-    };
-
-    const isPlayerActiveInDivision = (
-      tournamentId: string,
-      divisionId: string,
-      profileId: string
-    ) => {
-      return (getRegistrationForPlayer(tournamentId, divisionId, profileId)?.status ?? 'active') === 'active';
-    };
-
-    const getActiveDivisionPlayers = (divisionId: string, tournamentId: string): Profile[] => {
-      return getDivisionPlayers(divisionId, tournamentId).filter(p =>
-        isPlayerActiveInDivision(tournamentId, divisionId, p.id)
-      );
-    };
-
-    const isMatchBetweenActivePlayers = (
-      m: Match,
-      tournamentId: string,
-      divisionId: string
-    ) => {
-      const h = getMatchHomeId(m);
-      const a = getMatchAwayId(m);
-      if (!h || !a) return false;
-
-      return (
-        isPlayerActiveInDivision(tournamentId, divisionId, h) &&
-        isPlayerActiveInDivision(tournamentId, divisionId, a)
-      );
-    };
 
   const getDivisionMatches = (divisionId: string, tournamentId: string) => {
     if (!divisionId || !tournamentId) return [];
@@ -6247,48 +6206,41 @@ const App = () => {
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
-      const activePlayers = getActiveDivisionPlayers(division.id, selectedTournament.id) || [];
 
       const perOpp =
         selectedTournament.id === '3c57c9af-57b8-476c-9923-54d36d4f7b8a' && division.name === 'Diamante'
           ? 2
           : 1;
 
-      const totalPossibleMatches = activePlayers.length > 1 ? (activePlayers.length - 1) * perOpp : 0;
+      const totalPossibleMatches = players.length > 1 ? (players.length - 1) * perOpp : 0;
 
-      // partidos jugados de ESTA división (solo entre jugadores activos)
+      const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
+
+      // partidos jugados de ESTA división (para head-to-head)
       const playedInThisDiv = matches.filter(
         m => m.tournament_id === selectedTournament.id &&
             m.division_id === division.id &&
             m.status === 'played' &&
-            !isPlayoffsMatch(m) &&
-            isMatchBetweenActivePlayers(m, selectedTournament.id, division.id)
+            !isPlayoffsMatch(m)
       );
 
-      const divisionStandings = computeStandingsFromPlayedMatches(
-        playedInThisDiv,
-        selectedTournament.id,
-        division.id
-      );
-
-      const playerRows = players.map(player => {
-        const isActive = isPlayerActiveInDivision(selectedTournament.id, division.id, player.id);
-        const s = isActive ? divisionStandings.find(st => st.profile_id === player.id) : undefined;
-
-        const played = !isActive ? 0 : matches.filter(m => {
-          const h = getMatchHomeId(m);
-          const a = getMatchAwayId(m);
-          return (
-            m.tournament_id === selectedTournament.id &&
-            m.division_id === division.id &&
-            m.status === 'played' &&
-            !isPlayoffsMatch(m) &&
-            isMatchBetweenActivePlayers(m, selectedTournament.id, division.id) &&
-            (h === player.id || a === player.id)
+      const divisionStandings = hasHistoricInRoster
+        ? computeStandingsFromPlayedMatches(playedInThisDiv, selectedTournament.id, division.id)
+        : standings.filter(
+            s => s.division_id === division.id && s.tournament_id === selectedTournament.id
           );
-        }).length;
 
-        const scheduled = !isActive ? 0 : matches.filter(m => {
+      // Stats por jugador (incluye wins/sets/games para los desempates)
+      const playerRows = players.map(player => {
+        const s = divisionStandings.find(st => st.profile_id === player.id);
+        const played = matches.filter(m =>
+          m.tournament_id === selectedTournament.id &&
+          m.division_id === division.id &&
+          m.status === 'played' &&
+          !isPlayoffsMatch(m) &&
+          (m.home_player_id === player.id || m.away_player_id === player.id)
+        ).length;
+        const scheduled = matches.filter(m => {
           const h = getMatchHomeId(m);
           const a = getMatchAwayId(m);
           return (
@@ -6296,7 +6248,6 @@ const App = () => {
             m.tournament_id === selectedTournament.id &&
             m.status === 'scheduled' &&
             !isPlayoffsMatch(m) &&
-            isMatchBetweenActivePlayers(m, selectedTournament.id, division.id) &&
             (h === player.id || a === player.id)
           );
         }).length;
@@ -6304,29 +6255,26 @@ const App = () => {
         return {
           id: player.id,
           name: player.name,
-          isRetired: !isActive,
           gamesPlayed: played,
           gamesScheduled: scheduled,
-          gamesNotScheduled: !isActive ? 0 : Math.max(totalPossibleMatches - played - scheduled, 0),
-          pints: isActive ? (s?.pints || 0) : 0,
-          points: isActive ? (s?.points || 0) : 0,
-          sets_won: isActive ? (s?.sets_won || 0) : 0,
-          sets_lost: isActive ? (s?.sets_lost || 0) : 0,
-          games_won: isActive ? (s?.games_won || 0) : 0,
-          games_lost: isActive ? (s?.games_lost || 0) : 0,
+          gamesNotScheduled: totalPossibleMatches - played - scheduled,
+          pints: s?.pints || 0,
+          points: s?.points || 0,
+          sets_won: s?.sets_won || 0,
+          sets_lost: s?.sets_lost || 0,
+          games_won: s?.games_won || 0,
+          games_lost: s?.games_lost || 0,
         };
       });
 
-      const sortedForLeader = [...playerRows].sort((a, b) => {
-        if (a.isRetired !== b.isRetired) return a.isRetired ? 1 : -1;
-
-        return compareByRules(
+      const sortedForLeader = [...playerRows].sort((a, b) =>
+        compareByRules(
           { profile_id: a.id, points: a.points, sets_won: a.sets_won, sets_lost: a.sets_lost, games_won: a.games_won, games_lost: a.games_lost },
           { profile_id: b.id, points: b.points, sets_won: b.sets_won, sets_lost: b.sets_lost, games_won: b.games_won, games_lost: b.games_lost },
           division.id,
           selectedTournament.id
-        );
-      });
+        )
+      );
 
       const sortedByPints = [...playerRows].sort((a, b) => b.pints - a.pints);
 
@@ -6337,8 +6285,7 @@ const App = () => {
           m.division_id === division.id &&
           m.tournament_id === selectedTournament.id &&
           m.status === 'played' &&
-          !isPlayoffsMatch(m) &&
-          isMatchBetweenActivePlayers(m, selectedTournament.id, division.id)
+          !isPlayoffsMatch(m)
         ).length,
         totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
         leader: sortedForLeader.length ? {
@@ -6661,16 +6608,7 @@ const App = () => {
                                   })
                                   .map(stats => (
                                     <tr key={stats.id} className="text-sm">
-                                      <td className="px-4 py-2 font-medium text-gray-900">
-                                        <div className="flex items-center gap-2">
-                                          <span>{uiName(stats.name)}</span>
-                                          {stats.isRetired && (
-                                            <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
-                                              Retired
-                                            </span>
-                                          )}
-                                        </div>
-                                      </td>
+                                      <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
                                       <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
                                       <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
                                       <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
@@ -7059,7 +6997,7 @@ const App = () => {
 
 
           {/* Upcoming Matches Section */}
-          <div className="bg-white rounded-xl shadow-lg p-6 mt-12 mb-8">
+          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold text-gray-800">Partidos Programados - {selectedTournament.name}</h3>
               <div className="flex flex-col sm:flex-row gap-2">
@@ -7263,14 +7201,13 @@ const App = () => {
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
-    const activePlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
 
   const PENDING_ID = '__PENDING_OPPONENT__';
   // Oculta rivales con los que ya hubo scheduled o played
   const eligibleP2Options =
     !newMatch.player1
-      ? activePlayers
-      : activePlayers.filter(p =>
+      ? players
+      : players.filter(p =>
           p.id !== newMatch.player1 &&
           !hasAnyMatchBetween(
             selectedTournament.id,
@@ -7284,8 +7221,8 @@ const App = () => {
   // Si primero eliges Jugador 2, hacemos lo mismo del otro lado:
   const eligibleP1Options =
     !newMatch.player2
-      ? activePlayers
-      : activePlayers.filter(p =>
+      ? players
+      : players.filter(p =>
           p.id !== newMatch.player2 &&
           !hasAnyMatchBetween(
             selectedTournament.id,
@@ -7303,16 +7240,23 @@ const App = () => {
       m =>
         m.tournament_id === selectedTournament.id &&
         m.division_id === selectedDivision.id &&
-        m.status === 'played' &&
-        !isPlayoffsMatch(m) &&
-        isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
+        m.status === 'played'
     );
 
-    const divisionStatsBase = computeStandingsFromPlayedMatches(
-      playedMatchesThisDivision,
-      selectedTournament.id,
-      selectedDivision.id
-    );
+    // Si hay historic players en el roster, calculamos standings local desde matches
+    const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
+
+    const divisionStatsBase = hasHistoricInRoster
+      ? computeStandingsFromPlayedMatches(
+          playedMatchesThisDivision,
+          selectedTournament.id,
+          selectedDivision.id
+        )
+      : standings.filter(
+          s =>
+            s.division_id === selectedDivision.id &&
+            s.tournament_id === selectedTournament.id
+        );
 
     // Añadimos name desde profiles/historicPlayers usando tu resolver existente (si ya lo tienes),
     // y si no, caemos al roster `players`.
@@ -7325,32 +7269,25 @@ const App = () => {
 
     // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
     const rosterRows = players.map(p => {
-      const isActive = isPlayerActiveInDivision(selectedTournament.id, selectedDivision.id, p.id);
-      const s = isActive ? statsById.get(p.id) : undefined;
-
+      const s = statsById.get(p.id);
       return {
         profile_id: p.id,
         name: p.name,
-        isRetired: !isActive,
-        points: isActive ? (s?.points ?? 0) : 0,
-        wins: isActive ? (s?.wins ?? 0) : 0,
-        losses: isActive ? (s?.losses ?? 0) : 0,
-        sets_won: isActive ? (s?.sets_won ?? 0) : 0,
-        sets_lost: isActive ? (s?.sets_lost ?? 0) : 0,
-        games_won: isActive ? (s?.games_won ?? 0) : 0,
-        games_lost: isActive ? (s?.games_lost ?? 0) : 0,
-        set_diff: isActive ? (s?.set_diff ?? 0) : 0,
-        pints: isActive ? (s?.pints ?? 0) : 0,
+        points: s?.points ?? 0,
+        wins: s?.wins ?? 0,
+        losses: s?.losses ?? 0,
+        sets_won: s?.sets_won ?? 0,
+        sets_lost: s?.sets_lost ?? 0,
+        games_won: s?.games_won ?? 0,
+        games_lost: s?.games_lost ?? 0,
+        set_diff: s?.set_diff ?? 0,
+        pints: s?.pints ?? 0,
       };
-    }).sort((a, b) => {
-      if (a.isRetired !== b.isRetired) return a.isRetired ? 1 : -1;
-
-      return compareByRules(
-        a, b,
-        selectedDivision.id,
-        selectedTournament.id
-      );
-    });
+    }).sort((a, b) => compareByRules(
+      a, b,
+      selectedDivision.id,
+      selectedTournament.id
+    ));
 
 
     // Usaremos el comparador único: victorias → H2H → ratio sets → ratio games
@@ -7373,23 +7310,19 @@ const App = () => {
   const pendingMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'pending' &&
-    isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
+    m.status === 'pending'
   );
 
   const scheduledMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'scheduled' &&
-    isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
+    m.status === 'scheduled'
   );
 
   const playedMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'played' &&
-    !isPlayoffsMatch(m) &&
-    isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
+    m.status === 'played'
   );
 
 
@@ -7412,7 +7345,7 @@ const App = () => {
       const playerMatchesAll = getPlayerMatchesAll(selectedPlayer.id);
       
       // Calculate upcoming matches against all other players
-      const divisionPlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id);
+      const divisionPlayers = getDivisionPlayers(selectedDivision.id, selectedTournament.id);
       const allOpponents = divisionPlayers.filter(p => p.id !== selectedPlayer.id);
       
       const upcomingMatches = allOpponents.filter(opponent => {
@@ -7835,7 +7768,7 @@ const App = () => {
                                 <h4 className="font-semibold text-gray-800">
                                   {opponent.name}
                                   <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                                    {isHome ? 'juega de Local' : 'juega de Visita'}
+                                    {isHome ? 'Local' : 'Visita'}
                                   </span>
                                 </h4>
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
@@ -8034,6 +7967,7 @@ const App = () => {
                   const myScheduled = matches
                     .filter(m =>
                       m.tournament_id === selectedTournament.id &&
+                      m.division_id === selectedDivision.id &&
                       (m.status === 'scheduled' || m.status === 'pending') &&
                       (m.home_player_id === selectedPlayer.id || m.away_player_id === selectedPlayer.id || m.created_by === selectedPlayer.id)
                     )
@@ -8049,13 +7983,6 @@ const App = () => {
 
                   const divName = (id?: string | null) => divisions.find(d => d.id === id)?.name || '';
 
-                  const matchTypeLabel = (m: Match) => {
-                    if (m.phase === 'finals_repechage') return 'Repechaje';
-                    if (m.phase === 'finals_main' && m.knockout_round === 'SF') return 'Semifinal';
-                    if (m.phase === 'finals_main' && m.knockout_round === 'F') return 'Final';
-                    return 'Liga';
-};
-
                   return (
                     <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
                       <h2 className="text-2xl font-bold text-gray-800 mb-6">Partidos agendados</h2>
@@ -8065,7 +7992,6 @@ const App = () => {
                             <tr>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">División / Tipo</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase ">Acciones</th>
                             </tr>
@@ -8083,10 +8009,6 @@ const App = () => {
                                   </td>
                                   <td className="px-4 py-2">
                                     {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
-                                  </td>
-                                  <td className="px-4 py-2">
-                                    <div className="text-sm text-gray-900">{divName(m.division_id)}</div>
-                                    <div className="text-xs text-gray-500">{matchTypeLabel(m)}</div>
                                   </td>
                                   <td className="px-4 py-2">{loc}</td>
                                   <td className="px-4 py-2">
@@ -8372,22 +8294,15 @@ const App = () => {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
-                                    <img
-                                      className={`h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 ${stats.isRetired ? 'opacity-70 grayscale' : ''}`}
-                                      src={player.avatar_url || '/default-avatar.png'}
-                                      alt=""
+                                    <img 
+                                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
+                                      src={player.avatar_url || '/default-avatar.png'} 
+                                      alt="" 
                                     />
                                   </div>
                                   <div className="ml-4">
-                                    <div className="flex items-center gap-2">
-                                      <div className="text-sm font-medium text-gray-900 hover:text-green-700 cursor-pointer">
-                                        {uiName(player.name)}
-                                      </div>
-                                      {stats.isRetired && (
-                                        <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
-                                          Retired
-                                        </span>
-                                      )}
+                                    <div className="text-sm font-medium text-gray-900 hover:text-green-700 cursor-pointer">
+                                      {uiName(player.name)}
                                     </div>
                                   </div>
                                 </div>
