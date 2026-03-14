@@ -4055,12 +4055,15 @@ const App = () => {
     const getRegistrationForPlayer = (
       tournamentId: string,
       divisionId: string,
-      profileId: string
+      playerId: string
     ) => {
       return registrations.find(r =>
         r.tournament_id === tournamentId &&
         r.division_id === divisionId &&
-        r.profile_id === profileId
+        (
+          r.profile_id === playerId ||
+          r.historic_player_id === playerId
+        )
       );
     };
 
@@ -6674,27 +6677,32 @@ const App = () => {
                                     return pctB - pctA;
                                   })
                                   .map(stats => (
-                                    <tr key={stats.id} className="text-sm">
-                                      <td className="px-4 py-2 font-medium text-gray-900">
-                                        <div className="flex items-center gap-2">
-                                          <span>{uiName(stats.name)}</span>
-                                          {stats.isRetired && (
-                                            <span className="text-[9px] bg-gray-200 text-gray-500 px-1 py-[1px] rounded">
-                                              Ret
-                                            </span>
-                                          )}
+                                    <tr key={stats.id} className="text-[13px]">
+                                      <td className="px-2 py-2 text-sm text-gray-900">
+                                        <div className="flex flex-col leading-tight">
+                                          <span className="text-sm">{uiName(stats.name)}</span>
+
+                                          <span className="text-[9px] text-gray-500 h-[14px] flex items-center">
+                                            {stats.isRetired ? (
+                                              <span className="bg-gray-200 text-gray-600 px-1 py-[1px] rounded">Ret</span>
+                                            ) : (
+                                              <span className="opacity-0">Ret</span>
+                                            )}
+                                          </span>
                                         </div>
                                       </td>
                                       <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
                                       <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
                                       <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
                                       <td className="px-4 py-2 text-center">
-                                        {(
-                                          ((stats.gamesPlayed + stats.gamesScheduled) /
-                                            (stats.gamesPlayed + stats.gamesScheduled + stats.gamesNotScheduled)) *
-                                          100
-                                        ).toFixed(0)}
-                                        %
+                                        {(() => {
+                                          const total =
+                                            stats.gamesPlayed + stats.gamesScheduled + stats.gamesNotScheduled;
+
+                                          if (total === 0) return 'NA';
+
+                                          return `${(((stats.gamesPlayed + stats.gamesScheduled) / total) * 100).toFixed(0)}%`;
+                                        })()}
                                       </td>
                                     </tr>
                                   ))}
