@@ -224,10 +224,11 @@ interface Registration {
   id: string;
   tournament_id: string;
   division_id: string;
-  profile_id: string | null;          
-  historic_player_id?: string | null;     
+  profile_id: string | null;
+  historic_player_id?: string | null;
   seed?: number;
   created_at: string;
+  status?: 'active' | 'retired' | null;
 }
 
 interface Match {
@@ -254,7 +255,9 @@ interface Match {
   created_by: string;
   created_at: string;
   knockout_round?: string | null;
-  bracket_position?: number | null
+  bracket_position?: number | null;
+  phase?: string | null;
+  group_code?: string | null;  
 }
 
 interface MatchSet {
@@ -1046,6 +1049,8 @@ const App = () => {
   const [pickedTournamentId, setPickedTournamentId] = useState<string>('');
   const [pickedDivisionId, setPickedDivisionId] = useState<string>('');
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [tournamentTab, setTournamentTab] = useState<'overview' | 'playoffs'>('overview');
+  const [playoffsDivisionFilter, setPlayoffsDivisionFilter] = useState<string>('all');
   const [showAvailability, setShowAvailability] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
   const [editUser, setEditUser] = useState({ 
@@ -1172,6 +1177,98 @@ const App = () => {
 
   const getAnyPlayerAvatarUrl = (id?: string | null): string | null => {
     return getAnyPlayerById(id)?.avatar_url ?? null;
+  };
+
+  // ---------------- Playoffs helpers ----------------
+
+  const isPlayoffsMatch = (m: Match) =>
+    m.phase === 'finals_main' || m.phase === 'finals_repechage';
+
+  const isDivisionLeagueMatch = (m: Match, divisionId: string) => {
+    if (m.division_id !== divisionId) return false;
+    if (isPlayoffsMatch(m)) return false; // 👈 clave
+    return true;
+  };
+
+  const getPlayoffsMatchesForTournament = (tournamentId: string) =>
+    matches.filter(m => m.tournament_id === tournamentId && isPlayoffsMatch(m));
+
+  const winnerIdFromMatch = (m: Match): string | null => {
+    // OJO: asumimos el mapping actual de tu app:
+    // player1_* corresponde a home, player2_* corresponde a away.
+    // Si algún día esto cambia, lo ajustamos aquí (solo UI).
+    const a = m.player1_sets_won;
+    const b = m.player2_sets_won;
+    if (a == null || b == null) return null;
+    if (a > b) return m.home_player_id ?? null;
+    if (b > a) return m.away_player_id ?? null;
+    return null;
+  };
+
+  const scoreLineForMatch = (m: Match) => {
+    // 1) Prefer match_sets if present (set-by-set games)
+    const sets = (matchSets || [])
+      .filter(s => s.match_id === m.id)
+      .slice()
+      .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
+
+    if (sets.length > 0) {
+      return sets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ');
+    }
+
+    // 2) Fallback: total games from matches row if you didn't insert match_sets
+    if (typeof m.player1_games_won === 'number' && typeof m.player2_games_won === 'number') {
+      return `${m.player1_games_won}-${m.player2_games_won}`;
+    }
+
+    // 3) Last fallback: sets only
+    if (typeof m.player1_sets_won === 'number' && typeof m.player2_sets_won === 'number') {
+      return `${m.player1_sets_won}-${m.player2_sets_won}`;
+    }
+
+    return '—';
+  };
+
+
+  type PlayoffsBlock = {
+    sf1?: Match;
+    sf2?: Match;
+    final?: Match;
+    championId?: string | null;
+  };
+
+  // Arma el bracket principal (finals_main) usando knockout_round + bracket_position
+  const buildMainPlayoffsBlock = (tournamentId: string, divisionId: string): PlayoffsBlock => {
+    const list = matches.filter(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      m.phase === 'finals_main'
+    );
+
+    const sf = list.filter(m => m.knockout_round === 'SF');
+    const final = list.find(m => m.knockout_round === 'F' && (m.bracket_position ?? 1) === 1);
+
+    const sf1 = sf.find(m => (m.bracket_position ?? 1) === 1);
+    const sf2 = sf.find(m => (m.bracket_position ?? 2) === 2);
+
+    const championId = final ? winnerIdFromMatch(final) : null;
+
+    return { sf1, sf2, final, championId };
+  };
+
+  // Repechaje: lista (1 o varios)
+  const buildRepechageMatches = (tournamentId: string, divisionId: string): Match[] => {
+    return matches
+      .filter(m =>
+        m.tournament_id === tournamentId &&
+        m.division_id === divisionId &&
+        m.phase === 'finals_repechage'
+      )
+      .sort((a, b) => {
+        const da = new Date(a.date).getTime();
+        const db = new Date(b.date).getTime();
+        return (isNaN(da) ? 0 : da) - (isNaN(db) ? 0 : db);
+      });
   };
 
   const getMatchHomeId = (m: any) => m?.home_player_id ?? m?.home_historic_player_id ?? null;
@@ -1528,7 +1625,7 @@ const App = () => {
   function homeAwayBadge(match: Match, playerId: string) {
     const isHome = getMatchHomeId(match) === playerId;
     return {
-      text: isHome ? 'Local' : 'Visita',
+      text: isHome ? 'jugó de Local' : 'jugó de Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
     };
   }
@@ -3941,6 +4038,46 @@ const App = () => {
     return Array.from(unique.values());
   };
 
+    const getRegistrationForPlayer = (
+      tournamentId: string,
+      divisionId: string,
+      profileId: string
+    ) => {
+      return registrations.find(r =>
+        r.tournament_id === tournamentId &&
+        r.division_id === divisionId &&
+        r.profile_id === profileId
+      );
+    };
+
+    const isPlayerActiveInDivision = (
+      tournamentId: string,
+      divisionId: string,
+      profileId: string
+    ) => {
+      return (getRegistrationForPlayer(tournamentId, divisionId, profileId)?.status ?? 'active') === 'active';
+    };
+
+    const getActiveDivisionPlayers = (divisionId: string, tournamentId: string): Profile[] => {
+      return getDivisionPlayers(divisionId, tournamentId).filter(p =>
+        isPlayerActiveInDivision(tournamentId, divisionId, p.id)
+      );
+    };
+
+    const isMatchBetweenActivePlayers = (
+      m: Match,
+      tournamentId: string,
+      divisionId: string
+    ) => {
+      const h = getMatchHomeId(m);
+      const a = getMatchAwayId(m);
+      if (!h || !a) return false;
+
+      return (
+        isPlayerActiveInDivision(tournamentId, divisionId, h) &&
+        isPlayerActiveInDivision(tournamentId, divisionId, a)
+      );
+    };
 
   const getDivisionMatches = (divisionId: string, tournamentId: string) => {
     if (!divisionId || !tournamentId) return [];
@@ -6110,40 +6247,56 @@ const App = () => {
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
+      const activePlayers = getActiveDivisionPlayers(division.id, selectedTournament.id) || [];
 
       const perOpp =
         selectedTournament.id === '3c57c9af-57b8-476c-9923-54d36d4f7b8a' && division.name === 'Diamante'
           ? 2
           : 1;
 
-      const totalPossibleMatches = players.length > 1 ? (players.length - 1) * perOpp : 0;
+      const totalPossibleMatches = activePlayers.length > 1 ? (activePlayers.length - 1) * perOpp : 0;
 
-      const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
-
-      // partidos jugados de ESTA división (para head-to-head)
+      // partidos jugados de ESTA división (solo entre jugadores activos)
       const playedInThisDiv = matches.filter(
         m => m.tournament_id === selectedTournament.id &&
             m.division_id === division.id &&
-            m.status === 'played'
+            m.status === 'played' &&
+            !isPlayoffsMatch(m) &&
+            isMatchBetweenActivePlayers(m, selectedTournament.id, division.id)
       );
 
-      const divisionStandings = hasHistoricInRoster
-        ? computeStandingsFromPlayedMatches(playedInThisDiv, selectedTournament.id, division.id)
-        : standings.filter(
-            s => s.division_id === division.id && s.tournament_id === selectedTournament.id
-          );
+      const divisionStandings = computeStandingsFromPlayedMatches(
+        playedInThisDiv,
+        selectedTournament.id,
+        division.id
+      );
 
-      // Stats por jugador (incluye wins/sets/games para los desempates)
       const playerRows = players.map(player => {
-        const s = divisionStandings.find(st => st.profile_id === player.id);
-        const played = (s?.wins || 0) + (s?.losses || 0);
-        const scheduled = matches.filter(m => {
+        const isActive = isPlayerActiveInDivision(selectedTournament.id, division.id, player.id);
+        const s = isActive ? divisionStandings.find(st => st.profile_id === player.id) : undefined;
+
+        const played = !isActive ? 0 : matches.filter(m => {
+          const h = getMatchHomeId(m);
+          const a = getMatchAwayId(m);
+          return (
+            m.tournament_id === selectedTournament.id &&
+            m.division_id === division.id &&
+            m.status === 'played' &&
+            !isPlayoffsMatch(m) &&
+            isMatchBetweenActivePlayers(m, selectedTournament.id, division.id) &&
+            (h === player.id || a === player.id)
+          );
+        }).length;
+
+        const scheduled = !isActive ? 0 : matches.filter(m => {
           const h = getMatchHomeId(m);
           const a = getMatchAwayId(m);
           return (
             m.division_id === division.id &&
             m.tournament_id === selectedTournament.id &&
             m.status === 'scheduled' &&
+            !isPlayoffsMatch(m) &&
+            isMatchBetweenActivePlayers(m, selectedTournament.id, division.id) &&
             (h === player.id || a === player.id)
           );
         }).length;
@@ -6151,33 +6304,42 @@ const App = () => {
         return {
           id: player.id,
           name: player.name,
+          isRetired: !isActive,
           gamesPlayed: played,
           gamesScheduled: scheduled,
-          gamesNotScheduled: totalPossibleMatches - played - scheduled,
-          pints: s?.pints || 0,
-          points: s?.points || 0,
-          sets_won: s?.sets_won || 0,
-          sets_lost: s?.sets_lost || 0,
-          games_won: s?.games_won || 0,
-          games_lost: s?.games_lost || 0,
+          gamesNotScheduled: !isActive ? 0 : Math.max(totalPossibleMatches - played - scheduled, 0),
+          pints: isActive ? (s?.pints || 0) : 0,
+          points: isActive ? (s?.points || 0) : 0,
+          sets_won: isActive ? (s?.sets_won || 0) : 0,
+          sets_lost: isActive ? (s?.sets_lost || 0) : 0,
+          games_won: isActive ? (s?.games_won || 0) : 0,
+          games_lost: isActive ? (s?.games_lost || 0) : 0,
         };
       });
 
-      const sortedForLeader = [...playerRows].sort((a, b) =>
-        compareByRules(
+      const sortedForLeader = [...playerRows].sort((a, b) => {
+        if (a.isRetired !== b.isRetired) return a.isRetired ? 1 : -1;
+
+        return compareByRules(
           { profile_id: a.id, points: a.points, sets_won: a.sets_won, sets_lost: a.sets_lost, games_won: a.games_won, games_lost: a.games_lost },
           { profile_id: b.id, points: b.points, sets_won: b.sets_won, sets_lost: b.sets_lost, games_won: b.games_won, games_lost: b.games_lost },
           division.id,
           selectedTournament.id
-        )
-      );
+        );
+      });
 
       const sortedByPints = [...playerRows].sort((a, b) => b.pints - a.pints);
 
       return {
         division,
         players: players.length,
-        gamesPlayed: matches.filter(m => m.division_id === division.id && m.tournament_id === selectedTournament.id && m.status === 'played').length,
+        gamesPlayed: matches.filter(m =>
+          m.division_id === division.id &&
+          m.tournament_id === selectedTournament.id &&
+          m.status === 'played' &&
+          !isPlayoffsMatch(m) &&
+          isMatchBetweenActivePlayers(m, selectedTournament.id, division.id)
+        ).length,
         totalPints: playerRows.reduce((sum, p) => sum + p.pints, 0),
         leader: sortedForLeader.length ? {
           id: sortedForLeader[0].id,
@@ -6295,6 +6457,38 @@ const App = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
+        {/* Tournament tabs */}
+        <div className="bg-white rounded-xl shadow-lg p-3 mb-6">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={() => setTournamentTab('overview')}
+              className={
+                `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                (tournamentTab === 'overview'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+              }
+            >
+              Overview
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTournamentTab('playoffs')}
+              className={
+                `px-4 py-2 rounded-lg text-sm font-semibold border transition ` +
+                (tournamentTab === 'playoffs'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50')
+              }
+            >
+              Playoffs
+            </button>
+          </div>
+        </div>
+        
+
         {/* Switch de vistas (solo Edición 3 y solo si existe Sub Fase) */}
         {isEdicion3 && placementMatchesAll.length > 0 && (
           <div className="bg-white/90 backdrop-blur rounded-xl shadow-lg p-3 mb-6">
@@ -6330,150 +6524,400 @@ const App = () => {
 
           {(!isEdicion3 || e3View === 'main') && (
             <>
-            {/* Tournament Summary */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-blue-600">{divisionsData.reduce((sum, d) => sum + d.players, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Players</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-green-600">{divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Games Played</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-purple-600">{divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}</div>
-                    <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
-                  </div>
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
-                    <div className="text-sm text-gray-600">Divisions</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
-                <div className="space-y-4">
-                  {divisionsData.map(d => (
-                    <div
-                      key={d.division.id}
-                      className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all" 
-                      onClick={() => setSelectedDivision(d.division)} 
-                    >
-                      <div className="flex justify-between">
-                        <span className="font-medium text-gray-800">
-                          {d.division.name}
-                          <span className="ml-2 text-sm text-purple-700">
-                            ({Number(d.totalPints || 0)} 🍺)
-                          </span>
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Division Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
-              {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
-                <div 
-                  key={division.id} 
-                  className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300" 
-                  onClick={() => setSelectedDivision(division)}
-                >
-                  <div className="p-6">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
-                    <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{players}</div>
-                        <div className="text-sm text-gray-600">Players</div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
-                        <div className="text-sm text-gray-600">Matches</div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                        <div className="text-sm text-gray-600">Total Pintas</div>
-                      </div>
-                      <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-orange-600">{topPintsPlayer ? Number(topPintsPlayer.pints) : 0}</div>
-                        <div className="text-sm text-gray-600">Pintas Máximas</div>
-                      </div>
-                    </div>
-                    {leader && (
-                      <div className="bg-yellow-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-yellow-800">Líder Actual</div>
-                        <div className="font-semibold text-yellow-900">{leader.name}</div>
-                        <div className="text-sm text-yellow-700">
-                          {leader.points} puntos
+              {tournamentTab === 'overview' && (
+                <>
+                  {/* Tournament Summary */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-blue-600">
+                            {divisionsData.reduce((sum, d) => sum + d.players, 0)}
+                          </div>
+                          <div className="text-sm text-gray-600">Total Players</div>
+                        </div>
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-green-600">
+                            {divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}
+                          </div>
+                          <div className="text-sm text-gray-600">Total Games Played</div>
+                        </div>
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-purple-600">
+                            {divisionsData.reduce((sum, d) => sum + d.totalPints, 0)}
+                          </div>
+                          <div className="text-sm text-gray-600">Total Pintas Consumidas</div>
+                        </div>
+                        <div className="text-center p-4 bg-gray-50 rounded-lg">
+                          <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
+                          <div className="text-sm text-gray-600">Divisions</div>
                         </div>
                       </div>
-                    )}
-                    {topPintsPlayer && (
-                      <div className="bg-blue-50 p-3 rounded-lg mb-4">
-                        <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
-                        <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
-                        <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
+                      <div className="space-y-4">
+                        {divisionsData.map(d => (
+                          <div
+                            key={d.division.id}
+                            className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:shadow-md transition-all"
+                            onClick={() => setSelectedDivision(d.division)}
+                          >
+                            <div className="flex justify-between">
+                              <span className="font-medium text-gray-800">
+                                {d.division.name}
+                                <span className="ml-2 text-sm text-purple-700">
+                                  ({Number(d.totalPints || 0)} 🍺)
+                                </span>
+                              </span>
+                              <span className="text-sm text-gray-600">
+                                Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                    
-                    {/* Match Status Table */}
-                    <div className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
-                      <table className="w-full">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
-                            <th className="px-4 py-2 text-center text-xs font-medium text-gray-500">%Av</th>
-                          </tr>
-                        </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {divisionsData
-                              .find(d => d.division.id === division.id)
-                              ?.playerStats
-                              // Orden descendente por %Av
-                              .slice() // crea copia para no mutar el array original
-                              .sort((a, b) => {
-                                const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
-                                const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
-                                const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
-                                const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
-                                return pctB - pctA; // Mayor a menor
-                              })
-                              .map(stats => (
-                                <tr key={stats.id} className="text-sm">
-                                  <td className="px-4 py-2 font-medium text-gray-900">{uiName(stats.name)}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
-                                  <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
-                                  <td className="px-4 py-2 text-center">{(((stats.gamesPlayed+stats.gamesScheduled)/(stats.gamesPlayed+stats.gamesScheduled+stats.gamesNotScheduled))*100).toFixed(0)}%</td>
+                    </div>
+                  </div>
+
+                  {/* Division Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+                    {divisionsData.map(({ division, players, gamesPlayed, totalPints, leader, topPintsPlayer }) => (
+                      <div
+                        key={division.id}
+                        className="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300"
+                        onClick={() => setSelectedDivision(division)}
+                      >
+                        <div className="p-6">
+                          <h3 className="text-2xl font-bold text-gray-800 mb-4">{division.name}</h3>
+                          <p className="text-gray-600 mb-4">{getDivisionHighlights(division.name, selectedTournament.name)}</p>
+
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-blue-600">{players}</div>
+                              <div className="text-sm text-gray-600">Players</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
+                              <div className="text-sm text-gray-600">Matches</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                              <div className="text-sm text-gray-600">Total Pintas</div>
+                            </div>
+                            <div className="text-center p-3 bg-gray-50 rounded-lg">
+                              <div className="text-2xl font-bold text-orange-600">
+                                {topPintsPlayer ? Number(topPintsPlayer.pints) : 0}
+                              </div>
+                              <div className="text-sm text-gray-600">Pintas Máximas</div>
+                            </div>
+                          </div>
+
+                          {leader && (
+                            <div className="bg-yellow-50 p-3 rounded-lg mb-4">
+                              <div className="text-sm text-yellow-800">Líder Actual</div>
+                              <div className="font-semibold text-yellow-900">{leader.name}</div>
+                              <div className="text-sm text-yellow-700">{leader.points} puntos</div>
+                            </div>
+                          )}
+
+                          {topPintsPlayer && (
+                            <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                              <div className="text-sm text-blue-800">Jugador con Más Pintas</div>
+                              <div className="font-semibold text-blue-900">{uiName(topPintsPlayer.name)}</div>
+                              <div className="text-sm text-blue-700">{Number(topPintsPlayer.pints)} pintas</div>
+                            </div>
+                          )}
+
+                          {/* Match Status Table */}
+                          <div className="border rounded-lg overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-2 font-semibold">Partidos</div>
+                            <table className="w-full">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugador</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GP</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GS</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">GN</th>
+                                  <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">%Av</th>
                                 </tr>
-                            ))}
-                          </tbody>
-                      </table>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {divisionsData
+                                  .find(d => d.division.id === division.id)
+                                  ?.playerStats
+                                  .slice()
+                                  .sort((a, b) => {
+                                    const totalA = (a.gamesPlayed ?? 0) + (a.gamesScheduled ?? 0) + (a.gamesNotScheduled ?? 0);
+                                    const totalB = (b.gamesPlayed ?? 0) + (b.gamesScheduled ?? 0) + (b.gamesNotScheduled ?? 0);
+                                    const pctA = totalA > 0 ? ((a.gamesPlayed + a.gamesScheduled) / totalA) * 100 : 0;
+                                    const pctB = totalB > 0 ? ((b.gamesPlayed + b.gamesScheduled) / totalB) * 100 : 0;
+                                    return pctB - pctA;
+                                  })
+                                  .map(stats => (
+                                    <tr key={stats.id} className="text-sm">
+                                      <td className="px-4 py-2 font-medium text-gray-900">
+                                        <div className="flex items-center gap-2">
+                                          <span>{uiName(stats.name)}</span>
+                                          {stats.isRetired && (
+                                            <span className="text-[9px] bg-gray-200 text-gray-500 px-1 py-[1px] rounded">
+                                              Ret
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-2 text-center">{stats.gamesPlayed}</td>
+                                      <td className="px-4 py-2 text-center">{stats.gamesScheduled}</td>
+                                      <td className="px-4 py-2 text-center">{stats.gamesNotScheduled}</td>
+                                      <td className="px-4 py-2 text-center">
+                                        {(
+                                          ((stats.gamesPlayed + stats.gamesScheduled) /
+                                            (stats.gamesPlayed + stats.gamesScheduled + stats.gamesNotScheduled)) *
+                                          100
+                                        ).toFixed(0)}
+                                        %
+                                      </td>
+                                    </tr>
+                                  ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {tournamentTab === 'playoffs' && (() => {
+            const tId = selectedTournament.id;
+
+            const divisionRank = (name?: string | null) => {
+              const n = (name || '').trim().toLowerCase();
+              if (n === 'oro') return 1;
+              if (n === 'plata') return 2;
+              if (n === 'bronce') return 3;
+              if (n === 'cobre') return 4;
+              if (n === 'hierro') return 5;
+              return 99;
+            };
+
+            const tournamentDivisions = (divisionsByTournament[tId] || [])
+              .slice()
+              .sort((a, b) => {
+                const ra = divisionRank(a.name);
+                const rb = divisionRank(b.name);
+                if (ra !== rb) return ra - rb;
+                return (a.name || '').localeCompare((b.name || ''), 'es');
+              });
+
+            const filteredDivisions =
+              playoffsDivisionFilter === 'all'
+                ? tournamentDivisions
+                : tournamentDivisions.filter(d => d.id === playoffsDivisionFilter);
+
+            const totalPlayoffs = getPlayoffsMatchesForTournament(tId);
+
+            return (
+              <div className="space-y-6">
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <h3 className="text-2xl font-bold text-gray-800">Playoffs</h3>
+                      <p className="text-gray-600">
+                        Semifinales + Final por división (cuadro principal) y repechajes como lista.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-semibold text-gray-700">División:</label>
+                      <select
+                        value={playoffsDivisionFilter}
+                        onChange={(e) => setPlayoffsDivisionFilter(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="all">Todas</option>
+                        {tournamentDivisions.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
+
+                {totalPlayoffs.length === 0 ? (
+                  <div className="bg-white rounded-xl shadow-lg p-10 text-center text-gray-600">
+                    Aún no hay partidos cargados para playoffs en este torneo.
+                    <div className="mt-2 text-sm text-gray-500">
+                      Cuando los subas, usa <span className="font-mono">phase='finals_main'</span> para cuadro principal y <span className="font-mono">phase='finals_repechage'</span> para repechaje.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {filteredDivisions.map(div => {
+                      const main = buildMainPlayoffsBlock(tId, div.id);
+                      const rep = buildRepechageMatches(tId, div.id);
+
+                      const hasAnything = Boolean(main.sf1 || main.sf2 || main.final || rep.length);
+                      if (!hasAnything) return null;
+
+                      const isGold = (div.name || '').toLowerCase() === 'oro';
+                      const champ = main.championId ? getAnyPlayerById(main.championId) : null;
+
+                      const cardRing = isGold ? 'ring-2 ring-yellow-300' : 'ring-1 ring-gray-200';
+
+                      const MatchCard = ({ m, title }: { m?: Match; title: string }) => {
+                        if (!m) {
+                          return (
+                            <div className="border border-dashed rounded-xl p-4 bg-gray-50 text-gray-500">
+                              <div className="text-xs font-semibold uppercase tracking-wider mb-1">{title}</div>
+                              <div className="text-sm">No definido</div>
+                            </div>
+                          );
+                        }
+
+                        const homeId = m.home_player_id ?? (m as any).home_historic_player_id ?? null;
+                        const awayId = m.away_player_id ?? (m as any).away_historic_player_id ?? null;
+
+                        const p1 = getAnyPlayerById(homeId);
+                        const p2 = getAnyPlayerById(awayId);
+
+                        const wId = winnerIdFromMatch(m);
+                        const p1IsWinner = !!wId && wId === m.home_player_id;
+                        const p2IsWinner = !!wId && wId === m.away_player_id;
+
+                        const score = scoreLineForMatch(m);
+
+                        const rowClass = (isWinner: boolean) =>
+                          `flex items-center justify-between gap-3 rounded-lg px-3 py-2 ` +
+                          (isWinner
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-50 text-slate-700');
+
+                        return (
+                          <div className="border rounded-xl p-4 bg-white">
+                            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                              {title}
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className={rowClass(p1IsWinner)}>
+                                <div className={`text-sm truncate ${p1IsWinner ? 'font-bold' : 'font-medium'}`}>
+                                  {uiName(p1?.name)}
+                                </div>
+                              </div>
+
+                              <div className={rowClass(p2IsWinner)}>
+                                <div className={`text-sm truncate ${p2IsWinner ? 'font-bold' : 'font-medium'}`}>
+                                  {uiName(p2?.name)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between">
+                              <div className="text-xs text-gray-500">{m.status}</div>
+                              <div className="text-sm font-semibold text-slate-700 tracking-wide">{score}</div>
+                            </div>
+                          </div>
+                        );
+                      };
+
+
+                      return (
+                        <div key={div.id} className={`bg-white rounded-xl shadow-lg p-6 ${cardRing}`}>
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-xl font-bold text-gray-800">{div.name}</h4>
+                            {isGold && (
+                              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">
+                                División principal
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Main bracket */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+                            <div className="space-y-4">
+                              <MatchCard m={main.sf1} title="Semifinal 1" />
+                              <MatchCard m={main.sf2} title="Semifinal 2" />
+                            </div>
+
+                            <div className="flex">
+                              <div className="w-full self-center">
+                                <MatchCard m={main.final} title="Final" />
+                              </div>
+                            </div>
+
+                            <div className={`rounded-xl p-5 bg-white border ${isGold ? 'ring-2 ring-yellow-300' : 'ring-1 ring-emerald-100'}`}>
+                              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Ganador</div>
+                              {champ ? (
+                                <div className="flex flex-col items-center text-center gap-3">
+                                  <div className="text-2xl">🏆</div>
+
+                                  <img
+                                    src={champ.avatar_url || '/default-avatar.png'}
+                                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                                    alt="Winner"
+                                    className={`rounded-full object-cover ${isGold ? 'w-24 h-24' : 'w-20 h-20'} ring-2 ${isGold ? 'ring-yellow-300' : 'ring-emerald-200'}`}
+                                  />
+
+                                  <div className={`font-extrabold text-gray-900 ${isGold ? 'text-lg' : 'text-base'} truncate max-w-[220px]`}>
+                                    {uiName(champ.name)}
+                                  </div>
+
+                                  <div className="text-xs text-gray-600">
+                                    Champion
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-gray-500">Sin definir</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Repechage */}
+                          {rep.length > 0 && (
+                            <div className="mt-6">
+                              <div className="text-sm font-semibold text-gray-800 mb-2">Repechaje</div>
+                              <div className="space-y-3">
+                                {rep.map(m => {
+                                  const p1 = getAnyPlayerById(m.home_player_id);
+                                  const p2 = getAnyPlayerById(m.away_player_id);
+                                  return (
+                                    <div key={m.id} className="border rounded-xl p-4 bg-white">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-gray-800 truncate">{uiName(p1?.name)} vs {uiName(p2?.name)}</div>
+                                          <div className="text-xs text-gray-500">
+                                            {m.date ? formatDateLocal(m.date) : '—'} {m.time ? `• ${m.time.slice(0,5)}` : ''}
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className="text-sm font-semibold text-slate-700 tracking-wide">{scoreLineForMatch(m)}</div>
+                                          <div className="text-xs text-gray-500">{m.status}</div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
 
           {/* Sub Fase de Grupos (Placement) – solo Edición 3 */}
           {isEdicion3 && placementMatchesAll.length > 0 && e3View === 'groups' && (
@@ -6580,6 +7024,7 @@ const App = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
                             {result}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
                             {match.status === 'played' ? (
                               (currentUser?.id === match.home_player_id ||
@@ -6614,7 +7059,7 @@ const App = () => {
 
 
           {/* Upcoming Matches Section */}
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+          <div className="bg-white rounded-xl shadow-lg p-6 mt-12 mb-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold text-gray-800">Partidos Programados - {selectedTournament.name}</h3>
               <div className="flex flex-col sm:flex-row gap-2">
@@ -6818,13 +7263,14 @@ const App = () => {
   // Division View
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
+    const activePlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
 
   const PENDING_ID = '__PENDING_OPPONENT__';
   // Oculta rivales con los que ya hubo scheduled o played
   const eligibleP2Options =
     !newMatch.player1
-      ? players
-      : players.filter(p =>
+      ? activePlayers
+      : activePlayers.filter(p =>
           p.id !== newMatch.player1 &&
           !hasAnyMatchBetween(
             selectedTournament.id,
@@ -6838,8 +7284,8 @@ const App = () => {
   // Si primero eliges Jugador 2, hacemos lo mismo del otro lado:
   const eligibleP1Options =
     !newMatch.player2
-      ? players
-      : players.filter(p =>
+      ? activePlayers
+      : activePlayers.filter(p =>
           p.id !== newMatch.player2 &&
           !hasAnyMatchBetween(
             selectedTournament.id,
@@ -6857,23 +7303,16 @@ const App = () => {
       m =>
         m.tournament_id === selectedTournament.id &&
         m.division_id === selectedDivision.id &&
-        m.status === 'played'
+        m.status === 'played' &&
+        !isPlayoffsMatch(m) &&
+        isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
     );
 
-    // Si hay historic players en el roster, calculamos standings local desde matches
-    const hasHistoricInRoster = players.some((p: any) => p?.role === 'historic');
-
-    const divisionStatsBase = hasHistoricInRoster
-      ? computeStandingsFromPlayedMatches(
-          playedMatchesThisDivision,
-          selectedTournament.id,
-          selectedDivision.id
-        )
-      : standings.filter(
-          s =>
-            s.division_id === selectedDivision.id &&
-            s.tournament_id === selectedTournament.id
-        );
+    const divisionStatsBase = computeStandingsFromPlayedMatches(
+      playedMatchesThisDivision,
+      selectedTournament.id,
+      selectedDivision.id
+    );
 
     // Añadimos name desde profiles/historicPlayers usando tu resolver existente (si ya lo tienes),
     // y si no, caemos al roster `players`.
@@ -6886,25 +7325,32 @@ const App = () => {
 
     // Filas finales: TODOS los inscritos con stats (0 si no tienen partidos)
     const rosterRows = players.map(p => {
-      const s = statsById.get(p.id);
+      const isActive = isPlayerActiveInDivision(selectedTournament.id, selectedDivision.id, p.id);
+      const s = isActive ? statsById.get(p.id) : undefined;
+
       return {
         profile_id: p.id,
         name: p.name,
-        points: s?.points ?? 0,
-        wins: s?.wins ?? 0,
-        losses: s?.losses ?? 0,
-        sets_won: s?.sets_won ?? 0,
-        sets_lost: s?.sets_lost ?? 0,
-        games_won: s?.games_won ?? 0,
-        games_lost: s?.games_lost ?? 0,
-        set_diff: s?.set_diff ?? 0,
-        pints: s?.pints ?? 0,
+        isRetired: !isActive,
+        points: isActive ? (s?.points ?? 0) : 0,
+        wins: isActive ? (s?.wins ?? 0) : 0,
+        losses: isActive ? (s?.losses ?? 0) : 0,
+        sets_won: isActive ? (s?.sets_won ?? 0) : 0,
+        sets_lost: isActive ? (s?.sets_lost ?? 0) : 0,
+        games_won: isActive ? (s?.games_won ?? 0) : 0,
+        games_lost: isActive ? (s?.games_lost ?? 0) : 0,
+        set_diff: isActive ? (s?.set_diff ?? 0) : 0,
+        pints: isActive ? (s?.pints ?? 0) : 0,
       };
-    }).sort((a, b) => compareByRules(
-      a, b,
-      selectedDivision.id,
-      selectedTournament.id
-    ));
+    }).sort((a, b) => {
+      if (a.isRetired !== b.isRetired) return a.isRetired ? 1 : -1;
+
+      return compareByRules(
+        a, b,
+        selectedDivision.id,
+        selectedTournament.id
+      );
+    });
 
 
     // Usaremos el comparador único: victorias → H2H → ratio sets → ratio games
@@ -6927,19 +7373,23 @@ const App = () => {
   const pendingMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'pending'
+    m.status === 'pending' &&
+    isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
   );
 
   const scheduledMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'scheduled'
+    m.status === 'scheduled' &&
+    isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
   );
 
   const playedMatches = matches.filter(m =>
     m.division_id === selectedDivision.id &&
     m.tournament_id === selectedTournament.id &&
-    m.status === 'played'
+    m.status === 'played' &&
+    !isPlayoffsMatch(m) &&
+    isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
   );
 
 
@@ -6962,7 +7412,7 @@ const App = () => {
       const playerMatchesAll = getPlayerMatchesAll(selectedPlayer.id);
       
       // Calculate upcoming matches against all other players
-      const divisionPlayers = getDivisionPlayers(selectedDivision.id, selectedTournament.id);
+      const divisionPlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id);
       const allOpponents = divisionPlayers.filter(p => p.id !== selectedPlayer.id);
       
       const upcomingMatches = allOpponents.filter(opponent => {
@@ -7385,7 +7835,7 @@ const App = () => {
                                 <h4 className="font-semibold text-gray-800">
                                   {opponent.name}
                                   <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                                    {isHome ? 'Local' : 'Visita'}
+                                    {isHome ? 'juega de Local' : 'juega de Visita'}
                                   </span>
                                 </h4>
                                 <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
@@ -7584,7 +8034,6 @@ const App = () => {
                   const myScheduled = matches
                     .filter(m =>
                       m.tournament_id === selectedTournament.id &&
-                      m.division_id === selectedDivision.id &&
                       (m.status === 'scheduled' || m.status === 'pending') &&
                       (m.home_player_id === selectedPlayer.id || m.away_player_id === selectedPlayer.id || m.created_by === selectedPlayer.id)
                     )
@@ -7600,6 +8049,13 @@ const App = () => {
 
                   const divName = (id?: string | null) => divisions.find(d => d.id === id)?.name || '';
 
+                  const matchTypeLabel = (m: Match) => {
+                    if (m.phase === 'finals_repechage') return 'Repechaje';
+                    if (m.phase === 'finals_main' && m.knockout_round === 'SF') return 'Semifinal';
+                    if (m.phase === 'finals_main' && m.knockout_round === 'F') return 'Final';
+                    return 'Liga';
+};
+
                   return (
                     <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
                       <h2 className="text-2xl font-bold text-gray-800 mb-6">Partidos agendados</h2>
@@ -7609,6 +8065,7 @@ const App = () => {
                             <tr>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">División / Tipo</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
                               <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase ">Acciones</th>
                             </tr>
@@ -7626,6 +8083,10 @@ const App = () => {
                                   </td>
                                   <td className="px-4 py-2">
                                     {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
+                                  </td>
+                                  <td className="px-4 py-2">
+                                    <div className="text-sm text-gray-900">{divName(m.division_id)}</div>
+                                    <div className="text-xs text-gray-500">{matchTypeLabel(m)}</div>
                                   </td>
                                   <td className="px-4 py-2">{loc}</td>
                                   <td className="px-4 py-2">
@@ -7911,15 +8372,22 @@ const App = () => {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
-                                    <img 
-                                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                                      src={player.avatar_url || '/default-avatar.png'} 
-                                      alt="" 
+                                    <img
+                                      className={`h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 ${stats.isRetired ? 'opacity-70 grayscale' : ''}`}
+                                      src={player.avatar_url || '/default-avatar.png'}
+                                      alt=""
                                     />
                                   </div>
                                   <div className="ml-4">
-                                    <div className="text-sm font-medium text-gray-900 hover:text-green-700 cursor-pointer">
-                                      {uiName(player.name)}
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-sm font-medium text-gray-900 hover:text-green-700 cursor-pointer">
+                                        {uiName(player.name)}
+                                      </div>
+                                      {stats.isRetired && (
+                                        <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
+                                          Retired
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>

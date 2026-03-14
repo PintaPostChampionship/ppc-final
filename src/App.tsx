@@ -1271,6 +1271,20 @@ const App = () => {
       });
   };
 
+  const playoffRoundRank = (m: Match) => {
+    if (m.phase === 'finals_main' && m.knockout_round === 'SF') return 1;
+    if (m.phase === 'finals_main' && m.knockout_round === 'F') return 2;
+    if (m.phase === 'finals_repechage') return 3;
+    return 99;
+  };
+
+  const playoffTypeLabel = (m: Match) => {
+    if (m.phase === 'finals_repechage') return 'Repechaje';
+    if (m.phase === 'finals_main' && m.knockout_round === 'SF') return 'Semifinal';
+    if (m.phase === 'finals_main' && m.knockout_round === 'F') return 'Final';
+    return 'Playoff';
+  };
+
   const getMatchHomeId = (m: any) => m?.home_player_id ?? m?.home_historic_player_id ?? null;
   const getMatchAwayId = (m: any) => m?.away_player_id ?? m?.away_historic_player_id ?? null;
 
@@ -6665,8 +6679,8 @@ const App = () => {
                                         <div className="flex items-center gap-2">
                                           <span>{uiName(stats.name)}</span>
                                           {stats.isRetired && (
-                                            <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
-                                              Retired
+                                            <span className="text-[9px] bg-gray-200 text-gray-500 px-1 py-[1px] rounded">
+                                              Ret
                                             </span>
                                           )}
                                         </div>
@@ -6914,6 +6928,98 @@ const App = () => {
                     })}
                   </div>
                 )}
+
+                <div className="bg-white rounded-xl shadow-lg p-6">
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-2xl font-bold text-gray-800">Partidos de Playoff</h3>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {matches
+                          .filter(match =>
+                            match.tournament_id === selectedTournament.id &&
+                            isPlayoffsMatch(match)
+                          )
+                          .sort((a, b) => {
+                            const roundDiff = playoffRoundRank(a) - playoffRoundRank(b);
+                            if (roundDiff !== 0) return roundDiff;
+
+                            const dateDiff = parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime();
+                            if (dateDiff !== 0) return dateDiff;
+
+                            return (a.bracket_position ?? 99) - (b.bracket_position ?? 99);
+                          })
+                          .map(match => {
+                            const homeId = getMatchHomeId(match);
+                            const awayId = getMatchAwayId(match);
+
+                            const player1 = getAnyPlayerById(homeId);
+                            const player2 = getAnyPlayerById(awayId);
+
+                            const division = divisions.find(d => d.id === match.division_id)?.name || '';
+
+                            const canEditResult =
+                              currentUser?.id === match.home_player_id ||
+                              currentUser?.id === match.away_player_id ||
+                              (currentUser as any)?.role === 'admin';
+
+                            return (
+                              <tr key={match.id} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {match.date ? formatDateLocal(match.date) : '—'}
+                                </td>
+
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {uiName(player1?.name)} vs {uiName(player2?.name)}
+                                </td>
+
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {division}
+                                </td>
+
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {playoffTypeLabel(match)}
+                                </td>
+
+                                <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
+                                  <div className="space-x-3">
+                                    {canEditSchedule(match) && (
+                                      <button
+                                        onClick={() => openEditSchedule(match)}
+                                        className="text-blue-600 hover:text-blue-800 underline"
+                                      >
+                                        Edit
+                                      </button>
+                                    )}
+
+                                    {canEditResult && (
+                                      <button
+                                        onClick={() => openEditResult(match)}
+                                        className="text-green-600 hover:text-green-800 underline"
+                                      >
+                                        {match.status === 'played' ? 'Edit Result' : 'Add Result'}
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             );
           })()}
