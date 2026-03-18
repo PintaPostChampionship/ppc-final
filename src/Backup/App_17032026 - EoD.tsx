@@ -1986,28 +1986,10 @@ const App = () => {
         if (accountsRes.error) throw accountsRes.error;
         if (requestsRes.error) throw requestsRes.error;
 
-        const adminsData = (adminsRes.data ?? []) as BookingAdmin[];
-        const accountsData = (accountsRes.data ?? []) as BookingAccount[];
-        const requestsData = (requestsRes.data ?? []) as CourtBookingRequest[];
-
-        const currentUid = session?.user?.id ?? null;
-        const currentIsAdmin =
-          !!currentUid &&
-          (
-            currentUser?.role === 'admin' ||
-            adminsData.some(a => String(a.profile_id) === String(currentUid))
-          );
-
-        const visibleAccounts = currentIsAdmin
-          ? accountsData
-          : accountsData.filter(
-              acc => String(acc.owner_profile_id) === String(currentUid)
-            );
-
         // IMPORTANTE: usa los *mismos* setters que ya tienes en el componente
-        setBookingAdmins(adminsData);
-        setBookingAccounts(visibleAccounts);
-        setCourtRequests(requestsData);
+        setBookingAdmins((adminsRes.data ?? []) as BookingAdmin[]);
+        setBookingAccounts((accountsRes.data ?? []) as BookingAccount[]);
+        setCourtRequests((requestsRes.data ?? []) as CourtBookingRequest[]);
       } catch (err) {
         console.error('loadBookingData error:', err);
       }
@@ -2018,7 +2000,7 @@ const App = () => {
   console.log('accounts:', bookingAccounts?.length, bookingAccounts?.slice?.(0,3));
   console.log('requests:', courtRequests?.length, courtRequests?.slice?.(0,3));
   console.log('isBookingAdmin?', isBookingAdmin, 'currentUser:', currentUser?.id);
-  }, [session?.user?.id, currentUser?.id, currentUser?.role]);
+  }, [session?.user?.id]);
 
   const uid: string | null = currentUser?.id ? String(currentUser.id) : null;
   const role: string = currentUser?.role ?? 'user';
@@ -2028,12 +2010,6 @@ const App = () => {
       role === 'admin' ||
       (bookingAdmins?.some?.(a => String(a.profile_id) === uid) === true)
     );
-
-  const visibleBookingAccounts: BookingAccount[] = isBookingAdmin
-    ? bookingAccounts
-    : bookingAccounts.filter(
-        acc => String(acc.owner_profile_id) === String(uid)
-      );
 
   const betterTimeOptions = [
     '08:00',
@@ -2067,21 +2043,6 @@ const App = () => {
 
   const visibleActiveRequests = isBookingAdmin ? activeRequests : myActiveRequests;
   const visibleHistoricalRequests = isBookingAdmin ? historicalRequests : myHistoricalRequests;
-
-  useEffect(() => {
-    if (!newBooking.better_account_id) return;
-
-    const stillVisible = visibleBookingAccounts.some(
-      acc => acc.id === newBooking.better_account_id
-    );
-
-    if (!stillVisible) {
-      setNewBooking(prev => ({
-        ...prev,
-        better_account_id: visibleBookingAccounts[0]?.id ?? '',
-      }));
-    }
-  }, [visibleBookingAccounts, newBooking.better_account_id]);
 
   const formatTimeRange = (req: CourtBookingRequest) => {
     const start = req.target_start_time?.slice(0, 5) ?? '';
@@ -2139,17 +2100,8 @@ const App = () => {
       setBookingError('Debes iniciar sesión para crear una reserva automática.');
       return;
     }
-    if (!isBookingAdmin && visibleBookingAccounts.length === 0) {
-      setBookingError('No tienes una cuenta Better disponible para crear reservas automáticas.');
-      return;
-    }
-
-    const selectedBookingAccount = visibleBookingAccounts.find(
-      acc => acc.id === newBooking.better_account_id
-    );
-
-    if (!isBookingAdmin && !selectedBookingAccount) {
-      setBookingError('La cuenta Better seleccionada no te pertenece.');
+    if (!isBookingAdmin) {
+      setBookingError('No tienes permisos para crear reservas automáticas.');
       return;
     }
     if (!newBooking.better_account_id) {
@@ -5376,7 +5328,7 @@ const App = () => {
     );
   }
 
-  if (showBookingPanel && (isBookingAdmin || visibleBookingAccounts.length > 0)) {
+  if (showBookingPanel && isBookingAdmin) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
@@ -5534,7 +5486,7 @@ const App = () => {
                       required
                     >
                       <option value="">Selecciona una cuenta</option>
-                      {visibleBookingAccounts.map((acc) => (
+                      {bookingAccounts.map((acc) => (
                         <option key={acc.id} value={acc.id}>
                           {acc.label?.trim?.()
                             || acc.env_username_key?.trim?.()
