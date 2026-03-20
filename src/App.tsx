@@ -5936,7 +5936,7 @@ const App = () => {
             >
               Encontrar Cancha
             </button>
-            {isBookingAdmin && (
+            {(isBookingAdmin || visibleBookingAccounts.length > 0) && (
               <button
                 onClick={() => {
                   setShowBookingPanel(true);
