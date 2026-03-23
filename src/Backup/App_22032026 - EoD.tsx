@@ -92,13 +92,6 @@ function decompressAvailability(comp?: Record<string, string[]> | null) {
   return out;
 }
 
-function capitaliseFirst(value?: string | null) {
-  if (!value) return '—';
-  const trimmed = value.trim();
-  if (!trimmed) return '—';
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-}
-
 type PendingOnboarding = {
   name?: string;
   email?: string;
@@ -182,27 +175,6 @@ interface Profile {
   avatar_url?: string;
   postal_code?: string;
   nickname?: string | null;
-}
-
-interface PlayerCard {
-  profile_id: string;
-  nickname?: string | null;
-  age?: number | null;
-  weight_kg?: number | null;
-  height_cm?: number | null;
-  nationality?: string | null;
-  birth_place?: string | null;
-  dominant_hand?: string | null;
-  backhand_style?: string | null;
-  ppc_objective?: string | null;
-  favourite_shot?: string | null;
-  favourite_surface?: string | null;
-  favourite_player?: string | null;
-  racket_brand?: string | null;
-  racket_model?: string | null;
-  tennis_start_year?: number | null;
-  created_at?: string;
-  updated_at?: string;
 }
 
 interface HistoricPlayer {
@@ -1038,12 +1010,6 @@ const App = () => {
   const [standings, setStandings] = useState<Standings[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<Division | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<Profile | null>(null);
-  const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
-  const [playerProfileTab, setPlayerProfileTab] = useState<'overview' | 'ficha'>('overview');
-  const [editingPlayerCard, setEditingPlayerCard] = useState<boolean>(false);
-  const [playerCardForm, setPlayerCardForm] = useState<Partial<PlayerCard>>({});
-  const [savingPlayerCard, setSavingPlayerCard] = useState<boolean>(false);
-  const [playerCardSaveMessage, setPlayerCardSaveMessage] = useState<string>('');
   const [selectedMatchForResult, setSelectedMatchForResult] = useState<Match | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [loginView, setLoginView] = useState(true);
@@ -1847,7 +1813,6 @@ const App = () => {
         supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
         supabase.from('divisions').select('*'),
         supabase.from('profiles').select('*'),
-        supabase.from('player_cards').select('*'),
         supabase.from('matches').select('*'),
         supabase.from('v_standings').select('*'),
         supabase.from('locations').select('*'),
@@ -1865,15 +1830,14 @@ const App = () => {
       setTournaments(responses[0].data || []);
       setDivisions(responses[1].data || []);
       setProfiles(responses[2].data || []);
-      setPlayerCards((responses[3].data || []) as PlayerCard[]);
-      setMatches(responses[4].data || []);
-      setStandings(responses[5].data || []);
-      setLocations(responses[6].data || []);
-      setRegistrations(responses[7].data || []);
-      setMatchSets(responses[8].data || []);
-      setHistoricPlayers((responses[9].data || []) as any);
-      if (userId && responses[10]) {
-        setAvailabilitySlots(responses[10].data || []);
+      setMatches(responses[3].data || []);
+      setStandings(responses[4].data || []);
+      setLocations(responses[5].data || []);
+      setRegistrations(responses[6].data || []);
+      setMatchSets(responses[7].data || []);
+      setHistoricPlayers((responses[8].data || []) as any);
+      if (userId && responses[9]) {
+        setAvailabilitySlots(responses[9].data || []);
       }
     } catch (err: any) {
       setError(`Failed to load data: ${err.message}`);
@@ -2330,14 +2294,13 @@ const App = () => {
       setError(null);
       
       // Fetch all required data
-      const [tournamentsRes, divisionsRes, locationsRes, profilesRes, playerCardsRes,
-        registrationsRes, matchesRes, standingsRes, matchSetsRes, historicPlayersRes, availabilityRes] =
+      const [tournamentsRes, divisionsRes, locationsRes, profilesRes, 
+        registrationsRes, matchesRes, standingsRes, matchSetsRes, historicPlayersRes, availabilityRes] = 
         await Promise.all([
           supabase.from('tournaments').select('*').order('start_date', { ascending: false }),
           supabase.from('divisions').select('*'),
           supabase.from('locations').select('*'),
           supabase.from('profiles').select('*'),
-          supabase.from('player_cards').select('*'),
           supabase.from('tournament_registrations').select('*'),
           supabase.from('matches').select('*'),
           supabase.from('v_standings').select('*'),
@@ -2351,7 +2314,6 @@ const App = () => {
       if (divisionsRes.error) throw divisionsRes.error;
       if (locationsRes.error) throw locationsRes.error;
       if (profilesRes.error) throw profilesRes.error;
-      if (playerCardsRes.error) throw playerCardsRes.error;
       if (registrationsRes.error) throw registrationsRes.error;
       if (matchesRes.error) throw matchesRes.error;
       if (standingsRes.error) throw standingsRes.error;
@@ -2364,7 +2326,6 @@ const App = () => {
       setDivisions(divisionsRes.data as Division[]);
       setLocations(locationsRes.data as Location[]);
       setProfiles(profilesRes.data as Profile[]);
-      setPlayerCards((playerCardsRes.data || []) as PlayerCard[]);
       setRegistrations(registrationsRes.data as Registration[]);
       setMatches(matchesRes.data as Match[]);
       setStandings(standingsRes.data as Standings[]);
@@ -2402,10 +2363,6 @@ const App = () => {
   }, [selectedDivision, selectedTournament]);
 
   useEffect(() => {
-    setPlayerProfileTab('overview');
-  }, [selectedPlayer?.id]);
-
-  useEffect(() => {
     if (!selectedPlayer) {
       setSelectedPlayerAvailability([]);
       setSelectedPlayerAreas([]);
@@ -2413,15 +2370,14 @@ const App = () => {
     }
 
     (async () => {
+      // Availability
       const { data: av, error: avErr } = await supabase
         .from('availability')
         .select('*')
         .eq('profile_id', selectedPlayer.id);
+      if (!avErr) setSelectedPlayerAvailability(av || []);
 
-      if (!avErr) {
-        setSelectedPlayerAvailability((av || []) as AvailabilitySlot[]);
-      }
-
+      // Zonas preferidas (leer ids y resolver nombres con 'locations' que ya tienes en estado)
       const { data: pls, error: plsErr } = await supabase
         .from('profile_locations')
         .select('location_id')
@@ -2429,12 +2385,9 @@ const App = () => {
 
       if (!plsErr && pls) {
         const names = pls
-          .map((pl: any) => locations.find(l => l.id === pl.location_id)?.name)
+          .map(pl => locations.find(l => l.id === pl.location_id)?.name)
           .filter((n): n is string => Boolean(n));
-
         setSelectedPlayerAreas(names);
-      } else {
-        setSelectedPlayerAreas([]);
       }
     })();
   }, [selectedPlayer?.id, locations]);
@@ -7681,11 +7634,6 @@ const App = () => {
     // Player Profile View
     if (selectedPlayer) {
       const player = players.find(p => p.id === selectedPlayer.id);
-      const selectedPlayerCard = playerCards.find((pc: PlayerCard) => pc.profile_id === selectedPlayer.id) || null;
-      const canEditPlayerCard =
-        currentUser?.id === selectedPlayer.id ||
-        currentUser?.role === 'admin';
-
       const playerStats = (rosterRows.find(r => r.profile_id === selectedPlayer.id) ?? {
         profile_id: selectedPlayer.id,
         name: selectedPlayer.name,
@@ -7889,36 +7837,8 @@ const App = () => {
                 </div>
               </div>
 
-              {/* Player Content */}
+              {/* Player Stats */}
               <div className="lg:col-span-2">
-                <div className="bg-white rounded-xl shadow-lg p-2 mb-8">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => setPlayerProfileTab('overview')}
-                      className={`px-4 py-2 rounded-lg font-semibold transition ${
-                        playerProfileTab === 'overview'
-                          ? 'bg-green-600 text-white shadow'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Overview
-                    </button>
-
-                    <button
-                      onClick={() => setPlayerProfileTab('ficha')}
-                      className={`px-4 py-2 rounded-lg font-semibold transition ${
-                        playerProfileTab === 'ficha'
-                          ? 'bg-green-600 text-white shadow'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Ficha Personal
-                    </button>
-                  </div>
-                </div>
-
-                {playerProfileTab === 'overview' && (
-                  <>
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
                   <h2 className="text-2xl font-bold text-gray-800 mb-6">Player Statistics</h2>
                   
@@ -8342,411 +8262,7 @@ const App = () => {
                     </div>
                   )}
                 </div>
-                  </>
-                )}
 
-                {playerProfileTab === 'ficha' && (
-                  <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div>
-                        <h2 className="text-2xl font-bold text-gray-800">Ficha Personal</h2>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Información personal y estilo de juego del jugador
-                        </p>
-                      </div>
-
-                      {canEditPlayerCard && !editingPlayerCard && (
-                        <button
-                          onClick={() => {
-                            setPlayerCardForm(selectedPlayerCard || {});
-                            setPlayerCardSaveMessage('');
-                            setEditingPlayerCard(true);
-                          }}
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-                        >
-                          Editar
-                        </button>
-                      )}
-                    </div>
-
-                    {playerCardSaveMessage && (
-                      <div className="mb-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                        {playerCardSaveMessage}
-                      </div>
-                    )}
-
-                    {!selectedPlayerCard ? (
-                      <div className="text-center py-10 text-gray-500">
-                        Este jugador aún no tiene ficha personal cargada.
-                      </div>
-                    ) : (
-                      <div className="space-y-8">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Nickname</div>
-                            {editingPlayerCard ? (
-                              <input
-                                type="text"
-                                value={playerCardForm.nickname || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, nickname: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            ) : (
-                              <div className="text-gray-900 font-medium">
-                                {selectedPlayerCard.nickname || '—'}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Nacionalidad</div>
-                            {editingPlayerCard ? (
-                              <input
-                                type="text"
-                                value={playerCardForm.nationality || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, nationality: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            ) : (
-                              <div className="text-gray-900 font-medium">
-                                {capitaliseFirst(selectedPlayerCard.nationality)}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Edad</div>
-                            {editingPlayerCard ? (
-                              <input
-                                type="number"
-                                min="5"
-                                max="100"
-                                value={playerCardForm.age ?? ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({
-                                    ...playerCardForm,
-                                    age: e.target.value === '' ? null : Number(e.target.value),
-                                  })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            ) : (
-                              <div className="text-gray-900 font-medium">{selectedPlayerCard.age ?? '—'}</div>
-                            )}
-                          </div>
-
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Lugar de nacimiento</div>
-                            {editingPlayerCard ? (
-                              <input
-                                type="text"
-                                value={playerCardForm.birth_place || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, birth_place: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            ) : (
-                              <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.birth_place)}</div>
-                            )}
-                          </div>
-
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Peso</div>
-                            {editingPlayerCard ? (
-                              <input
-                                type="number"
-                                min="20"
-                                max="250"
-                                step="0.1"
-                                value={playerCardForm.weight_kg ?? ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({
-                                    ...playerCardForm,
-                                    weight_kg: e.target.value === '' ? null : Number(e.target.value),
-                                  })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            ) : (
-                              <div className="text-gray-900 font-medium">
-                                {selectedPlayerCard.weight_kg != null ? `${selectedPlayerCard.weight_kg} kg` : '—'}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Altura</div>
-                            {editingPlayerCard ? (
-                              <input
-                                type="number"
-                                min="80"
-                                max="250"
-                                step="0.1"
-                                value={playerCardForm.height_cm ?? ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({
-                                    ...playerCardForm,
-                                    height_cm: e.target.value === '' ? null : Number(e.target.value),
-                                  })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            ) : (
-                              <div className="text-gray-900 font-medium">
-                                {selectedPlayerCard.height_cm != null ? `${selectedPlayerCard.height_cm} cm` : '—'}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-800 mb-3">Juego</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-green-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Mano dominante</div>
-                              {editingPlayerCard ? (
-                                <select
-                                  value={playerCardForm.dominant_hand || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({
-                                      ...playerCardForm,
-                                      dominant_hand: e.target.value || null,
-                                    })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                                >
-                                  <option value="">Seleccionar</option>
-                                  <option value="Diestro">Diestro</option>
-                                  <option value="Zurdo">Zurdo</option>
-                                </select>
-                              ) : (
-                                <div className="text-gray-900 font-medium">{selectedPlayerCard.dominant_hand || '—'}</div>
-                              )}
-                            </div>
-
-                            <div className="bg-green-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Revés</div>
-                              {editingPlayerCard ? (
-                                <select
-                                  value={playerCardForm.backhand_style || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({
-                                      ...playerCardForm,
-                                      backhand_style: e.target.value || null,
-                                    })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                                >
-                                  <option value="">Seleccionar</option>
-                                  <option value="Una mano">Una mano</option>
-                                  <option value="Dos manos">Dos manos</option>
-                                  <option value="Otro">Otro</option>
-                                </select>
-                              ) : (
-                                <div className="text-gray-900 font-medium">{selectedPlayerCard.backhand_style || '—'}</div>
-                              )}
-                            </div>
-
-                            <div className="bg-green-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Tiro favorito</div>
-                              {editingPlayerCard ? (
-                                <input
-                                  type="text"
-                                  value={playerCardForm.favourite_shot || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, favourite_shot: e.target.value })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              ) : (
-                                <div className="text-gray-900 font-medium">
-                                  {capitaliseFirst(selectedPlayerCard.favourite_shot)}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="bg-green-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Superficie favorita</div>
-                                {editingPlayerCard ? (
-                                  <input
-                                    type="text"
-                                    value={playerCardForm.favourite_surface || ''}
-                                    onChange={(e) =>
-                                      setPlayerCardForm({ ...playerCardForm, favourite_surface: e.target.value })
-                                    }
-                                    className="w-full border rounded-lg px-3 py-2"
-                                  />
-                                ) : (
-                                  <div className="text-gray-900 font-medium">
-                                    {capitaliseFirst(selectedPlayerCard.favourite_surface)}
-                                  </div>
-                                )}
-                            </div>
-
-                            <div className="bg-green-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Jugador favorito</div>
-                              {editingPlayerCard ? (
-                                <input
-                                  type="text"
-                                  value={playerCardForm.favourite_player || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, favourite_player: e.target.value })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              ) : (
-                                <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.favourite_player)}</div>
-                              )}
-                            </div>
-
-                            <div className="bg-green-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Año inicio tenis</div>
-                              {editingPlayerCard ? (
-                                <input
-                                  type="number"
-                                  min="1900"
-                                  max={new Date().getFullYear()}
-                                  value={playerCardForm.tennis_start_year ?? ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({
-                                      ...playerCardForm,
-                                      tennis_start_year: e.target.value === '' ? null : Number(e.target.value),
-                                    })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              ) : (
-                                <div className="text-gray-900 font-medium">{selectedPlayerCard.tennis_start_year ?? '—'}</div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-800 mb-3">Raqueta y objetivo</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-yellow-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Marca de raqueta</div>
-                              {editingPlayerCard ? (
-                                <input
-                                  type="text"
-                                  value={playerCardForm.racket_brand || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, racket_brand: e.target.value })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              ) : (
-                                <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.racket_brand)}</div>
-                              )}
-                            </div>
-
-                            <div className="bg-yellow-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Modelo de raqueta</div>
-                              {editingPlayerCard ? (
-                                <input
-                                  type="text"
-                                  value={playerCardForm.racket_model || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, racket_model: e.target.value })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              ) : (
-                                <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.racket_model)}</div>
-                              )}
-                            </div>
-
-                            <div className="bg-yellow-50 rounded-xl p-4 md:col-span-2">
-                              <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Objetivo PPC</div>
-                              {editingPlayerCard ? (
-                                <textarea
-                                  value={playerCardForm.ppc_objective || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, ppc_objective: e.target.value })
-                                  }
-                                  rows={4}
-                                  className="w-full border rounded-lg px-3 py-2 resize-y"
-                                />
-                              ) : (
-                                <div className="text-gray-900 font-medium whitespace-pre-wrap">
-                                  {selectedPlayerCard.ppc_objective || '—'}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        {editingPlayerCard && (
-                          <div className="flex gap-3 mt-6">
-                            <button
-                              onClick={() => {
-                                setEditingPlayerCard(false);
-                                setPlayerCardForm({});
-                                setPlayerCardSaveMessage('');
-                              }}
-                              className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
-                            >
-                              Cancelar
-                            </button>
-
-                            <button
-                              onClick={async () => {
-                                try {
-                                  setSavingPlayerCard(true);
-
-                                  const { data, error } = await supabase
-                                    .from('player_cards')
-                                    .upsert(
-                                      {
-                                        profile_id: selectedPlayer.id,
-                                        ...playerCardForm,
-                                      },
-                                      { onConflict: 'profile_id' }
-                                    )
-                                    .select()
-                                    .single();
-
-                                  if (error) throw error;
-
-                                  if (data) {
-                                    setPlayerCards((prev) => {
-                                      const filtered = prev.filter(
-                                        (pc) => pc.profile_id !== selectedPlayer.id
-                                      );
-                                      return [...filtered, data as PlayerCard];
-                                    });
-                                  }
-
-                                  setEditingPlayerCard(false);
-                                  setPlayerCardForm({});
-                                  setPlayerCardSaveMessage('Ficha guardada correctamente.');
-
-                                  setTimeout(() => {
-                                    setPlayerCardSaveMessage('');
-                                  }, 3000);
-                                } catch (err) {
-                                  console.error(err);
-                                  alert('Error guardando ficha');
-                                } finally {
-                                  setSavingPlayerCard(false);
-                                }
-                              }}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                            >
-                              {savingPlayerCard ? 'Guardando...' : 'Guardar'}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* Partidos agendados (todos) */}
                 {(() => {
