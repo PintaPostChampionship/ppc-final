@@ -99,6 +99,216 @@ function capitaliseFirst(value?: string | null) {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
+function getLeagueRegistrationsForPlayer(
+  profileId: string,
+  registrations: Registration[],
+  tournaments: Tournament[]
+) {
+  return registrations
+    .filter(r => r.profile_id === profileId)
+    .map(r => {
+      const tournament = tournaments.find(t => t.id === r.tournament_id);
+      return tournament ? { registration: r, tournament } : null;
+    })
+    .filter((x): x is { registration: Registration; tournament: Tournament } => Boolean(x))
+    .filter(x => x.tournament.format === 'league');
+}
+
+function getLastLeagueEntryForPlayer(
+  profileId: string,
+  registrations: Registration[],
+  tournaments: Tournament[]
+) {
+  const entries = getLeagueRegistrationsForPlayer(profileId, registrations, tournaments);
+
+  if (entries.length === 0) return null;
+
+  return [...entries].sort((a, b) => {
+    const byEnd = (b.tournament.end_date || '').localeCompare(a.tournament.end_date || '');
+    if (byEnd !== 0) return byEnd;
+
+    const byStart = (b.tournament.start_date || '').localeCompare(a.tournament.start_date || '');
+    if (byStart !== 0) return byStart;
+
+    return (b.tournament.sort_order ?? 0) - (a.tournament.sort_order ?? 0);
+  })[0];
+}
+
+function getDivisionNameByIdLocal(divisionId: string, divisions: Division[]) {
+  return divisions.find(d => d.id === divisionId)?.name || '—';
+}
+
+function getPrettyLeagueResultForPlayer(
+  profileId: string,
+  tournamentId: string,
+  divisionId: string,
+  matches: Match[],
+  standings: Standings[],
+  divisions: Division[]
+) {
+  const divisionName = getDivisionNameByIdLocal(divisionId, divisions);
+
+  const finalsMainMatches = matches.filter(m =>
+    m.tournament_id === tournamentId &&
+    m.division_id === divisionId &&
+    m.phase === 'finals_main' &&
+    m.status === 'played' &&
+    (
+      m.home_player_id === profileId ||
+      m.away_player_id === profileId
+    )
+  );
+
+  const finalMatch = finalsMainMatches.find(m => m.knockout_round === 'F');
+  if (finalMatch) {
+    const winnerId =
+      finalMatch.player1_sets_won > finalMatch.player2_sets_won
+        ? finalMatch.home_player_id
+        : finalMatch.player2_sets_won > finalMatch.player1_sets_won
+        ? finalMatch.away_player_id
+        : null;
+
+    if (winnerId === profileId) {
+      return `Ganador División ${divisionName}`;
+    }
+    return `Finalista División ${divisionName}`;
+  }
+
+  const semiMatch = finalsMainMatches.find(m => m.knockout_round === 'SF');
+  if (semiMatch) {
+    return `Semifinalista División ${divisionName}`;
+  }
+
+  const divisionStandings = standings
+    .filter(s => s.tournament_id === tournamentId && s.division_id === divisionId)
+    .slice()
+    .sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.set_diff !== a.set_diff) return b.set_diff - a.set_diff;
+
+      const aGamesDiff = (a.games_won || 0) - (a.games_lost || 0);
+      const bGamesDiff = (b.games_won || 0) - (b.games_lost || 0);
+      if (bGamesDiff !== aGamesDiff) return bGamesDiff - aGamesDiff;
+
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+  const pos = divisionStandings.findIndex(s => s.profile_id === profileId);
+  if (pos >= 0) {
+    return `${pos + 1}° lugar en ${divisionName}`;
+  }
+
+  return `Participó en ${divisionName}`;
+}
+
+function getPlayerStatsSummaryAll(
+  profileId: string,
+  registrations: Registration[],
+  tournaments: Tournament[],
+  standings: Standings[],
+  matches: Match[]
+) {
+  const leagueRegs = registrations.filter(r => {
+    if (r.profile_id !== profileId) return false;
+    const t = tournaments.find(tt => tt.id === r.tournament_id);
+    return t?.format === 'league';
+  });
+
+  const uniqueTournaments = new Set(leagueRegs.map(r => r.tournament_id));
+  const uniqueDivisions = new Set(leagueRegs.map(r => r.division_id));
+
+  const playedMatches = matches.filter(m =>
+    m.status === 'played' &&
+    (m.home_player_id === profileId || m.away_player_id === profileId)
+  );
+
+  const scheduledMatches = matches.filter(m =>
+    (m.status === 'scheduled' || m.status === 'pending') &&
+    (m.home_player_id === profileId || m.away_player_id === profileId)
+  );
+
+  let wins = 0;
+  let losses = 0;
+  let setsWon = 0;
+  let setsLost = 0;
+  let gamesWon = 0;
+  let gamesLost = 0;
+
+  playedMatches.forEach(m => {
+    const isHome = m.home_player_id === profileId;
+
+    const mySetsWon = isHome ? (m.player1_sets_won || 0) : (m.player2_sets_won || 0);
+    const mySetsLost = isHome ? (m.player2_sets_won || 0) : (m.player1_sets_won || 0);
+    const myGamesWon = isHome ? (m.player1_games_won || 0) : (m.player2_games_won || 0);
+    const myGamesLost = isHome ? (m.player2_games_won || 0) : (m.player1_games_won || 0);
+
+    setsWon += mySetsWon;
+    setsLost += mySetsLost;
+    gamesWon += myGamesWon;
+    gamesLost += myGamesLost;
+
+    if (mySetsWon > mySetsLost) wins += 1;
+    else if (mySetsLost > mySetsWon) losses += 1;
+  });
+
+  // --- Pinta Post: solo desde Edición 4 en adelante ---
+  const pintEligibleTournamentIds = new Set(
+    tournaments
+      .filter(t => t.format === 'league' && (t.season === 'PPC 4' || (t.name || '').includes('Edición 4')))
+      .map(t => t.id)
+  );
+
+  const pintMatchesPlayed = matches.filter(m =>
+    m.status === 'played' &&
+    pintEligibleTournamentIds.has(m.tournament_id) &&
+    (m.home_player_id === profileId || m.away_player_id === profileId)
+  );
+
+  let totalPints = 0;
+  let pintMatches = 0;
+
+  pintMatchesPlayed.forEach(m => {
+    const isHome = m.home_player_id === profileId;
+    const myPints = isHome ? (m.player1_pints || 0) : (m.player2_pints || 0);
+
+    totalPints += myPints;
+    if (myPints > 0) pintMatches += 1;
+  });
+
+  const latestStanding = standings
+    .filter(s => s.profile_id === profileId)
+    .slice()
+    .sort((a, b) => {
+      const ta = tournaments.find(t => t.id === a.tournament_id);
+      const tb = tournaments.find(t => t.id === b.tournament_id);
+      const da = ta?.end_date || '';
+      const db = tb?.end_date || '';
+      return db.localeCompare(da);
+    })[0] || null;
+
+  return {
+    tournamentsPlayed: uniqueTournaments.size,
+    divisionsPlayed: uniqueDivisions.size,
+    matchesPlayed: playedMatches.length,
+    scheduledMatches: scheduledMatches.length,
+    wins,
+    losses,
+    winRate: playedMatches.length > 0 ? (wins / playedMatches.length) * 100 : 0,
+    setsWon,
+    setsLost,
+    setDiff: setsWon - setsLost,
+    gamesWon,
+    gamesLost,
+    gameDiff: gamesWon - gamesLost,
+    totalPints,
+    pintMatches,
+    pintMatchesPlayed: pintMatchesPlayed.length,
+    avgPintsPerMatch: pintMatchesPlayed.length > 0 ? totalPints / pintMatchesPlayed.length : 0,
+    pintMatchRate: pintMatchesPlayed.length > 0 ? (pintMatches / pintMatchesPlayed.length) * 100 : 0,
+    latestPoints: latestStanding?.points ?? 0,
+  };
+}
+
 type PendingOnboarding = {
   name?: string;
   email?: string;
@@ -1039,7 +1249,7 @@ const App = () => {
   const [selectedDivision, setSelectedDivision] = useState<Division | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<Profile | null>(null);
   const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
-  const [playerProfileTab, setPlayerProfileTab] = useState<'overview' | 'ficha'>('overview');
+  const [playerProfileTab, setPlayerProfileTab] = useState<'overview' | 'ficha' | 'stats'>('overview');
   const [editingPlayerCard, setEditingPlayerCard] = useState<boolean>(false);
   const [playerCardForm, setPlayerCardForm] = useState<Partial<PlayerCard>>({});
   const [savingPlayerCard, setSavingPlayerCard] = useState<boolean>(false);
@@ -7686,6 +7896,36 @@ const App = () => {
         currentUser?.id === selectedPlayer.id ||
         currentUser?.role === 'admin';
 
+      const lastLeagueEntry = getLastLeagueEntryForPlayer(
+        selectedPlayer.id,
+        registrations,
+        tournaments
+      );
+
+      const lastLeagueTournamentName = lastLeagueEntry?.tournament.name || '—';
+      const lastLeagueDivisionName = lastLeagueEntry
+        ? getDivisionNameByIdLocal(lastLeagueEntry.registration.division_id, divisions)
+        : '—';
+
+      const lastLeagueResult = lastLeagueEntry
+        ? getPrettyLeagueResultForPlayer(
+            selectedPlayer.id,
+            lastLeagueEntry.registration.tournament_id,
+            lastLeagueEntry.registration.division_id,
+            matches,
+            standings,
+            divisions
+          )
+        : 'Sin torneos de liga';
+
+      const playerStatsSummary = getPlayerStatsSummaryAll(
+        selectedPlayer.id,
+        registrations,
+        tournaments,
+        standings,
+        matches
+      );
+
       const playerStats = (rosterRows.find(r => r.profile_id === selectedPlayer.id) ?? {
         profile_id: selectedPlayer.id,
         name: selectedPlayer.name,
@@ -7870,11 +8110,12 @@ const App = () => {
 
                     <div className="bg-yellow-50 p-4 rounded-lg">
                       <h3 className="font-semibold text-yellow-800 mb-2">Tournaments & Division</h3>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <div>
                           <span className="font-medium text-gray-700">Division:</span>
                           <span className="ml-1 font-medium">{selectedDivision.name}</span>
                         </div>
+
                         <div>
                           <span className="font-medium text-gray-700">Tournaments:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
@@ -7882,6 +8123,21 @@ const App = () => {
                               {selectedTournament.name}
                             </span>
                           </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-yellow-200">
+                          <div className="text-xs uppercase tracking-wide text-gray-500">Último torneo</div>
+                          <div className="text-sm font-semibold text-gray-800">{lastLeagueTournamentName}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs uppercase tracking-wide text-gray-500">Última división</div>
+                          <div className="text-sm font-semibold text-gray-800">{lastLeagueDivisionName}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs uppercase tracking-wide text-gray-500">Resultado</div>
+                          <div className="text-sm font-semibold text-green-700">{lastLeagueResult}</div>
                         </div>
                       </div>
                     </div>
@@ -7914,6 +8170,18 @@ const App = () => {
                     >
                       Ficha Personal
                     </button>
+
+                    <button
+                      onClick={() => setPlayerProfileTab('stats')}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        playerProfileTab === 'stats'
+                          ? 'bg-green-600 text-white shadow'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Stats
+                    </button>
+
                   </div>
                 </div>
 
@@ -8745,6 +9013,96 @@ const App = () => {
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {playerProfileTab === 'stats' && (
+                  <div className="space-y-8">
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <div className="mb-6">
+                        <h2 className="text-2xl font-bold text-gray-800">Stats</h2>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Resumen general del rendimiento del jugador en PPC
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-gray-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-blue-600">{playerStatsSummary.tournamentsPlayed}</div>
+                          <div className="text-sm text-gray-600">Torneos jugados</div>
+                        </div>
+
+                        <div className="bg-gray-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-indigo-600">{playerStatsSummary.divisionsPlayed}</div>
+                          <div className="text-sm text-gray-600">Divisiones jugadas</div>
+                        </div>
+
+                        <div className="bg-gray-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-green-600">{playerStatsSummary.matchesPlayed}</div>
+                          <div className="text-sm text-gray-600">Partidos jugados</div>
+                        </div>
+
+                        <div className="bg-gray-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-emerald-600">{playerStatsSummary.winRate.toFixed(1)}%</div>
+                          <div className="text-sm text-gray-600">Win rate</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Rendimiento</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-green-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-green-700">{playerStatsSummary.wins}</div>
+                          <div className="text-sm text-gray-600">Ganados</div>
+                        </div>
+
+                        <div className="bg-red-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-red-600">{playerStatsSummary.losses}</div>
+                          <div className="text-sm text-gray-600">Perdidos</div>
+                        </div>
+
+                        <div className="bg-orange-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-orange-600">{playerStatsSummary.setDiff}</div>
+                          <div className="text-sm text-gray-600">Dif. sets</div>
+                        </div>
+
+                        <div className="bg-yellow-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-yellow-700">{playerStatsSummary.gameDiff}</div>
+                          <div className="text-sm text-gray-600">Dif. games</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <div className="mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800">Pinta Post</h3>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Estadísticas disponibles desde Edición 4 en adelante
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="bg-purple-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-purple-600">{playerStatsSummary.totalPints}</div>
+                          <div className="text-sm text-gray-600">Pints totales</div>
+                        </div>
+
+                        <div className="bg-pink-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-pink-600">{playerStatsSummary.pintMatches}</div>
+                          <div className="text-sm text-gray-600">Partidos con pint</div>
+                        </div>
+
+                        <div className="bg-fuchsia-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-fuchsia-600">{playerStatsSummary.avgPintsPerMatch.toFixed(1)}</div>
+                          <div className="text-sm text-gray-600">Promedio por partido</div>
+                        </div>
+
+                        <div className="bg-violet-50 rounded-xl p-4 text-center">
+                          <div className="text-2xl font-bold text-violet-600">{playerStatsSummary.pintMatchRate.toFixed(1)}%</div>
+                          <div className="text-sm text-gray-600">% de partidos con pint</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
