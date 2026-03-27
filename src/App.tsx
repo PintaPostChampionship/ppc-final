@@ -7892,6 +7892,7 @@ const App = () => {
     if (selectedPlayer) {
       const player = players.find(p => p.id === selectedPlayer.id);
       const selectedPlayerCard = playerCards.find((pc: PlayerCard) => pc.profile_id === selectedPlayer.id) || null;
+      const playerCardView: Partial<PlayerCard> = selectedPlayerCard ?? {};
       const canEditPlayerCard =
         currentUser?.id === selectedPlayer.id ||
         currentUser?.role === 'admin';
@@ -8626,13 +8627,32 @@ const App = () => {
                       {canEditPlayerCard && !editingPlayerCard && (
                         <button
                           onClick={() => {
-                            setPlayerCardForm(selectedPlayerCard || {});
+                            setPlayerCardForm(
+                              selectedPlayerCard || {
+                                profile_id: selectedPlayer.id,
+                                nickname: '',
+                                age: null,
+                                weight_kg: null,
+                                height_cm: null,
+                                nationality: '',
+                                birth_place: '',
+                                dominant_hand: '',
+                                backhand_style: '',
+                                ppc_objective: '',
+                                favourite_shot: '',
+                                favourite_surface: '',
+                                favourite_player: '',
+                                racket_brand: '',
+                                racket_model: '',
+                                tennis_start_year: null,
+                              }
+                            );
                             setPlayerCardSaveMessage('');
                             setEditingPlayerCard(true);
                           }}
                           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
                         >
-                          Editar
+                          {selectedPlayerCard ? 'Editar' : 'Crear ficha'}
                         </button>
                       )}
                     </div>
@@ -8643,7 +8663,7 @@ const App = () => {
                       </div>
                     )}
 
-                    {!selectedPlayerCard ? (
+                    {!selectedPlayerCard && !editingPlayerCard ? (
                       <div className="text-center py-10 text-gray-500">
                         Este jugador aún no tiene ficha personal cargada.
                       </div>
@@ -8663,7 +8683,7 @@ const App = () => {
                               />
                             ) : (
                               <div className="text-gray-900 font-medium">
-                                {selectedPlayerCard.nickname || '—'}
+                                {playerCardView.nickname || '—'}
                               </div>
                             )}
                           </div>
@@ -8681,7 +8701,7 @@ const App = () => {
                               />
                             ) : (
                               <div className="text-gray-900 font-medium">
-                                {capitaliseFirst(selectedPlayerCard.nationality)}
+                                {capitaliseFirst(playerCardView.nationality)}
                               </div>
                             )}
                           </div>
@@ -8703,7 +8723,7 @@ const App = () => {
                                 className="w-full border rounded-lg px-3 py-2"
                               />
                             ) : (
-                              <div className="text-gray-900 font-medium">{selectedPlayerCard.age ?? '—'}</div>
+                              <div className="text-gray-900 font-medium">{playerCardView.age ?? '—'}</div>
                             )}
                           </div>
 
@@ -8719,7 +8739,7 @@ const App = () => {
                                 className="w-full border rounded-lg px-3 py-2"
                               />
                             ) : (
-                              <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.birth_place)}</div>
+                              <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.birth_place)}</div>
                             )}
                           </div>
 
@@ -8742,7 +8762,7 @@ const App = () => {
                               />
                             ) : (
                               <div className="text-gray-900 font-medium">
-                                {selectedPlayerCard.weight_kg != null ? `${selectedPlayerCard.weight_kg} kg` : '—'}
+                                {playerCardView.weight_kg != null ? `${playerCardView.weight_kg} kg` : '—'}
                               </div>
                             )}
                           </div>
@@ -8766,7 +8786,7 @@ const App = () => {
                               />
                             ) : (
                               <div className="text-gray-900 font-medium">
-                                {selectedPlayerCard.height_cm != null ? `${selectedPlayerCard.height_cm} cm` : '—'}
+                                {playerCardView.height_cm != null ? `${playerCardView.height_cm} cm` : '—'}
                               </div>
                             )}
                           </div>
@@ -8793,7 +8813,7 @@ const App = () => {
                                   <option value="Zurdo">Zurdo</option>
                                 </select>
                               ) : (
-                                <div className="text-gray-900 font-medium">{selectedPlayerCard.dominant_hand || '—'}</div>
+                                <div className="text-gray-900 font-medium">{playerCardView.dominant_hand || '—'}</div>
                               )}
                             </div>
 
@@ -8816,7 +8836,7 @@ const App = () => {
                                   <option value="Otro">Otro</option>
                                 </select>
                               ) : (
-                                <div className="text-gray-900 font-medium">{selectedPlayerCard.backhand_style || '—'}</div>
+                                <div className="text-gray-900 font-medium">{playerCardView.backhand_style || '—'}</div>
                               )}
                             </div>
 
@@ -8833,7 +8853,7 @@ const App = () => {
                                 />
                               ) : (
                                 <div className="text-gray-900 font-medium">
-                                  {capitaliseFirst(selectedPlayerCard.favourite_shot)}
+                                  {capitaliseFirst(playerCardView.favourite_shot)}
                                 </div>
                               )}
                             </div>
@@ -8851,7 +8871,7 @@ const App = () => {
                                   />
                                 ) : (
                                   <div className="text-gray-900 font-medium">
-                                    {capitaliseFirst(selectedPlayerCard.favourite_surface)}
+                                    {capitaliseFirst(playerCardView.favourite_surface)}
                                   </div>
                                 )}
                             </div>
@@ -8868,7 +8888,7 @@ const App = () => {
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
                               ) : (
-                                <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.favourite_player)}</div>
+                                <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.favourite_player)}</div>
                               )}
                             </div>
 
@@ -8889,7 +8909,7 @@ const App = () => {
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
                               ) : (
-                                <div className="text-gray-900 font-medium">{selectedPlayerCard.tennis_start_year ?? '—'}</div>
+                                <div className="text-gray-900 font-medium">{playerCardView.tennis_start_year ?? '—'}</div>
                               )}
                             </div>
                           </div>
@@ -8910,7 +8930,7 @@ const App = () => {
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
                               ) : (
-                                <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.racket_brand)}</div>
+                                <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.racket_brand)}</div>
                               )}
                             </div>
 
@@ -8926,7 +8946,7 @@ const App = () => {
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
                               ) : (
-                                <div className="text-gray-900 font-medium">{capitaliseFirst(selectedPlayerCard.racket_model)}</div>
+                                <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.racket_model)}</div>
                               )}
                             </div>
 
@@ -8943,7 +8963,7 @@ const App = () => {
                                 />
                               ) : (
                                 <div className="text-gray-900 font-medium whitespace-pre-wrap">
-                                  {selectedPlayerCard.ppc_objective || '—'}
+                                  {playerCardView.ppc_objective || '—'}
                                 </div>
                               )}
                             </div>
