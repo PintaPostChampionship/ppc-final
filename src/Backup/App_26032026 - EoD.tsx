@@ -134,26 +134,6 @@ function getLastLeagueEntryForPlayer(
   })[0];
 }
 
-function getFirstLeagueEntryForPlayer(
-  profileId: string,
-  registrations: Registration[],
-  tournaments: Tournament[]
-) {
-  const entries = getLeagueRegistrationsForPlayer(profileId, registrations, tournaments);
-
-  if (entries.length === 0) return null;
-
-  return [...entries].sort((a, b) => {
-    const byStart = (a.tournament.start_date || '').localeCompare(b.tournament.start_date || '');
-    if (byStart !== 0) return byStart;
-
-    const byEnd = (a.tournament.end_date || '').localeCompare(b.tournament.end_date || '');
-    if (byEnd !== 0) return byEnd;
-
-    return (a.tournament.sort_order ?? 0) - (b.tournament.sort_order ?? 0);
-  })[0];
-}
-
 function getDivisionNameByIdLocal(divisionId: string, divisions: Division[]) {
   return divisions.find(d => d.id === divisionId)?.name || '—';
 }
@@ -651,601 +631,6 @@ function avatarSrc(p?: Profile | null) {
   return data?.publicUrl || '/default-avatar.png';
 }
 
-function hasExplicitAvatar(p?: Profile | null) {
-  if (!p) return false;
-  return !!(p.avatar_url || '').trim();
-}
-
-function PlayerShowcaseCard({
-  player,
-  avatarUrl,
-  hasAvatar,
-  playerCard,
-  firstLeagueTournamentName,
-  lastLeagueResult,
-  currentDivisionName,
-}: {
-  player: Profile;
-  avatarUrl: string;
-  hasAvatar: boolean;
-  playerCard: Partial<PlayerCard>;
-  firstLeagueTournamentName: string;
-  lastLeagueResult: string;
-  currentDivisionName: string;
-}) {
-  const fullRacket = [playerCard.racket_brand, playerCard.racket_model]
-    .filter(Boolean).join(' ').trim();
-
-  const profileItems = [
-    { label: 'Edad',         value: playerCard.age != null ? `${playerCard.age} años` : '—', icon: '📅' },
-    { label: 'Nacionalidad', value: capitaliseFirst(playerCard.nationality),                  icon: '🌍' },
-    { label: 'Inicio PPC',   value: firstLeagueTournamentName || '—',                         icon: '🏁' },
-    { label: 'Resultado',    value: lastLeagueResult || '—',                                  icon: '🏆' },
-    { label: 'Juego',        value: capitaliseFirst(playerCard.dominant_hand),                icon: '🖐️' },
-    { label: 'Revés',        value: capitaliseFirst(playerCard.backhand_style),               icon: '↔️' },
-  ];
-
-  const aboutItems = [
-    { label: 'Objetivo PPC',        value: playerCard.ppc_objective || '—',                                                   icon: '🎯', bg: 'rgba(20,184,166,0.18)',  border: 'rgba(20,184,166,0.28)' },
-    { label: 'Arma secreta',        value: playerCard.favourite_shot || '—',                                                   icon: '✨', bg: 'rgba(59,130,246,0.16)',  border: 'rgba(59,130,246,0.26)' },
-    { label: 'Superficie favorita', value: capitaliseFirst(playerCard.favourite_surface),                                      icon: '🏟️', bg: 'rgba(16,185,129,0.16)',  border: 'rgba(16,185,129,0.26)' },
-    { label: 'Ídolo',               value: playerCard.favourite_player || '—',                                                 icon: '⭐', bg: 'rgba(245,158,11,0.16)',  border: 'rgba(245,158,11,0.26)' },
-    { label: 'Raqueta',             value: fullRacket || '—',                                                                  icon: '🎾', bg: 'rgba(34,197,94,0.16)',  border: 'rgba(34,197,94,0.26)' },
-    { label: 'Inicio en tenis',     value: playerCard.tennis_start_year != null ? String(playerCard.tennis_start_year) : '—', icon: '📍', bg: 'rgba(6,182,212,0.16)',  border: 'rgba(6,182,212,0.26)' },
-  ];
-
-  const divisionLogo = currentDivisionName ? divisionLogoSrc(currentDivisionName) : '/ppc-logo.png';
-
-  const balls = [
-    { size: 56, top: '4%',  left: '-2%',   rotate: 12,  opacity: 0.50 },
-    { size: 32, top: '28%', left: '0.5%',  rotate: -20, opacity: 0.80 },
-    { size: 48, top: '70%', left: '-1.5%', rotate: 38,  opacity: 0.60 },
-    { size: 36, top: '90%', left: '1%',    rotate: -8,  opacity: 0.90 },
-    { size: 42, top: '60%', left: '93%',   rotate: 25,  opacity: 0.50 },
-    { size: 30, top: '80%', left: '96%',   rotate: -30, opacity: 0.25 },
-    { size: 50, top: '92%', left: '88%',   rotate: 48,  opacity: 0.60 },
-  ];
-
-  const AVATAR = 180;
-
-  return (
-    <div
-      className="relative overflow-hidden rounded-[24px]"
-      style={{
-        background: 'linear-gradient(145deg, #21425d 0%, #28516d 35%, #2d6267 68%, #356a58 100%)',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.30)',
-      }}
-    >
-      <div
-        className="absolute inset-x-0 top-0 h-[3px] z-10"
-        style={{ background: 'linear-gradient(90deg,#34d399,#10b981,#6ee7b7,#fbbf24)' }}
-      />
-
-      {balls.map((b, i) => (
-        <div
-          key={i}
-          className="pointer-events-none absolute select-none"
-          style={{
-            top: b.top,
-            left: b.left,
-            opacity: b.opacity,
-            transform: `rotate(${b.rotate}deg)`,
-            zIndex: 0,
-            filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.18))',
-          }}
-        >
-          <svg width={b.size} height={b.size} viewBox="0 0 60 60" fill="none">
-            <circle cx="30" cy="30" r="28" fill="#c8e830" stroke="#9bb820" strokeWidth="2"/>
-            <path d="M10 22 Q30 14 50 22" stroke="white" strokeWidth="2.8" fill="none" strokeLinecap="round" opacity="0.6"/>
-            <path d="M10 38 Q30 46 50 38" stroke="white" strokeWidth="2.8" fill="none" strokeLinecap="round" opacity="0.6"/>
-          </svg>
-        </div>
-      ))}
-
-      {hasAvatar && (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
-          <img
-            src={avatarUrl}
-            alt=""
-            style={{
-              position: 'absolute',
-              right: 0,
-              top: 0,
-              height: '100%',
-              width: '45%',
-              objectFit: 'cover',
-              objectPosition: 'center top',
-              opacity: 0.40,
-              maskImage:
-                'linear-gradient(to left, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.52) 42%, transparent 100%)',
-              WebkitMaskImage:
-                'linear-gradient(to left, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.52) 42%, transparent 100%)',
-            }}
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                'linear-gradient(to right, rgba(23,50,74,0.60) 0%, rgba(23,50,74,0.40) 24%, rgba(23,50,74,0.20) 48%, rgba(23,50,74,0.10) 70%, rgba(23,50,74,0.02) 100%)',
-            }}
-          />
-        </div>
-      )}
-
-      <div className="relative z-10 p-5 sm:p-6">
-        <div className="psc-header mb-4 flex items-start justify-between gap-4">
-          <div
-            className="psc-name-block"
-            style={{
-              maxWidth: '52%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-            }}
-          >
-            <h2
-              className="text-white uppercase text-center"
-              style={{
-                fontFamily: "'Bebas Neue', 'Arial Black', Impact, sans-serif",
-                fontSize: 'clamp(2.45rem, 6vw, 4.35rem)',
-                fontWeight: 400,
-                letterSpacing: '0.05em',
-                lineHeight: 0.9,
-                margin: 0,
-                textShadow: '0 3px 14px rgba(0,0,0,0.65)',
-              }}
-            >
-              {uiName(player.name)}
-            </h2>
-
-            {playerCard.nickname && (
-              <p
-                style={{
-                  fontFamily: "'Great Vibes', 'Cormorant Garamond', 'Playfair Display', Georgia, serif",
-                  fontSize: 'clamp(1.7rem, 3.6vw, 2.45rem)',
-                  fontStyle: 'normal',
-                  fontWeight: 400,
-                  color: '#d8fff1',
-                  letterSpacing: '0.01em',
-                  lineHeight: 0.95,
-                  marginTop: '0.1rem',
-                  marginBottom: 0,
-                  textAlign: 'center',
-                  textShadow: '0 2px 10px rgba(0,0,0,0.28)',
-                }}
-              >
-                &ldquo;{playerCard.nickname}&rdquo;
-              </p>
-            )}
-          </div>
-
-          <div className="psc-division-mark flex shrink-0 flex-col items-center gap-1">
-
-              <img
-                src={divisionLogo}
-                alt={`División ${currentDivisionName || 'PPC'}`}
-                style={{ width: 62, height: 62, objectFit: 'contain' }}
-              />
-
-            <span
-              style={{
-                fontSize: '0.58rem',
-                fontWeight: 700,
-                letterSpacing: '0.13em',
-                textTransform: 'uppercase',
-                color: 'rgba(255,255,255,0.68)',
-                textAlign: 'center',
-              }}
-            >
-              División {currentDivisionName || '—'}
-            </span>
-          </div>
-        </div>
-
-        <div
-          className="psc-profile-shell mb-3 rounded-xl p-3"
-          style={{
-            width: '64%',
-            background: 'linear-gradient(90deg, rgba(15,35,52,0.12) 0%, rgba(15,35,52,0.06) 58%, rgba(15,35,52,0.00) 100%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            backdropFilter: 'blur(3px)',
-          }}
-        >
-          <div className="mb-3 flex items-center gap-2">
-            <span style={{ fontSize: '1.3rem' }}>🎾</span>
-            <span
-              className="font-bold uppercase text-white"
-              style={{ fontSize: '0.85rem', letterSpacing: '0.20em' }}
-            >
-              Perfil Tenístico
-            </span>
-            <div
-              className="ml-2 h-px flex-1 rounded-full"
-              style={{ background: 'linear-gradient(90deg,rgba(52,211,153,0.65),transparent)' }}
-            />
-          </div>
-
-          <div className="psc-profile-body flex gap-4 items-center">
-            <div
-              className="psc-avatar-wrap shrink-0"
-              style={{
-                width: 'min(180px, 52vw)',
-                height: 'min(180px, 52vw)',
-              }}
-            >
-              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: '50%',
-                    background: 'rgba(52,211,153,0.24)',
-                    filter: 'blur(14px)',
-                  }}
-                />
-                <div
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: '50%',
-                    overflow: 'hidden',
-                    border: '3px solid rgba(110,231,183,0.62)',
-                    boxShadow: '0 8px 28px rgba(0,0,0,0.55)',
-                  }}
-                >
-                  {hasAvatar ? (
-                    <img
-                      src={avatarUrl}
-                      alt={player.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '100%',
-                        height: '100%',
-                        background: 'rgba(255,255,255,0.07)',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: '0.58rem',
-                          color: 'rgba(255,255,255,0.50)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.10em'
-                        }}
-                      >
-                        Sin foto
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="psc-profile-grid grid gap-2"
-              style={{
-                width: 'min(430px, 100%)',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gridAutoRows: '1fr',
-              }}
-            >
-              {profileItems.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-                  style={{
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.10)',
-                  }}
-                >
-                  <span style={{ fontSize: '1.55rem', lineHeight: 1, flexShrink: 0 }}>
-                    {item.icon}
-                  </span>
-
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span
-                      className="psc-item-label"
-                      style={{
-                        fontSize: '0.60rem',
-                        fontWeight: 700,
-                        letterSpacing: '0.10em',
-                        textTransform: 'uppercase',
-                        color: 'rgba(220,255,245,0.78)',
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {item.label}
-                    </span>
-                    <span
-                      className="psc-item-value"
-                      style={{
-                        fontSize: '0.86rem',
-                        fontWeight: 600,
-                        lineHeight: 1.25,
-                        color: item.label === 'Resultado' ? '#fcd34d' : '#ffffff',
-                        wordBreak: 'break-word',
-                        overflowWrap: 'anywhere',
-                      }}
-                    >
-                      {item.value}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div
-          className="rounded-xl p-3"
-          style={{
-            background: 'rgba(0,0,0,0.16)',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}
-        >
-          <div className="mb-3 flex items-center gap-2">
-            <span style={{ fontSize: '1.3rem' }}>😎</span>
-            <span
-              className="font-bold uppercase text-white"
-              style={{ fontSize: '0.88rem', letterSpacing: '0.20em' }}
-            >
-              Conoce al Jugador
-            </span>
-            <div
-              className="ml-2 h-px flex-1 rounded-full"
-              style={{ background: 'linear-gradient(90deg,rgba(251,191,36,0.65),transparent)' }}
-            />
-          </div>
-
-          <div
-            className="psc-about-grid grid gap-2"
-            style={{ gridTemplateColumns: 'repeat(3,1fr)', gridAutoRows: '1fr' }}
-          >
-            {aboutItems.map((item) => (
-              <div
-                key={item.label}
-                className="flex items-center gap-2.5 rounded-xl px-2.5 py-2"
-                style={{ background: item.bg, border: `1px solid ${item.border}` }}
-              >
-                <span style={{ fontSize: '1.6rem', lineHeight: 1, flexShrink: 0 }}>
-                  {item.icon}
-                </span>
-
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span
-                    className="psc-item-label"
-                    style={{
-                      fontSize: '0.54rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.09em',
-                      textTransform: 'uppercase',
-                      color: 'rgba(255,255,255,0.50)',
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                  <span
-                    className="psc-item-value"
-                    style={{
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      lineHeight: 1.25,
-                      color: '#ffffff',
-                      wordBreak: 'break-word',
-                      overflowWrap: 'anywhere',
-                    }}
-                  >
-                    {item.value}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {!hasAvatar && (
-          <div
-            className="absolute right-4 top-4 z-20 rounded-full px-3 py-1"
-            style={{
-              border: '1px solid rgba(251,191,36,0.40)',
-              background: 'rgba(251,191,36,0.14)',
-              fontSize: '0.58rem',
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'rgba(253,230,138,0.90)',
-            }}
-          >
-            Foto pendiente
-          </div>
-        )}
-      </div>
-
-      <style>{`
-        @media (max-width: 900px) {
-          .psc-profile-shell {
-            width: 100% !important;
-          }
-
-          .psc-profile-grid {
-            width: 100% !important;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .psc-header {
-            align-items: flex-start !important;
-            gap: 12px !important;
-          }
-
-          .psc-name-block {
-            max-width: 68% !important;
-            align-items: flex-start !important;
-          }
-
-          .psc-name-block h2 {
-            font-size: clamp(2rem, 9vw, 3rem) !important;
-            text-align: left !important;
-            line-height: 0.92 !important;
-          }
-
-          .psc-name-block p {
-            font-size: clamp(1.35rem, 6vw, 2rem) !important;
-            text-align: left !important;
-            line-height: 0.95 !important;
-            margin-top: 0.05rem !important;
-          }
-
-          .psc-division-mark img {
-            width: 52px !important;
-            height: 52px !important;
-          }
-
-          .psc-division-mark span {
-            font-size: 0.50rem !important;
-            letter-spacing: 0.10em !important;
-          }
-
-          .psc-profile-shell {
-            width: 100% !important;
-            padding: 0.9rem !important;
-          }
-
-          .psc-profile-body {
-            flex-direction: column !important;
-            align-items: center !important;
-            gap: 14px !important;
-          }
-
-          .psc-avatar-wrap {
-            align-self: center !important;
-          }
-
-          .psc-profile-grid {
-            width: 100% !important;
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-          }
-
-          .psc-about-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-          }
-        }
-
-        @media (max-width: 560px) {
-          .psc-profile-grid > div .psc-item-value,
-          .psc-about-grid > div .psc-item-value {
-            font-size: 0.8rem !important;
-            line-height: 1.12 !important;
-          }
-
-          .psc-profile-grid > div .psc-item-label,
-          .psc-about-grid > div .psc-item-label {
-            font-size: 0.38rem !important;
-            letter-spacing: 0.045em !important;
-            line-height: 1.02 !important;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .psc-header {
-            gap: 10px !important;
-          }
-
-          .psc-name-block {
-            max-width: 66% !important;
-          }
-
-          .psc-name-block h2 {
-            font-size: clamp(1.8rem, 8.2vw, 2.7rem) !important;
-            letter-spacing: 0.03em !important;
-          }
-
-          .psc-name-block p {
-            font-size: clamp(1.25rem, 5.8vw, 1.8rem) !important;
-          }
-
-          .psc-profile-shell {
-            padding: 0.8rem !important;
-          }
-
-          .psc-profile-grid {
-            gap: 0.7rem !important;
-          }
-
-          .psc-profile-grid > div {
-            padding: 0.85rem 0.8rem !important;
-            min-height: 84px !important;
-            align-items: center !important;
-          }
-
-          .psc-profile-grid > div span:first-child {
-            font-size: 1.3rem !important;
-          }
-
-          .psc-profile-grid > div > div {
-            gap: 0.1rem !important;
-          }
-
-          .psc-about-grid {
-            gap: 0.7rem !important;
-          }
-
-          .psc-about-grid > div {
-            padding: 0.95rem 0.9rem !important;
-            min-height: 104px !important;
-            align-items: center !important;
-          }
-
-          .psc-about-grid > div span:first-child {
-            font-size: 1.3rem !important;
-          }
-
-          .psc-about-grid > div > div {
-            gap: 0.12rem !important;
-          }
-
-          .psc-profile-grid > div .psc-item-label,
-          .psc-about-grid > div .psc-item-label {
-            font-size: 0.36rem !important;
-            letter-spacing: 0.03em !important;
-            line-height: 1.00 !important;
-          }
-          .psc-profile-grid > div .psc-item-value,
-          .psc-about-grid > div .psc-item-value {
-            font-size: 1.20rem !important;
-            line-height: 1.10 !important;
-          }
-        }
-
-        @media (max-width: 460px) {
-          .psc-profile-grid {
-            grid-template-columns: 1fr !important;
-          }
-
-          .psc-about-grid {
-            grid-template-columns: 1fr !important;
-          }
-
-          .psc-name-block {
-            max-width: 64% !important;
-          }
-
-          .psc-division-mark img {
-            width: 46px !important;
-            height: 46px !important;
-          }
-        }
-      `}</style>
-    </div>
-  );
-}
 
 // ---- NOMBRES: visual solo ----
 const toTitleCase = (str: string) => {
@@ -1259,18 +644,6 @@ const toTitleCase = (str: string) => {
 
 const uiName = (raw?: string | null) => toTitleCase((raw ?? '').trim());
 
-function divisionLogoSrc(name: string) {
-  const map: Record<string, string> = {
-    'Bronce': '/ppc-bronce.png',
-    'Oro': '/ppc-oro.png',
-    'Plata': '/ppc-plata.png',
-    'Cobre': '/ppc-cobre.png',
-    'Hierro': '/ppc-hierro.png',
-    'Diamante': '/ppc-diamante.png',
-    'Élite': '/ppc-elite.png',
-  };
-  return map[name] || '/ppc-logo.png';
-}
 
 function getNextMatchPosition(round: string | null | undefined, pos: number | null | undefined) {
   if (!round || !pos) return null;
@@ -4302,6 +3675,19 @@ const App = () => {
     if (name.includes('Calibración')) return '🔥';
 
     return map[name] || '🏆';
+  }
+
+  function divisionLogoSrc(name: string) {
+    const map: Record<string, string> = {
+      'Bronce': '/ppc-bronce.png',
+      'Oro': '/ppc-oro.png',
+      'Plata': '/ppc-plata.png',
+      'Cobre': '/ppc-cobre.png',
+      'Hierro': '/ppc-hierro.png',
+      'Diamante': '/ppc-diamante.png',
+      'Élite': '/ppc-elite.png',
+    };
+    return map[name] || '/ppc-logo.png';
   }
 
   function tournamentLogoSrc(name: string) {
@@ -8506,24 +7892,10 @@ const App = () => {
     if (selectedPlayer) {
       const player = players.find(p => p.id === selectedPlayer.id);
       const selectedPlayerCard = playerCards.find((pc: PlayerCard) => pc.profile_id === selectedPlayer.id) || null;
-      const playerCardView: Partial<PlayerCard> = editingPlayerCard
-        ? playerCardForm
-        : (selectedPlayerCard ?? {});
+      const playerCardView: Partial<PlayerCard> = selectedPlayerCard ?? {};
       const canEditPlayerCard =
         currentUser?.id === selectedPlayer.id ||
         currentUser?.role === 'admin';
-
-      const selectedPlayerAvatar = avatarSrc(selectedPlayer);
-      const selectedPlayerHasAvatar = hasExplicitAvatar(selectedPlayer);
-      const currentDivisionName = selectedDivision?.name || '—';
-
-      const firstLeagueEntry = getFirstLeagueEntryForPlayer(
-        selectedPlayer.id,
-        registrations,
-        tournaments
-      );
-
-      const firstLeagueTournamentName = firstLeagueEntry?.tournament.name || '—';
 
       const lastLeagueEntry = getLastLeagueEntryForPlayer(
         selectedPlayer.id,
@@ -8658,58 +8030,10 @@ const App = () => {
           </header>
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="mb-8">
-              <div className="overflow-x-auto">
-                <div className="inline-flex min-w-full sm:min-w-0 items-center gap-2 rounded-[22px] border border-emerald-100 bg-white/90 p-2 shadow-[0_10px_30px_rgba(16,24,40,0.08)] backdrop-blur">
-                  <button
-                    onClick={() => {
-                      setPlayerProfileTab('overview');
-                      setEditingPlayerCard(false);
-                      setPlayerCardSaveMessage('');
-                    }}
-                    className={`flex-1 whitespace-nowrap rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                      playerProfileTab === 'overview'
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Overview
-                  </button>
-
-                  <button
-                    onClick={() => setPlayerProfileTab('ficha')}
-                    className={`flex-1 whitespace-nowrap rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                      playerProfileTab === 'ficha'
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Ficha Personal
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setPlayerProfileTab('stats');
-                      setEditingPlayerCard(false);
-                      setPlayerCardSaveMessage('');
-                    }}
-                    className={`flex-1 whitespace-nowrap rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                      playerProfileTab === 'stats'
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Stats
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className={`grid grid-cols-1 gap-8 ${playerProfileTab === 'ficha' ? 'lg:grid-cols-1' : 'lg:grid-cols-3'}`}>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               
               {/* Player Profile */}
-              {playerProfileTab !== 'ficha' && (
-                <div className="lg:col-span-1">
+              <div className="lg:col-span-1">
                 <div className="bg-white rounded-xl shadow-lg p-6">
                   <div className="text-center mb-6">
                     <div className="w-32 h-32 mx-auto rounded-full overflow-hidden border-4 border-green-100">
@@ -8821,10 +8145,46 @@ const App = () => {
                   </div>
                 </div>
               </div>
-              )}
 
               {/* Player Content */}
-              <div className={playerProfileTab === 'ficha' ? 'lg:col-span-1' : 'lg:col-span-2'}>
+              <div className="lg:col-span-2">
+                <div className="bg-white rounded-xl shadow-lg p-2 mb-8">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setPlayerProfileTab('overview')}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        playerProfileTab === 'overview'
+                          ? 'bg-green-600 text-white shadow'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Overview
+                    </button>
+
+                    <button
+                      onClick={() => setPlayerProfileTab('ficha')}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        playerProfileTab === 'ficha'
+                          ? 'bg-green-600 text-white shadow'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Ficha Personal
+                    </button>
+
+                    <button
+                      onClick={() => setPlayerProfileTab('stats')}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        playerProfileTab === 'stats'
+                          ? 'bg-green-600 text-white shadow'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Stats
+                    </button>
+
+                  </div>
+                </div>
 
                 {playerProfileTab === 'overview' && (
                   <>
@@ -9255,83 +8615,64 @@ const App = () => {
                 )}
 
                 {playerProfileTab === 'ficha' && (
-                  <div className="space-y-8 mb-8">
-                    <div className="rounded-[28px] border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-teal-50/50 p-4 sm:p-6 shadow-[0_16px_50px_rgba(15,23,42,0.06)]">
-                      <div className="space-y-4">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4">
-                          <div className="px-1">
-                            <h2 className="text-2xl font-bold text-slate-900">Ficha Personal</h2>
-                            <p className="text-sm text-slate-500 mt-1">
-                              Perfil visual del jugador dentro de PPC
-                            </p>
-                          </div>
-
-                          {canEditPlayerCard && !editingPlayerCard && (
-                            <button
-                              onClick={() => {
-                                setPlayerCardForm(
-                                  selectedPlayerCard || {
-                                    profile_id: selectedPlayer.id,
-                                    nickname: '',
-                                    age: null,
-                                    weight_kg: null,
-                                    height_cm: null,
-                                    nationality: '',
-                                    birth_place: '',
-                                    dominant_hand: '',
-                                    backhand_style: '',
-                                    ppc_objective: '',
-                                    favourite_shot: '',
-                                    favourite_surface: '',
-                                    favourite_player: '',
-                                    racket_brand: '',
-                                    racket_model: '',
-                                    tennis_start_year: null,
-                                  }
-                                );
-                                setPlayerCardSaveMessage('');
-                                setEditingPlayerCard(true);
-                              }}
-                              className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3 text-sm font-semibold text-white shadow hover:opacity-95 transition"
-                            >
-                              {selectedPlayerCard ? 'Editar ficha' : 'Crear ficha'}
-                            </button>
-                          )}
-                        </div>
-
-                        {playerCardSaveMessage && (
-                          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                            {playerCardSaveMessage}
-                          </div>
-                        )}
-
-                        <PlayerShowcaseCard
-                          player={selectedPlayer}
-                          avatarUrl={selectedPlayerAvatar}
-                          hasAvatar={selectedPlayerHasAvatar}
-                          playerCard={playerCardView}
-                          firstLeagueTournamentName={firstLeagueTournamentName}
-                          lastLeagueResult={lastLeagueResult}
-                          currentDivisionName={currentDivisionName}
-                        />
+                  <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-800">Ficha Personal</h2>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Información personal y estilo de juego del jugador
+                        </p>
                       </div>
+
+                      {canEditPlayerCard && !editingPlayerCard && (
+                        <button
+                          onClick={() => {
+                            setPlayerCardForm(
+                              selectedPlayerCard || {
+                                profile_id: selectedPlayer.id,
+                                nickname: '',
+                                age: null,
+                                weight_kg: null,
+                                height_cm: null,
+                                nationality: '',
+                                birth_place: '',
+                                dominant_hand: '',
+                                backhand_style: '',
+                                ppc_objective: '',
+                                favourite_shot: '',
+                                favourite_surface: '',
+                                favourite_player: '',
+                                racket_brand: '',
+                                racket_model: '',
+                                tennis_start_year: null,
+                              }
+                            );
+                            setPlayerCardSaveMessage('');
+                            setEditingPlayerCard(true);
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                        >
+                          {selectedPlayerCard ? 'Editar' : 'Crear ficha'}
+                        </button>
+                      )}
                     </div>
 
-                    {canEditPlayerCard && editingPlayerCard && (
-                      <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_16px_45px_rgba(15,23,42,0.06)]">
-                        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                          <div>
-                            <h3 className="text-xl font-bold text-slate-900">Editar ficha</h3>
-                            <p className="text-sm text-slate-500">
-                              Estos datos solo se muestran en modo edición para el jugador o admin.
-                            </p>
-                          </div>
-                        </div>
+                    {playerCardSaveMessage && (
+                      <div className="mb-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                        {playerCardSaveMessage}
+                      </div>
+                    )}
 
-                        <div className="space-y-8">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Nickname</div>
+                    {!selectedPlayerCard && !editingPlayerCard ? (
+                      <div className="text-center py-10 text-gray-500">
+                        Este jugador aún no tiene ficha personal cargada.
+                      </div>
+                    ) : (
+                      <div className="space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Nickname</div>
+                            {editingPlayerCard ? (
                               <input
                                 type="text"
                                 value={playerCardForm.nickname || ''}
@@ -9340,13 +8681,38 @@ const App = () => {
                                 }
                                 className="w-full border rounded-lg px-3 py-2"
                               />
-                            </div>
+                            ) : (
+                              <div className="text-gray-900 font-medium">
+                                {playerCardView.nickname || '—'}
+                              </div>
+                            )}
+                          </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Edad</div>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Nacionalidad</div>
+                            {editingPlayerCard ? (
+                              <input
+                                type="text"
+                                value={playerCardForm.nationality || ''}
+                                onChange={(e) =>
+                                  setPlayerCardForm({ ...playerCardForm, nationality: e.target.value })
+                                }
+                                className="w-full border rounded-lg px-3 py-2"
+                              />
+                            ) : (
+                              <div className="text-gray-900 font-medium">
+                                {capitaliseFirst(playerCardView.nationality)}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Edad</div>
+                            {editingPlayerCard ? (
                               <input
                                 type="number"
-                                min="0"
+                                min="5"
+                                max="100"
                                 value={playerCardForm.age ?? ''}
                                 onChange={(e) =>
                                   setPlayerCardForm({
@@ -9356,13 +8722,35 @@ const App = () => {
                                 }
                                 className="w-full border rounded-lg px-3 py-2"
                               />
-                            </div>
+                            ) : (
+                              <div className="text-gray-900 font-medium">{playerCardView.age ?? '—'}</div>
+                            )}
+                          </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Peso (kg)</div>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Lugar de nacimiento</div>
+                            {editingPlayerCard ? (
+                              <input
+                                type="text"
+                                value={playerCardForm.birth_place || ''}
+                                onChange={(e) =>
+                                  setPlayerCardForm({ ...playerCardForm, birth_place: e.target.value })
+                                }
+                                className="w-full border rounded-lg px-3 py-2"
+                              />
+                            ) : (
+                              <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.birth_place)}</div>
+                            )}
+                          </div>
+
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Peso</div>
+                            {editingPlayerCard ? (
                               <input
                                 type="number"
-                                min="0"
+                                min="20"
+                                max="250"
+                                step="0.1"
                                 value={playerCardForm.weight_kg ?? ''}
                                 onChange={(e) =>
                                   setPlayerCardForm({
@@ -9372,13 +8760,21 @@ const App = () => {
                                 }
                                 className="w-full border rounded-lg px-3 py-2"
                               />
-                            </div>
+                            ) : (
+                              <div className="text-gray-900 font-medium">
+                                {playerCardView.weight_kg != null ? `${playerCardView.weight_kg} kg` : '—'}
+                              </div>
+                            )}
+                          </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Altura (cm)</div>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Altura</div>
+                            {editingPlayerCard ? (
                               <input
                                 type="number"
-                                min="0"
+                                min="80"
+                                max="250"
+                                step="0.1"
                                 value={playerCardForm.height_cm ?? ''}
                                 onChange={(e) =>
                                   setPlayerCardForm({
@@ -9388,74 +8784,65 @@ const App = () => {
                                 }
                                 className="w-full border rounded-lg px-3 py-2"
                               />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Nacionalidad</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.nationality || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, nationality: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Lugar de nacimiento</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.birth_place || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, birth_place: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
+                            ) : (
+                              <div className="text-gray-900 font-medium">
+                                {playerCardView.height_cm != null ? `${playerCardView.height_cm} cm` : '—'}
+                              </div>
+                            )}
                           </div>
+                        </div>
 
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-800 mb-3">Perfil tenístico</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="bg-blue-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-blue-700 mb-1">Mano dominante</div>
-                                <input
-                                  type="text"
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 mb-3">Juego</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Mano dominante</div>
+                              {editingPlayerCard ? (
+                                <select
                                   value={playerCardForm.dominant_hand || ''}
                                   onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, dominant_hand: e.target.value })
+                                    setPlayerCardForm({
+                                      ...playerCardForm,
+                                      dominant_hand: e.target.value || null,
+                                    })
                                   }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              </div>
+                                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                                >
+                                  <option value="">Seleccionar</option>
+                                  <option value="Diestro">Diestro</option>
+                                  <option value="Zurdo">Zurdo</option>
+                                </select>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{playerCardView.dominant_hand || '—'}</div>
+                              )}
+                            </div>
 
-                              <div className="bg-blue-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-blue-700 mb-1">Revés</div>
-                                <input
-                                  type="text"
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Revés</div>
+                              {editingPlayerCard ? (
+                                <select
                                   value={playerCardForm.backhand_style || ''}
                                   onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, backhand_style: e.target.value })
+                                    setPlayerCardForm({
+                                      ...playerCardForm,
+                                      backhand_style: e.target.value || null,
+                                    })
                                   }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              </div>
+                                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                                >
+                                  <option value="">Seleccionar</option>
+                                  <option value="Una mano">Una mano</option>
+                                  <option value="Dos manos">Dos manos</option>
+                                  <option value="Otro">Otro</option>
+                                </select>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{playerCardView.backhand_style || '—'}</div>
+                              )}
+                            </div>
 
-                              <div className="bg-green-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Superficie favorita</div>
-                                <input
-                                  type="text"
-                                  value={playerCardForm.favourite_surface || ''}
-                                  onChange={(e) =>
-                                    setPlayerCardForm({ ...playerCardForm, favourite_surface: e.target.value })
-                                  }
-                                  className="w-full border rounded-lg px-3 py-2"
-                                />
-                              </div>
-
-                              <div className="bg-green-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Arma secreta</div>
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Tiro favorito</div>
+                              {editingPlayerCard ? (
                                 <input
                                   type="text"
                                   value={playerCardForm.favourite_shot || ''}
@@ -9464,10 +8851,34 @@ const App = () => {
                                   }
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
-                              </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium">
+                                  {capitaliseFirst(playerCardView.favourite_shot)}
+                                </div>
+                              )}
+                            </div>
 
-                              <div className="bg-green-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Ídolo</div>
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Superficie favorita</div>
+                                {editingPlayerCard ? (
+                                  <input
+                                    type="text"
+                                    value={playerCardForm.favourite_surface || ''}
+                                    onChange={(e) =>
+                                      setPlayerCardForm({ ...playerCardForm, favourite_surface: e.target.value })
+                                    }
+                                    className="w-full border rounded-lg px-3 py-2"
+                                  />
+                                ) : (
+                                  <div className="text-gray-900 font-medium">
+                                    {capitaliseFirst(playerCardView.favourite_surface)}
+                                  </div>
+                                )}
+                            </div>
+
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Jugador favorito</div>
+                              {editingPlayerCard ? (
                                 <input
                                   type="text"
                                   value={playerCardForm.favourite_player || ''}
@@ -9476,10 +8887,14 @@ const App = () => {
                                   }
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
-                              </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.favourite_player)}</div>
+                              )}
+                            </div>
 
-                              <div className="bg-green-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Año inicio tenis</div>
+                            <div className="bg-green-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Año inicio tenis</div>
+                              {editingPlayerCard ? (
                                 <input
                                   type="number"
                                   min="1900"
@@ -9493,15 +8908,19 @@ const App = () => {
                                   }
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
-                              </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{playerCardView.tennis_start_year ?? '—'}</div>
+                              )}
                             </div>
                           </div>
+                        </div>
 
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-800 mb-3">Raqueta y objetivo</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="bg-yellow-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Marca de raqueta</div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 mb-3">Raqueta y objetivo</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-yellow-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Marca de raqueta</div>
+                              {editingPlayerCard ? (
                                 <input
                                   type="text"
                                   value={playerCardForm.racket_brand || ''}
@@ -9510,10 +8929,14 @@ const App = () => {
                                   }
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
-                              </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.racket_brand)}</div>
+                              )}
+                            </div>
 
-                              <div className="bg-yellow-50 rounded-xl p-4">
-                                <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Modelo de raqueta</div>
+                            <div className="bg-yellow-50 rounded-xl p-4">
+                              <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Modelo de raqueta</div>
+                              {editingPlayerCard ? (
                                 <input
                                   type="text"
                                   value={playerCardForm.racket_model || ''}
@@ -9522,10 +8945,14 @@ const App = () => {
                                   }
                                   className="w-full border rounded-lg px-3 py-2"
                                 />
-                              </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{capitaliseFirst(playerCardView.racket_model)}</div>
+                              )}
+                            </div>
 
-                              <div className="bg-yellow-50 rounded-xl p-4 md:col-span-2">
-                                <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Objetivo PPC</div>
+                            <div className="bg-yellow-50 rounded-xl p-4 md:col-span-2">
+                              <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Objetivo PPC</div>
+                              {editingPlayerCard ? (
                                 <textarea
                                   value={playerCardForm.ppc_objective || ''}
                                   onChange={(e) =>
@@ -9534,18 +8961,24 @@ const App = () => {
                                   rows={4}
                                   className="w-full border rounded-lg px-3 py-2 resize-y"
                                 />
-                              </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium whitespace-pre-wrap">
+                                  {playerCardView.ppc_objective || '—'}
+                                </div>
+                              )}
                             </div>
                           </div>
+                        </div>
 
-                          <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                        {editingPlayerCard && (
+                          <div className="flex gap-3 mt-6">
                             <button
                               onClick={() => {
                                 setEditingPlayerCard(false);
                                 setPlayerCardForm({});
                                 setPlayerCardSaveMessage('');
                               }}
-                              className="rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
+                              className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
                             >
                               Cancelar
                             </button>
@@ -9592,12 +9025,12 @@ const App = () => {
                                   setSavingPlayerCard(false);
                                 }
                               }}
-                              className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3 font-semibold text-white shadow hover:opacity-95"
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                             >
-                              {savingPlayerCard ? 'Guardando...' : 'Guardar cambios'}
+                              {savingPlayerCard ? 'Guardando...' : 'Guardar'}
                             </button>
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
