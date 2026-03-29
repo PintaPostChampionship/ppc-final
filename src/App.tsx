@@ -3240,6 +3240,9 @@ const App = () => {
 
   useEffect(() => {
     setPlayerProfileTab('overview');
+    setEditingPlayerCard(false);
+    setPlayerCardSaveMessage('');
+    window.scrollTo({ top: 0, behavior: 'smooth' }); //cambiar a window.scrollTo(0, 0); para quitar animación
   }, [selectedPlayer?.id]);
 
   useEffect(() => {
@@ -4140,6 +4143,41 @@ const App = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const goToMyPlayerProfile = () => {
+    if (!currentUser) return;
+
+    const latestTournament = getLatestTournamentForUser(currentUser.id);
+    if (!latestTournament) {
+      alert('No tournaments found for this player yet.');
+      return;
+    }
+
+    const reg = registrations.find(
+      r =>
+        r.profile_id === currentUser.id &&
+        r.tournament_id === latestTournament.id
+    );
+
+    if (!reg) {
+      alert('No division found for this player yet.');
+      return;
+    }
+
+    const division = divisions.find(d => d.id === reg.division_id);
+    if (!division) {
+      alert('Division not found.');
+      return;
+    }
+
+    setSelectedTournament(latestTournament);
+    setSelectedDivision(division);
+    setSelectedPlayer(currentUser);
+    setPlayerProfileTab('overview');
+    setEditingPlayerCard(false);
+    setPlayerCardSaveMessage('');
+    window.scrollTo(0, 0);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -6280,7 +6318,11 @@ const App = () => {
                       
               {currentUser && (
                 <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
-                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
                     <p className="truncate font-semibold text-gray-800">
                       {uiName(currentUser.name)}
                     </p>
@@ -6291,17 +6333,23 @@ const App = () => {
                         .filter(Boolean)
                         .join(', ') || 'No tournaments'}
                     </p>
-                  </div>
+                  </button>
 
                   <div className="flex flex-shrink-0 items-center gap-2">
-                    <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = '/default-avatar.png';
-                      }}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                    />
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                      aria-label="Ir a mi perfil de jugador"
+                      title="Ir a mi perfil de jugador"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
 
                     <button
                       onClick={openEditProfile}
@@ -6746,7 +6794,11 @@ const App = () => {
               </div>
               {currentUser && (
                 <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
-                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
                       {(() => {
@@ -6754,15 +6806,23 @@ const App = () => {
                         return t ? t.name : 'No tournaments';
                       })()}
                     </p>
-                  </div>
+                  </button>
 
                   <div className="flex flex-shrink-0 items-center gap-2">
-                    <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                    />
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                      aria-label="Ir a mi perfil de jugador"
+                      title="Ir a mi perfil de jugador"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
 
                     <button
                       onClick={openEditProfile}
@@ -7418,7 +7478,11 @@ const App = () => {
               
               {currentUser && (
                 <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
-                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
                       {(() => {
@@ -7426,15 +7490,23 @@ const App = () => {
                         return t ? t.name : 'No tournaments';
                       })()}
                     </p>
-                  </div>
+                  </button>
 
                   <div className="flex flex-shrink-0 items-center gap-2">
-                    <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                    />
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                      aria-label="Ir a mi perfil de jugador"
+                      title="Ir a mi perfil de jugador"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
 
                     <button
                       onClick={openEditProfile}
@@ -8612,20 +8684,32 @@ const App = () => {
 
                 {currentUser && (
                   <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
-                    <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    >
                       <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                       <p className="truncate text-sm text-gray-600">
                         Division: {selectedDivision.name}
                       </p>
-                    </div>
+                    </button>
 
                     <div className="flex flex-shrink-0 items-center gap-2">
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                      />
+                      <button
+                        type="button"
+                        onClick={goToMyPlayerProfile}
+                        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                        aria-label="Ir a mi perfil de jugador"
+                        title="Ir a mi perfil de jugador"
+                      >
+                        <img
+                          src={avatarSrc(currentUser)}
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                          alt="Profile"
+                          className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                        />
+                      </button>
                       <button
                         onClick={openEditProfile}
                         className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
@@ -9840,20 +9924,32 @@ const App = () => {
 
               {currentUser && (
                 <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
-                  <div className="min-w-0 max-w-[58vw] md:max-w-none text-right">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
                       Division: {selectedDivision.name}
                     </p>
-                  </div>
+                  </button>
 
                   <div className="flex flex-shrink-0 items-center gap-2">
-                    <img
-                      src={avatarSrc(currentUser)}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                      alt="Profile"
-                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200"
-                    />
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                      aria-label="Ir a mi perfil de jugador"
+                      title="Ir a mi perfil de jugador"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
                     <button
                       onClick={openEditProfile}
                       className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
