@@ -99,54 +99,6 @@ function capitaliseFirst(value?: string | null) {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-function getAgeFromBirthDate(birthDate?: string | null): number | null {
-  if (!birthDate) return null;
-
-  const dob = new Date(`${birthDate}T00:00:00`);
-  if (Number.isNaN(dob.getTime())) return null;
-
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-
-  const hasHadBirthdayThisYear =
-    today.getMonth() > dob.getMonth() ||
-    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
-
-  if (!hasHadBirthdayThisYear) age -= 1;
-
-  if (age < 0 || age > 120) return null;
-  return age;
-}
-
-function formatISOToDDMMYYYY(iso?: string | null): string {
-  if (!iso) return '';
-  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return '';
-  return `${m[3]}/${m[2]}/${m[1]}`;
-}
-
-function parseDDMMYYYYToISO(value: string): string | null {
-  const m = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-
-  const day = Number(m[1]);
-  const month = Number(m[2]);
-  const year = Number(m[3]);
-
-  if (year < 1900 || year > new Date().getFullYear()) return null;
-  if (month < 1 || month > 12) return null;
-
-  const date = new Date(year, month - 1, day);
-  const valid =
-    date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
-    date.getDate() === day;
-
-  if (!valid) return null;
-
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
 function getLeagueRegistrationsForPlayer(
   profileId: string,
   registrations: Registration[],
@@ -465,8 +417,7 @@ interface Profile {
 interface PlayerCard {
   profile_id: string;
   nickname?: string | null;
-  age?: number | null; // temporal (fallback)
-  birth_date?: string | null;
+  age?: number | null;
   weight_kg?: number | null;
   height_cm?: number | null;
   nationality?: string | null;
@@ -525,10 +476,6 @@ interface Division {
   tournament_id: string;
   name: string;
   color?: string;
-  direct_promotion_slots?: number;
-  promotion_playoff_slots?: number;
-  relegation_playoff_slots?: number;
-  direct_relegation_slots?: number;
 }
 
 interface Registration {
@@ -729,13 +676,8 @@ function PlayerShowcaseCard({
   const fullRacket = [playerCard.racket_brand, playerCard.racket_model]
     .filter(Boolean).join(' ').trim();
 
-  const computedAge =
-    getAgeFromBirthDate(playerCard.birth_date) ??
-    playerCard.age ??
-    null;
-
   const profileItems = [
-    { label: 'Edad', value: computedAge != null ? `${computedAge} años` : '—', icon: '📅' },
+    { label: 'Edad',         value: playerCard.age != null ? `${playerCard.age} años` : '—', icon: '📅' },
     { label: 'Nacionalidad', value: capitaliseFirst(playerCard.nationality),                  icon: '🌍' },
     { label: 'Inicio PPC',   value: firstLeagueTournamentName || '—',                         icon: '🏁' },
     { label: 'Resultado',    value: lastLeagueResult || '—',                                  icon: '🏆' },
@@ -1956,7 +1898,7 @@ const App = () => {
   const [hasCommitted, setHasCommitted] = useState(false);
   const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
   const [historicPlayers, setHistoricPlayers] = useState<HistoricPlayer[]>([]);
-  const [birthDateInput, setBirthDateInput] = useState('');
+
   const [newMatch, setNewMatch] = useState({ 
     player1: '', 
     player2: '', 
@@ -2310,96 +2252,6 @@ const App = () => {
     return abbreviations[location] || location;
   };
 
-  function getAvailabilityLabel(startTime?: string | null) {
-    const start = String(startTime || '').slice(0, 5);
-
-    if (start === '07:00') return 'Morning';
-    if (start === '12:00') return 'Afternoon';
-    if (start === '18:00') return 'Evening';
-
-    return null;
-  }
-
-  function getPlayerAvailabilityMap(slots: AvailabilitySlot[]) {
-    const map: Record<string, Record<string, string[]>> = {};
-
-    slots.forEach(slot => {
-      const day = days[slot.day_of_week];
-      const label = getAvailabilityLabel(slot.start_time);
-      if (!day || !label) return;
-
-      if (!map[slot.profile_id]) map[slot.profile_id] = {};
-      if (!map[slot.profile_id][day]) map[slot.profile_id][day] = [];
-      if (!map[slot.profile_id][day].includes(label)) {
-        map[slot.profile_id][day].push(label);
-      }
-    });
-
-    return map;
-  }
-
-  function divisionRank(name?: string | null) {
-    const n = (name || '').trim().toLowerCase();
-
-    if (n === 'oro') return 1;
-    if (n === 'plata') return 2;
-    if (n === 'bronce') return 3;
-    if (n === 'cobre') return 4;
-    if (n === 'hierro') return 5;
-    if (n === 'diamante') return 6;
-
-    return 99;
-  }
-
-  function getStandingZone(
-    position: number,
-    totalPlayers: number,
-    division?: Division | null
-  ): string {
-    if (!division) return '';
-
-    const directPromotion = division.direct_promotion_slots ?? 0;
-    const promotionPlayoff = division.promotion_playoff_slots ?? 0;
-    const relegationPlayoff = division.relegation_playoff_slots ?? 0;
-    const directRelegation = division.direct_relegation_slots ?? 0;
-
-    if (position <= directPromotion) {
-      return 'bg-emerald-100 border-l-4 border-emerald-500';
-    }
-
-    if (position <= directPromotion + promotionPlayoff) {
-      return 'bg-emerald-50 border-l-4 border-emerald-300';
-    }
-
-    const directRelegationStart = totalPlayers - directRelegation + 1;
-    const relegationPlayoffStart = totalPlayers - directRelegation - relegationPlayoff + 1;
-
-    if (
-      relegationPlayoff > 0 &&
-      position >= relegationPlayoffStart &&
-      position < directRelegationStart
-    ) {
-      return 'bg-rose-50 border-l-4 border-rose-300';
-    }
-
-    if (directRelegation > 0 && position >= directRelegationStart) {
-      return 'bg-rose-100 border-l-4 border-rose-500';
-    }
-
-    return '';
-  }
-
-  function hasDivisionZones(division?: Division | null): boolean {
-    if (!division) return false;
-
-    return (
-      (division.direct_promotion_slots ?? 0) > 0 ||
-      (division.promotion_playoff_slots ?? 0) > 0 ||
-      (division.relegation_playoff_slots ?? 0) > 0 ||
-      (division.direct_relegation_slots ?? 0) > 0
-    );
-  }
-
   // 1) Migrar cualquier dato viejo y precargar pending para esta pestaña
   useEffect(() => {
     migrateLocalToSession();
@@ -2451,23 +2303,9 @@ const App = () => {
 
   useEffect(() => {
     const map: Record<string, Division[]> = {};
-
     divisions.forEach(d => {
       (map[d.tournament_id] ||= []).push(d);
     });
-
-    Object.keys(map).forEach(tournamentId => {
-      map[tournamentId] = map[tournamentId]
-        .slice()
-        .sort((a, b) => {
-          const ra = divisionRank(a.name);
-          const rb = divisionRank(b.name);
-
-          if (ra !== rb) return ra - rb;
-          return (a.name || '').localeCompare((b.name || ''), 'es');
-        });
-    });
-
     setDivisionsByTournament(map);
   }, [divisions]);
 
@@ -2723,7 +2561,7 @@ const App = () => {
   function homeAwayBadge(match: Match, playerId: string) {
     const isHome = getMatchHomeId(match) === playerId;
     return {
-      text: isHome ? 'Local' : 'Visita',
+      text: isHome ? 'jugó de Local' : 'jugó de Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
     };
   }
@@ -2805,20 +2643,13 @@ const App = () => {
   function computeHomeForPair(divisionId: string, tournamentId: string, a: string, b: string) {
     function hash(s: string) {
       let h = 0;
-      for (let i = 0; i < s.length; i++) {
-        h = ((h << 5) - h) + s.charCodeAt(i);
-        h |= 0;
-      }
+      for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
       return Math.abs(h);
     }
-
-    if (!divisionId || !tournamentId || !a || !b) return a;
-
     const [x, y] = a < b ? [a, b] : [b, a];
-    const seed = `${tournamentId}|${divisionId}|${x}|${y}`;
-    const h = hash(seed);
-
-    return h % 2 === 0 ? x : y;
+    const h = hash(`${divisionId}|${tournamentId}|${x}|${y}`);
+    // si h es par, el "menor" es home; si es impar, el "mayor" es home (balancea 50/50)
+    return (h % 2 === 0) ? x : y;
   }
 
   async function fetchAllRows<T>(table: string, selectClause = '*', pageSize = 1000): Promise<T[]> {
@@ -2862,7 +2693,7 @@ const App = () => {
         supabase.from('historic_players').select('*'),
       ];
       if (userId) {
-        promises.push(supabase.from('availability').select('*'));
+        promises.push(supabase.from('availability').select('*').eq('profile_id', userId));
       }
 
       const responses = await Promise.all(promises);
@@ -3349,7 +3180,7 @@ const App = () => {
           supabase.from('v_standings').select('*'),
           (async () => ({ data: await fetchAllRows<MatchSet>('match_sets'), error: null }))(),
           supabase.from('historic_players').select('*'),
-          supabase.from('availability').select('*')
+          supabase.from('availability').select('*').eq('profile_id', userId)
         ]);
 
       // Handle errors
@@ -4059,7 +3890,7 @@ const App = () => {
 
     const { data: ds, error: dErr } = await supabase
       .from('divisions')
-      .select('*');
+      .select('id,tournament_id,name,color');
     if (dErr) throw dErr;
 
     setTournaments(ts || []);
@@ -4069,19 +3900,6 @@ const App = () => {
     (ds || []).forEach(d => {
       (map[d.tournament_id] ||= []).push(d);
     });
-
-    Object.keys(map).forEach(tournamentId => {
-      map[tournamentId] = map[tournamentId]
-        .slice()
-        .sort((a, b) => {
-          const ra = divisionRank(a.name);
-          const rb = divisionRank(b.name);
-
-          if (ra !== rb) return ra - rb;
-          return (a.name || '').localeCompare((b.name || ''), 'es');
-        });
-    });
-
     setDivisionsByTournament(map);
   }
 
@@ -6071,13 +5889,57 @@ const App = () => {
 
   if (editProfile) {
     return (
-      <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-8 overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
         <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-2xl font-semibold text-gray-800">Edit Profile</h2>
             <button onClick={() => setEditProfile(false)} className="text-gray-500 hover:text-gray-700" aria-label="Close">✕</button>
           </div>
           <form onSubmit={handleSaveProfile} className="space-y-6">
+            {/* Nombre */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+              <input
+                type="text"
+                value={editUser.name}
+                onChange={(e) => setEditUser(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                required
+              />
+              <label className="block text-sm font-medium text-gray-700 mt-4">Preferred name (nickname)</label>
+              <input
+                value={editUser.nickname}
+                onChange={e => setEditUser(v => ({ ...v, nickname: e.target.value }))}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
+                placeholder="Ej: Pato, Nico, Koke..."
+              />
+            </div>
+
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                value={editUser.email ?? ''}   // importante: fallback a ''
+                onChange={(e) => setEditUser(prev => ({ ...prev, email: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                required
+              />
+            </div>
+
+            {/* Password (opcional) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">New Password (optional)</label>
+              <input
+                type="password"
+                value={editUser.password}
+                onChange={(e) => setEditUser(prev => ({ ...prev, password: e.target.value }))}
+                placeholder="Leave blank to keep current"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
             {/* Avatar */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
@@ -6097,74 +5959,13 @@ const App = () => {
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={handleEditAvatarSelect}
+                      onChange={handleEditAvatarSelect}  // <- usa el handler nuevo
                       className="hidden"
                     />
                   </label>
                 </div>
               </div>
             </div>
-
-            {/* Nombre */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-              <input
-                type="text"
-                value={editUser.name}
-                onChange={(e) => setEditUser(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                required
-              />
-
-              <label className="block text-sm font-medium text-gray-700 mt-4">Preferred name (nickname)</label>
-              <input
-                value={editUser.nickname}
-                onChange={e => setEditUser(v => ({ ...v, nickname: e.target.value }))}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
-                placeholder="Ej: Pato, Nico, Koke..."
-              />
-            </div>
-
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-              <input
-                type="email"
-                value={editUser.email ?? ''}
-                onChange={(e) => setEditUser(prev => ({ ...prev, email: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                required
-              />
-            </div>
-
-            {/* Postcode */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Postcode</label>
-              <input
-                type="text"
-                value={editUser.postal_code || ''}
-                onChange={(e) => {
-                  const v = e.target.value.toUpperCase().trim();
-                  setEditUser(prev => ({ ...prev, postal_code: v }));
-                }}
-                placeholder="SW1A 1AA"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              <p className="mt-1 text-xs text-gray-500">Opcional. Ayuda a encontrar canchas cerca tuyo.</p>
-            </div>
-
-            {/* Password (opcional) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">New Password (optional)</label>
-              <input
-                type="password"
-                value={editUser.password}
-                onChange={(e) => setEditUser(prev => ({ ...prev, password: e.target.value }))}
-                placeholder="Leave blank to keep current"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-
             {/* Preferred Locations */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Locations</label>
@@ -6182,7 +5983,21 @@ const App = () => {
                 ))}
               </div>
             </div>
-
+            {/* Postcode */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Postcode</label>
+              <input
+                type="text"
+                value={editUser.postal_code || ''}
+                onChange={(e) => {
+                  const v = e.target.value.toUpperCase().trim();
+                  setEditUser(prev => ({ ...prev, postal_code: v }));
+                }}
+                placeholder="SW1A 1AA"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+              <p className="mt-1 text-xs text-gray-500">Opcional. Ayuda a encontrar canchas cerca tuyo.</p>
+            </div>
             {/* Availability */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Availability</label>
@@ -6192,21 +6007,16 @@ const App = () => {
                     <tr>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Day</th>
                       {timeSlots.map(slot => (
-                        <th
-                          key={slot}
-                          className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase"
-                        >
-                          {slot.split(' ')[0]}
-                        </th>
+                        <th key={slot} className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">{slot}</th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-gray-200">
                     {days.map(day => (
                       <tr key={day}>
-                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{day}</td>
+                        <td className="px-4 py-2 text-sm font-medium text-gray-900">{day}</td>
                         {timeSlots.map(slot => (
-                          <td key={slot} className="px-4 py-3 text-center">
+                          <td key={slot} className="px-4 py-2 text-center">
                             <input
                               type="checkbox"
                               checked={editUser.availability[day]?.includes(slot) || false}
@@ -6222,29 +6032,19 @@ const App = () => {
               </div>
             </div>
 
-            {profileError && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
-                {profileError}
-              </div>
-            )}
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={savingProfile}
+              className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
+            >
+              {savingProfile ? 'Saving...' : 'Save'}
+            </button>
 
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditProfile(false)}
-                className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
-                disabled={savingProfile}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-60"
-                disabled={savingProfile}
-              >
-                {savingProfile ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
+            {/* Error */}
+            {profileError && (
+              <p className="text-red-600 text-sm mt-2">{profileError}</p>
+            )}
           </form>
 
         </div>
@@ -7515,14 +7315,7 @@ const App = () => {
 
   if (selectedTournament && !selectedDivision) {
     // Tournament View with all divisions
-    const tournamentDivisions = (divisionsByTournament[selectedTournament.id] || [])
-      .slice()
-      .sort((a, b) => {
-        const ra = divisionRank(a.name);
-        const rb = divisionRank(b.name);
-        if (ra !== rb) return ra - rb;
-        return (a.name || '').localeCompare((b.name || ''), 'es');
-      });
+    const tournamentDivisions = divisions.filter(d => d.tournament_id === selectedTournament.id);
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
@@ -8002,7 +7795,6 @@ const App = () => {
               if (n === 'bronce') return 3;
               if (n === 'cobre') return 4;
               if (n === 'hierro') return 5;
-              if (n === 'diamante') return 6;
               return 99;
             };
 
@@ -8653,9 +8445,8 @@ const App = () => {
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
     const activePlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
-    const divisionAvailabilityMap = getPlayerAvailabilityMap(availabilitySlots);
 
-    const PENDING_ID = '__PENDING_OPPONENT__';
+  const PENDING_ID = '__PENDING_OPPONENT__';
   // Oculta rivales con los que ya hubo scheduled o played
   const eligibleP2Options =
     !newMatch.player1
@@ -9019,10 +8810,38 @@ const App = () => {
 
                   <div className="space-y-4">
                     <div className="bg-blue-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-blue-800 mb-2">Disponibilidad</h3>
-                      <p className="text-sm text-blue-700">
-                        La disponibilidad de este jugador ahora se revisa desde la división.
-                      </p>
+                      <h3 className="font-semibold text-blue-800 mb-2">Availability</h3>
+                      <div className="space-y-2">
+                        {days.map(day => (
+                          <div key={day} className="flex justify-between">
+                            <span className="text-gray-700 font-medium">{day}:</span>
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {selectedPlayerAvailability
+                                .filter(slot => slot.day_of_week === days.indexOf(day))
+                                .map(slot => {
+                                  let timeSlot = '';
+                                  // Usamos .startsWith() para que funcione tanto con '07:00' como con '07:00:00'
+                                  if (slot.start_time.startsWith('07:00')) {
+                                    timeSlot = 'Morning (07:00-12:00)';
+                                  } else if (slot.start_time.startsWith('12:00')) {
+                                    timeSlot = 'Afternoon (12:00-18:00)';
+                                  } else if (slot.start_time.startsWith('18:00')) { // Hacemos explícito el caso de "Evening"
+                                    timeSlot = 'Evening (18:00-22:00)';
+                                  }
+                                  
+                                  if (!timeSlot) return null; // Ignoramos cualquier horario que no reconozcamos
+
+                                  return (
+                                    <span key={slot.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                      {timeSlot}
+                                    </span>
+                                  );
+                                })}
+
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="bg-gray-50 p-4 rounded-lg">
@@ -9185,61 +9004,89 @@ const App = () => {
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
-                        const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
-                        const opponent = selectedIsHome
-                          ? getAnyPlayerById(getMatchAwayId(match))
-                          : getAnyPlayerById(getMatchHomeId(match));
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
-
+                        const player1 = getAnyPlayerById(getMatchHomeId(match));
+                        const player2 = getAnyPlayerById(getMatchAwayId(match));
+                        const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
+                        
                         return (
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
                                   {uiName(opponent?.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
-                                    {selectedIsHome ? 'Visita' : 'Local'}
-                                  </span>
+                                  {(() => {
+                                    const b = homeAwayBadge(match, selectedPlayer.id);
+                                    return (
+                                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${b.cls}`}>
+                                        {b.text}
+                                      </span>
+                                    );
+                                  })()}
                                 </h4>
-
-                                <div className="mt-1 text-xs text-gray-500">
-                                  {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
-                                    {selectedIsHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </div>
+                                <p className="text-sm text-gray-600">
+                                  {getTournamentNameById(match.tournament_id)}
+                                  {getDivisionNameById(match.division_id) ? ` · ${getDivisionNameById(match.division_id)}` : ''}
+                                </p>
                               </div>
-
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
                                 <div className="text-sm text-gray-600">{scoreLine(match, selectedPlayer.id)}</div>
                               </div>
                             </div>
-
                             <div className="text-sm text-gray-600">
                               <span className="font-medium">Location: </span>
+                              {/* Esta lógica prioriza el detalle y solo muestra TBD si ambos campos están vacíos */}
                               {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
                             </div>
-
                             {(match.player1_had_pint || match.player2_had_pint) && (
                               <div className="mt-1 text-sm text-purple-600 flex items-center">
                                 <span className="text-lg">🍻</span>
                                 <span className="ml-1">Tomaron {match.player1_pints} pintas cada uno</span>
                               </div>
                             )}
+
+                            {/* --- BOTÓN AÑADIDO AQUÍ --- */}
+                            {(currentUser?.id === match.home_player_id || currentUser?.id === match.away_player_id) && (
+                              <div className="mt-2 text-right">
+                                <button
+                                  onClick={() => {
+                                    const currentSets = matchSets
+                                      .filter(s => s.match_id === match.id)
+                                      .sort((a, b) => a.set_number - b.set_number)
+                                      .map(s => ({ score1: String(s.p1_games), score2: String(s.p2_games) }));
+
+                                    setEditedMatchData({
+                                      sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
+                                      hadPint: match.player1_had_pint,
+                                      pintsCount: String(match.player1_pints ?? 1),
+                                      anecdote: '',
+                                    });
+                                    setEditingMatch(match);
+                                  }}
+                                  className="text-sm font-medium text-blue-600 hover:underline focus:outline-none"
+                                >
+                                  Edit Result
+                                </button>
+                              </div>
+                            )}
+                            {(match as any).anecdote && (
+                              <details className="mt-2 text-left">
+                                <summary className="text-blue-600 hover:underline cursor-pointer select-none">
+                                  Ver anécdota
+                                </summary>
+                                <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+                                  {(match as any).anecdote}
+                                </p>
+                              </details>
+                            )}
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <p className="text-gray-500">No match history yet.</p>
+                    <div className="text-center py-8 text-gray-500">
+                      No match history available
+                    </div>
                   )}
                 </div>
 
@@ -9248,44 +9095,28 @@ const App = () => {
                     <h2 className="text-2xl font-bold text-gray-800 mb-6">Scheduled Matches</h2>
                     <div className="space-y-4">
                       {playerMatches.scheduled.map((match, idx) => {
-                        const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
-                        const opponent = selectedIsHome
-                          ? getAnyPlayerById(getMatchAwayId(match))
-                          : getAnyPlayerById(getMatchHomeId(match));
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
-
+                        const isHome = match.home_player_id === selectedPlayer.id;
+                        const opponent = isHome
+                          ? profiles.find(p => p.id === match.away_player_id)
+                          : profiles.find(p => p.id === match.home_player_id);
+                        const b = homeAwayBadge(match, selectedPlayer.id);
                         return (
                           <div key={idx} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
-                                  {uiName(opponent?.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
-                                    {selectedIsHome ? 'Visita' : 'Local'}
+                                  {opponent?.name}
+                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${b.cls}`}>
+                                    {b.text}
                                   </span>
                                 </h4>
-
-                                <div className="mt-1 text-xs text-gray-500">
-                                  {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
-                                    {selectedIsHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </div>
+                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
-
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
                                 <div className="text-sm text-gray-600">{match.time && match.time.slice(0,5)}</div>
                               </div>
                             </div>
-
                             <div className="text-sm text-gray-600">
                               <span className="font-medium">Location:</span>{' '}
                               {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
@@ -9304,42 +9135,22 @@ const App = () => {
                     <h2 className="text-2xl font-bold text-gray-800 mb-6">Upcoming Matches</h2>
                     <div className="space-y-4">
                       {upcomingMatches.map((opponent, index) => {
-                        const homeId = computeHomeForPair(
-                          selectedDivision.id,
-                          selectedTournament.id,
-                          selectedPlayer.id,
-                          opponent.id
-                        );
-
-                        const selectedIsHome = homeId === selectedPlayer.id;
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
+                        // 1) Calculamos Home/Visita de forma estable ANTES de agendar
+                        const homeId = computeHomeForPair(selectedDivision.id, selectedTournament.id, selectedPlayer.id, opponent.id);
+                        const isHome = homeId === selectedPlayer.id;
 
                         return (
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
-                                  {uiName(opponent.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
-                                    {selectedIsHome ? 'Visita' : 'Local'}
+                                  {opponent.name}
+                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                    {isHome ? 'juega de Local' : 'juega de Visita'}
                                   </span>
                                 </h4>
-
-                                <div className="mt-1 text-xs text-gray-500">
-                                  {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
-                                    {selectedIsHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </div>
+                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
-
                               {(() => {
                                 if (hasActiveMatchWith(
                                   selectedPlayer.id,
@@ -9362,8 +9173,7 @@ const App = () => {
                                   <button
                                     className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
                                     onClick={() => {
-                                      const awayId = selectedIsHome ? opponent.id : selectedPlayer.id;
-
+                                      const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
                                       setNewMatch(prev => ({
                                         ...prev,
                                         player1: homeId,
@@ -9380,6 +9190,7 @@ const App = () => {
                                   </button>
                                 );
                               })()}
+
                             </div>
                           </div>
                         );
@@ -9529,6 +9340,66 @@ const App = () => {
 
                 {playerProfileTab === 'ficha' && (
                   <div className="space-y-8 mb-8">
+                    <div className="rounded-[28px] border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-teal-50/50 p-4 sm:p-6 shadow-[0_16px_50px_rgba(15,23,42,0.06)]">
+                      <div className="space-y-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4">
+                          <div className="px-1">
+                            <h2 className="text-2xl font-bold text-slate-900">Ficha Personal</h2>
+                            <p className="text-sm text-slate-500 mt-1">
+                              Perfil visual del jugador dentro de PPC
+                            </p>
+                          </div>
+
+                          {canEditPlayerCard && !editingPlayerCard && (
+                            <button
+                              onClick={() => {
+                                setPlayerCardForm(
+                                  selectedPlayerCard || {
+                                    profile_id: selectedPlayer.id,
+                                    nickname: '',
+                                    age: null,
+                                    weight_kg: null,
+                                    height_cm: null,
+                                    nationality: '',
+                                    birth_place: '',
+                                    dominant_hand: '',
+                                    backhand_style: '',
+                                    ppc_objective: '',
+                                    favourite_shot: '',
+                                    favourite_surface: '',
+                                    favourite_player: '',
+                                    racket_brand: '',
+                                    racket_model: '',
+                                    tennis_start_year: null,
+                                  }
+                                );
+                                setPlayerCardSaveMessage('');
+                                setEditingPlayerCard(true);
+                              }}
+                              className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3 text-sm font-semibold text-white shadow hover:opacity-95 transition"
+                            >
+                              {selectedPlayerCard ? 'Editar ficha' : 'Crear ficha'}
+                            </button>
+                          )}
+                        </div>
+
+                        {playerCardSaveMessage && (
+                          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                            {playerCardSaveMessage}
+                          </div>
+                        )}
+
+                        <PlayerShowcaseCard
+                          player={selectedPlayer}
+                          avatarUrl={selectedPlayerAvatar}
+                          hasAvatar={selectedPlayerHasAvatar}
+                          playerCard={playerCardView}
+                          firstLeagueTournamentName={firstLeagueTournamentName}
+                          lastLeagueResult={lastLeagueResult}
+                          currentDivisionName={currentDivisionName}
+                        />
+                      </div>
+                    </div>
 
                     {canEditPlayerCard && editingPlayerCard && (
                       <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_16px_45px_rgba(15,23,42,0.06)]">
@@ -9556,42 +9427,17 @@ const App = () => {
                             </div>
 
                             <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Fecha de nacimiento</div>
+                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Edad</div>
                               <input
-                                type="text"
-                                inputMode="numeric"
-                                placeholder="dd/mm/yyyy"
-                                value={birthDateInput}
-                                onChange={(e) => {
-                                  let value = e.target.value.replace(/[^\d/]/g, '');
-
-                                  if (value.length === 2 && !value.includes('/')) value += '/';
-                                  if (value.length === 5 && value.split('/').length === 2) value += '/';
-                                  if (value.length > 10) value = value.slice(0, 10);
-
-                                  setBirthDateInput(value);
-                                }}
-                                onBlur={() => {
-                                  if (!birthDateInput.trim()) {
-                                    setPlayerCardForm({
-                                      ...playerCardForm,
-                                      birth_date: null,
-                                    });
-                                    return;
-                                  }
-
-                                  const iso = parseDDMMYYYYToISO(birthDateInput);
-
-                                  if (!iso) {
-                                    alert('La fecha debe ser válida y estar en formato dd/mm/yyyy');
-                                    return;
-                                  }
-
+                                type="number"
+                                min="0"
+                                value={playerCardForm.age ?? ''}
+                                onChange={(e) =>
                                   setPlayerCardForm({
                                     ...playerCardForm,
-                                    birth_date: iso,
-                                  });
-                                }}
+                                    age: e.target.value === '' ? null : Number(e.target.value),
+                                  })
+                                }
                                 className="w-full border rounded-lg px-3 py-2"
                               />
                             </div>
@@ -9651,118 +9497,128 @@ const App = () => {
                                 className="w-full border rounded-lg px-3 py-2"
                               />
                             </div>
+                          </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Mano hábil</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.dominant_hand || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, dominant_hand: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-3">Perfil tenístico</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="bg-blue-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-blue-700 mb-1">Mano dominante</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.dominant_hand || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, dominant_hand: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
+
+                              <div className="bg-blue-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-blue-700 mb-1">Revés</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.backhand_style || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, backhand_style: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
+
+                              <div className="bg-green-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Superficie favorita</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.favourite_surface || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, favourite_surface: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
+
+                              <div className="bg-green-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Arma secreta</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.favourite_shot || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, favourite_shot: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
+
+                              <div className="bg-green-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Ídolo</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.favourite_player || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, favourite_player: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
+
+                              <div className="bg-green-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-green-700 mb-1">Año inicio tenis</div>
+                                <input
+                                  type="number"
+                                  min="1900"
+                                  max={new Date().getFullYear()}
+                                  value={playerCardForm.tennis_start_year ?? ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({
+                                      ...playerCardForm,
+                                      tennis_start_year: e.target.value === '' ? null : Number(e.target.value),
+                                    })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
                             </div>
+                          </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Revés</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.backhand_style || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, backhand_style: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-3">Raqueta y objetivo</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="bg-yellow-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Marca de raqueta</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.racket_brand || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, racket_brand: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4 md:col-span-2">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Objetivo PPC</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.ppc_objective || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, ppc_objective: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
+                              <div className="bg-yellow-50 rounded-xl p-4">
+                                <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Modelo de raqueta</div>
+                                <input
+                                  type="text"
+                                  value={playerCardForm.racket_model || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, racket_model: e.target.value })
+                                  }
+                                  className="w-full border rounded-lg px-3 py-2"
+                                />
+                              </div>
 
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Golpe favorito</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.favourite_shot || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, favourite_shot: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Superficie favorita</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.favourite_surface || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, favourite_surface: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Jugador favorito</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.favourite_player || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, favourite_player: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Marca raqueta</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.racket_brand || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, racket_brand: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Modelo raqueta</div>
-                              <input
-                                type="text"
-                                value={playerCardForm.racket_model || ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({ ...playerCardForm, racket_model: e.target.value })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
-                            </div>
-
-                            <div className="bg-gray-50 rounded-xl p-4">
-                              <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Inicio en tenis</div>
-                              <input
-                                type="number"
-                                min="1900"
-                                max="2100"
-                                value={playerCardForm.tennis_start_year ?? ''}
-                                onChange={(e) =>
-                                  setPlayerCardForm({
-                                    ...playerCardForm,
-                                    tennis_start_year: e.target.value === '' ? null : Number(e.target.value),
-                                  })
-                                }
-                                className="w-full border rounded-lg px-3 py-2"
-                              />
+                              <div className="bg-yellow-50 rounded-xl p-4 md:col-span-2">
+                                <div className="text-xs uppercase tracking-wide text-yellow-700 mb-1">Objetivo PPC</div>
+                                <textarea
+                                  value={playerCardForm.ppc_objective || ''}
+                                  onChange={(e) =>
+                                    setPlayerCardForm({ ...playerCardForm, ppc_objective: e.target.value })
+                                  }
+                                  rows={4}
+                                  className="w-full border rounded-lg px-3 py-2 resize-y"
+                                />
+                              </div>
                             </div>
                           </div>
 
@@ -9771,7 +9627,6 @@ const App = () => {
                               onClick={() => {
                                 setEditingPlayerCard(false);
                                 setPlayerCardForm({});
-                                setBirthDateInput('');
                                 setPlayerCardSaveMessage('');
                               }}
                               className="rounded-2xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
@@ -9784,25 +9639,15 @@ const App = () => {
                                 try {
                                   setSavingPlayerCard(true);
 
-                                  if (birthDateInput.trim()) {
-                                    const iso = parseDDMMYYYYToISO(birthDateInput);
-                                    if (!iso) {
-                                      alert('La fecha de nacimiento debe ser válida y estar en formato dd/mm/yyyy');
-                                      return;
-                                    }
-                                    playerCardForm.birth_date = iso;
-                                  }
-
-                                  const { age, ...rest } = playerCardForm;
-
-                                  const payload = {
-                                    profile_id: selectedPlayer.id,
-                                    ...rest,
-                                  };
-
                                   const { data, error } = await supabase
                                     .from('player_cards')
-                                    .upsert(payload, { onConflict: 'profile_id' })
+                                    .upsert(
+                                      {
+                                        profile_id: selectedPlayer.id,
+                                        ...playerCardForm,
+                                      },
+                                      { onConflict: 'profile_id' }
+                                    )
                                     .select()
                                     .single();
 
@@ -9839,71 +9684,6 @@ const App = () => {
                         </div>
                       </div>
                     )}
-
-                    <div className="rounded-[28px] border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-teal-50/50 p-4 sm:p-6 shadow-[0_16px_50px_rgba(15,23,42,0.06)]">
-                      <div className="space-y-4">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4">
-                          <div className="px-1">
-                            <h2 className="text-2xl font-bold text-slate-900">Ficha Personal</h2>
-                            <p className="text-sm text-slate-500 mt-1">
-                              Perfil visual del jugador dentro de PPC
-                            </p>
-                          </div>
-
-                          {canEditPlayerCard && !editingPlayerCard && (
-                            <button
-                              onClick={() => {
-                                const initialCard =
-                                  selectedPlayerCard || {
-                                    profile_id: selectedPlayer.id,
-                                    nickname: '',
-                                    age: null,
-                                    birth_date: null,
-                                    weight_kg: null,
-                                    height_cm: null,
-                                    nationality: '',
-                                    birth_place: '',
-                                    dominant_hand: '',
-                                    backhand_style: '',
-                                    ppc_objective: '',
-                                    favourite_shot: '',
-                                    favourite_surface: '',
-                                    favourite_player: '',
-                                    racket_brand: '',
-                                    racket_model: '',
-                                    tennis_start_year: null,
-                                  };
-
-                                setPlayerCardForm(initialCard);
-                                setBirthDateInput(formatISOToDDMMYYYY(initialCard.birth_date));
-                                
-                                setPlayerCardSaveMessage('');
-                                setEditingPlayerCard(true);
-                              }}
-                              className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-3 text-sm font-semibold text-white shadow hover:opacity-95 transition"
-                            >
-                              {selectedPlayerCard ? 'Editar ficha' : 'Crear ficha'}
-                            </button>
-                          )}
-                        </div>
-
-                        {playerCardSaveMessage && (
-                          <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                            {playerCardSaveMessage}
-                          </div>
-                        )}
-
-                        <PlayerShowcaseCard
-                          player={selectedPlayer}
-                          avatarUrl={selectedPlayerAvatar}
-                          hasAvatar={selectedPlayerHasAvatar}
-                          playerCard={playerCardView}
-                          firstLeagueTournamentName={firstLeagueTournamentName}
-                          lastLeagueResult={lastLeagueResult}
-                          currentDivisionName={currentDivisionName}
-                        />
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -10253,148 +10033,6 @@ const App = () => {
             </div>
           )}
 
-          <div className="mb-6 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setShowAvailability(prev => !prev)}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
-            >
-              <span>📅</span>
-              <span>Ver disponibilidad de los jugadores</span>
-            </button>
-          </div>
-
-          {showAvailability && selectedDivision && selectedTournament && (
-            <div className="mb-8 bg-white rounded-xl shadow-lg p-4 sm:p-6">
-              <div className="mb-4">
-                <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
-                  Disponibilidad de los jugadores
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Jugadores activos de esta división, agrupados por día y bloque horario.
-                </p>
-              </div>
-
-              {activePlayers.length === 0 ? (
-                <p className="text-sm text-gray-500">No hay jugadores activos en esta división.</p>
-              ) : (
-                <>
-                  {/* Desktop / tablet */}
-                  <div className="hidden md:block overflow-x-auto">
-                    <table className="min-w-full table-fixed border-separate border-spacing-0">
-                      <thead>
-                        <tr>
-                          <th className="sticky left-0 z-20 bg-white px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-r w-[130px]">
-                            Bloque
-                          </th>
-                          {days.map(day => (
-                            <th
-                              key={day}
-                              className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b min-w-[150px]"
-                            >
-                              {day}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {[
-                          { key: 'Morning', label: 'Morning', tone: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
-                          { key: 'Afternoon', label: 'Afternoon', tone: 'bg-orange-50 text-orange-800 border-orange-200' },
-                          { key: 'Evening', label: 'Evening', tone: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
-                        ].map(block => (
-                          <tr key={block.key} className="align-top">
-                            <td className="sticky left-0 z-10 bg-white px-3 py-3 border-b border-r">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${block.tone}`}>
-                                {block.label}
-                              </span>
-                            </td>
-
-                            {days.map(day => {
-                              const playersInSlot = activePlayers.filter(player => {
-                                const playerAvailability = divisionAvailabilityMap[player.id] || {};
-                                const slots = playerAvailability[day] || [];
-                                return slots.includes(block.key);
-                              });
-
-                              return (
-                                <td key={`${block.key}-${day}`} className="px-3 py-3 border-b align-top">
-                                  {playersInSlot.length === 0 ? (
-                                    <span className="text-xs text-gray-300">—</span>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {playersInSlot.map(player => (
-                                        <span
-                                          key={player.id}
-                                          className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium"
-                                        >
-                                          {uiName(player.name)}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile */}
-                  <div className="md:hidden space-y-4">
-                    {days.map(day => (
-                      <div key={day} className="rounded-xl border border-gray-200 p-4">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3">{day}</h4>
-
-                        <div className="space-y-3">
-                          {[
-                            { key: 'Morning', label: 'Morning', tone: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
-                            { key: 'Afternoon', label: 'Afternoon', tone: 'bg-orange-50 text-orange-800 border-orange-200' },
-                            { key: 'Evening', label: 'Evening', tone: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
-                          ].map(block => {
-                            const playersInSlot = activePlayers.filter(player => {
-                              const playerAvailability = divisionAvailabilityMap[player.id] || {};
-                              const slots = playerAvailability[day] || [];
-                              return slots.includes(block.key);
-                            });
-
-                            return (
-                              <div key={`${day}-${block.key}`}>
-                                <div className="mb-1.5">
-                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${block.tone}`}>
-                                    {block.label}
-                                  </span>
-                                </div>
-
-                                {playersInSlot.length === 0 ? (
-                                  <div className="text-xs text-gray-300">—</div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {playersInSlot.map(player => (
-                                      <span
-                                        key={player.id}
-                                        className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium"
-                                      >
-                                        {uiName(player.name)}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Division Summary */}
             <div className="lg:col-span-1">
@@ -10453,36 +10091,6 @@ const App = () => {
                   <h2 className="text-2xl font-bold text-gray-800">Player Standings</h2>
                   <p className="text-gray-600">Click on a player's name to view their match history</p>
                 </div>
-
-                {hasDivisionZones(selectedDivision) && (
-                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                      {(selectedDivision?.direct_promotion_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-emerald-600 px-3 py-1 text-white">
-                          Ascenso directo
-                        </span>
-                      )}
-
-                      {(selectedDivision?.promotion_playoff_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-emerald-200 px-3 py-1 text-emerald-950">
-                          Repechaje ascenso
-                        </span>
-                      )}
-
-                      {(selectedDivision?.relegation_playoff_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-rose-200 px-3 py-1 text-rose-950">
-                          Repechaje descenso
-                        </span>
-                      )}
-
-                      {(selectedDivision?.direct_relegation_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-rose-600 px-3 py-1 text-white">
-                          Descenso directo
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
                 
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -10506,16 +10114,13 @@ const App = () => {
                         rosterSorted.map((stats, index) => {
                           const player = players.find(p => p.id === stats.profile_id);
                           if (!player) return null;
-
-                            const zoneClass = getStandingZone(index + 1, rosterSorted.length, selectedDivision);
-
-                            return (
-                              <tr
-                                key={stats.profile_id}
-                                className="cursor-pointer hover:bg-gray-50 transition"
-                                onClick={() => setSelectedPlayer(player)}
-                              >
-                              <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">
+                          return (
+                            <tr 
+                              key={stats.profile_id} 
+                              className="hover:bg-gray-50 cursor-pointer" 
+                              onClick={() => setSelectedPlayer(player)}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
                                     index === 0 ? 'bg-yellow-400 text-yellow-800' :
@@ -10527,7 +10132,7 @@ const App = () => {
                                   </span>
                                 </div>
                               </td>
-                              <td className={`px-6 py-4 whitespace-nowrap rounded-l-xl rounded-r-xl ${zoneClass}`}>
+                              <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
                                     <img
@@ -10558,7 +10163,6 @@ const App = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_won}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_lost}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{stats.set_diff}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-amber-700">{stats.pints}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <span className="text-lg">🍻</span>

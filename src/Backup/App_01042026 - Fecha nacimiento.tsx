@@ -525,10 +525,6 @@ interface Division {
   tournament_id: string;
   name: string;
   color?: string;
-  direct_promotion_slots?: number;
-  promotion_playoff_slots?: number;
-  relegation_playoff_slots?: number;
-  direct_relegation_slots?: number;
 }
 
 interface Registration {
@@ -2310,96 +2306,6 @@ const App = () => {
     return abbreviations[location] || location;
   };
 
-  function getAvailabilityLabel(startTime?: string | null) {
-    const start = String(startTime || '').slice(0, 5);
-
-    if (start === '07:00') return 'Morning';
-    if (start === '12:00') return 'Afternoon';
-    if (start === '18:00') return 'Evening';
-
-    return null;
-  }
-
-  function getPlayerAvailabilityMap(slots: AvailabilitySlot[]) {
-    const map: Record<string, Record<string, string[]>> = {};
-
-    slots.forEach(slot => {
-      const day = days[slot.day_of_week];
-      const label = getAvailabilityLabel(slot.start_time);
-      if (!day || !label) return;
-
-      if (!map[slot.profile_id]) map[slot.profile_id] = {};
-      if (!map[slot.profile_id][day]) map[slot.profile_id][day] = [];
-      if (!map[slot.profile_id][day].includes(label)) {
-        map[slot.profile_id][day].push(label);
-      }
-    });
-
-    return map;
-  }
-
-  function divisionRank(name?: string | null) {
-    const n = (name || '').trim().toLowerCase();
-
-    if (n === 'oro') return 1;
-    if (n === 'plata') return 2;
-    if (n === 'bronce') return 3;
-    if (n === 'cobre') return 4;
-    if (n === 'hierro') return 5;
-    if (n === 'diamante') return 6;
-
-    return 99;
-  }
-
-  function getStandingZone(
-    position: number,
-    totalPlayers: number,
-    division?: Division | null
-  ): string {
-    if (!division) return '';
-
-    const directPromotion = division.direct_promotion_slots ?? 0;
-    const promotionPlayoff = division.promotion_playoff_slots ?? 0;
-    const relegationPlayoff = division.relegation_playoff_slots ?? 0;
-    const directRelegation = division.direct_relegation_slots ?? 0;
-
-    if (position <= directPromotion) {
-      return 'bg-emerald-100 border-l-4 border-emerald-500';
-    }
-
-    if (position <= directPromotion + promotionPlayoff) {
-      return 'bg-emerald-50 border-l-4 border-emerald-300';
-    }
-
-    const directRelegationStart = totalPlayers - directRelegation + 1;
-    const relegationPlayoffStart = totalPlayers - directRelegation - relegationPlayoff + 1;
-
-    if (
-      relegationPlayoff > 0 &&
-      position >= relegationPlayoffStart &&
-      position < directRelegationStart
-    ) {
-      return 'bg-rose-50 border-l-4 border-rose-300';
-    }
-
-    if (directRelegation > 0 && position >= directRelegationStart) {
-      return 'bg-rose-100 border-l-4 border-rose-500';
-    }
-
-    return '';
-  }
-
-  function hasDivisionZones(division?: Division | null): boolean {
-    if (!division) return false;
-
-    return (
-      (division.direct_promotion_slots ?? 0) > 0 ||
-      (division.promotion_playoff_slots ?? 0) > 0 ||
-      (division.relegation_playoff_slots ?? 0) > 0 ||
-      (division.direct_relegation_slots ?? 0) > 0
-    );
-  }
-
   // 1) Migrar cualquier dato viejo y precargar pending para esta pestaña
   useEffect(() => {
     migrateLocalToSession();
@@ -2451,23 +2357,9 @@ const App = () => {
 
   useEffect(() => {
     const map: Record<string, Division[]> = {};
-
     divisions.forEach(d => {
       (map[d.tournament_id] ||= []).push(d);
     });
-
-    Object.keys(map).forEach(tournamentId => {
-      map[tournamentId] = map[tournamentId]
-        .slice()
-        .sort((a, b) => {
-          const ra = divisionRank(a.name);
-          const rb = divisionRank(b.name);
-
-          if (ra !== rb) return ra - rb;
-          return (a.name || '').localeCompare((b.name || ''), 'es');
-        });
-    });
-
     setDivisionsByTournament(map);
   }, [divisions]);
 
@@ -2723,7 +2615,7 @@ const App = () => {
   function homeAwayBadge(match: Match, playerId: string) {
     const isHome = getMatchHomeId(match) === playerId;
     return {
-      text: isHome ? 'Local' : 'Visita',
+      text: isHome ? 'jugó de Local' : 'jugó de Visita',
       cls: isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
     };
   }
@@ -2805,20 +2697,13 @@ const App = () => {
   function computeHomeForPair(divisionId: string, tournamentId: string, a: string, b: string) {
     function hash(s: string) {
       let h = 0;
-      for (let i = 0; i < s.length; i++) {
-        h = ((h << 5) - h) + s.charCodeAt(i);
-        h |= 0;
-      }
+      for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
       return Math.abs(h);
     }
-
-    if (!divisionId || !tournamentId || !a || !b) return a;
-
     const [x, y] = a < b ? [a, b] : [b, a];
-    const seed = `${tournamentId}|${divisionId}|${x}|${y}`;
-    const h = hash(seed);
-
-    return h % 2 === 0 ? x : y;
+    const h = hash(`${divisionId}|${tournamentId}|${x}|${y}`);
+    // si h es par, el "menor" es home; si es impar, el "mayor" es home (balancea 50/50)
+    return (h % 2 === 0) ? x : y;
   }
 
   async function fetchAllRows<T>(table: string, selectClause = '*', pageSize = 1000): Promise<T[]> {
@@ -2862,7 +2747,7 @@ const App = () => {
         supabase.from('historic_players').select('*'),
       ];
       if (userId) {
-        promises.push(supabase.from('availability').select('*'));
+        promises.push(supabase.from('availability').select('*').eq('profile_id', userId));
       }
 
       const responses = await Promise.all(promises);
@@ -3349,7 +3234,7 @@ const App = () => {
           supabase.from('v_standings').select('*'),
           (async () => ({ data: await fetchAllRows<MatchSet>('match_sets'), error: null }))(),
           supabase.from('historic_players').select('*'),
-          supabase.from('availability').select('*')
+          supabase.from('availability').select('*').eq('profile_id', userId)
         ]);
 
       // Handle errors
@@ -4059,7 +3944,7 @@ const App = () => {
 
     const { data: ds, error: dErr } = await supabase
       .from('divisions')
-      .select('*');
+      .select('id,tournament_id,name,color');
     if (dErr) throw dErr;
 
     setTournaments(ts || []);
@@ -4069,19 +3954,6 @@ const App = () => {
     (ds || []).forEach(d => {
       (map[d.tournament_id] ||= []).push(d);
     });
-
-    Object.keys(map).forEach(tournamentId => {
-      map[tournamentId] = map[tournamentId]
-        .slice()
-        .sort((a, b) => {
-          const ra = divisionRank(a.name);
-          const rb = divisionRank(b.name);
-
-          if (ra !== rb) return ra - rb;
-          return (a.name || '').localeCompare((b.name || ''), 'es');
-        });
-    });
-
     setDivisionsByTournament(map);
   }
 
@@ -7515,14 +7387,7 @@ const App = () => {
 
   if (selectedTournament && !selectedDivision) {
     // Tournament View with all divisions
-    const tournamentDivisions = (divisionsByTournament[selectedTournament.id] || [])
-      .slice()
-      .sort((a, b) => {
-        const ra = divisionRank(a.name);
-        const rb = divisionRank(b.name);
-        if (ra !== rb) return ra - rb;
-        return (a.name || '').localeCompare((b.name || ''), 'es');
-      });
+    const tournamentDivisions = divisions.filter(d => d.tournament_id === selectedTournament.id);
     
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
@@ -8002,7 +7867,6 @@ const App = () => {
               if (n === 'bronce') return 3;
               if (n === 'cobre') return 4;
               if (n === 'hierro') return 5;
-              if (n === 'diamante') return 6;
               return 99;
             };
 
@@ -8653,9 +8517,8 @@ const App = () => {
   if (selectedTournament && selectedDivision) {
     const players = getDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
     const activePlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id) || [];
-    const divisionAvailabilityMap = getPlayerAvailabilityMap(availabilitySlots);
 
-    const PENDING_ID = '__PENDING_OPPONENT__';
+  const PENDING_ID = '__PENDING_OPPONENT__';
   // Oculta rivales con los que ya hubo scheduled o played
   const eligibleP2Options =
     !newMatch.player1
@@ -9019,10 +8882,38 @@ const App = () => {
 
                   <div className="space-y-4">
                     <div className="bg-blue-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-blue-800 mb-2">Disponibilidad</h3>
-                      <p className="text-sm text-blue-700">
-                        La disponibilidad de este jugador ahora se revisa desde la división.
-                      </p>
+                      <h3 className="font-semibold text-blue-800 mb-2">Availability</h3>
+                      <div className="space-y-2">
+                        {days.map(day => (
+                          <div key={day} className="flex justify-between">
+                            <span className="text-gray-700 font-medium">{day}:</span>
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {selectedPlayerAvailability
+                                .filter(slot => slot.day_of_week === days.indexOf(day))
+                                .map(slot => {
+                                  let timeSlot = '';
+                                  // Usamos .startsWith() para que funcione tanto con '07:00' como con '07:00:00'
+                                  if (slot.start_time.startsWith('07:00')) {
+                                    timeSlot = 'Morning (07:00-12:00)';
+                                  } else if (slot.start_time.startsWith('12:00')) {
+                                    timeSlot = 'Afternoon (12:00-18:00)';
+                                  } else if (slot.start_time.startsWith('18:00')) { // Hacemos explícito el caso de "Evening"
+                                    timeSlot = 'Evening (18:00-22:00)';
+                                  }
+                                  
+                                  if (!timeSlot) return null; // Ignoramos cualquier horario que no reconozcamos
+
+                                  return (
+                                    <span key={slot.id} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                      {timeSlot}
+                                    </span>
+                                  );
+                                })}
+
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="bg-gray-50 p-4 rounded-lg">
@@ -9185,61 +9076,89 @@ const App = () => {
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
-                        const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
-                        const opponent = selectedIsHome
-                          ? getAnyPlayerById(getMatchAwayId(match))
-                          : getAnyPlayerById(getMatchHomeId(match));
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
-
+                        const player1 = getAnyPlayerById(getMatchHomeId(match));
+                        const player2 = getAnyPlayerById(getMatchAwayId(match));
+                        const opponent = player1?.id === selectedPlayer.id ? player2 : player1;
+                        
                         return (
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
                                   {uiName(opponent?.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
-                                    {selectedIsHome ? 'Visita' : 'Local'}
-                                  </span>
+                                  {(() => {
+                                    const b = homeAwayBadge(match, selectedPlayer.id);
+                                    return (
+                                      <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${b.cls}`}>
+                                        {b.text}
+                                      </span>
+                                    );
+                                  })()}
                                 </h4>
-
-                                <div className="mt-1 text-xs text-gray-500">
-                                  {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
-                                    {selectedIsHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </div>
+                                <p className="text-sm text-gray-600">
+                                  {getTournamentNameById(match.tournament_id)}
+                                  {getDivisionNameById(match.division_id) ? ` · ${getDivisionNameById(match.division_id)}` : ''}
+                                </p>
                               </div>
-
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
                                 <div className="text-sm text-gray-600">{scoreLine(match, selectedPlayer.id)}</div>
                               </div>
                             </div>
-
                             <div className="text-sm text-gray-600">
                               <span className="font-medium">Location: </span>
+                              {/* Esta lógica prioriza el detalle y solo muestra TBD si ambos campos están vacíos */}
                               {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
                             </div>
-
                             {(match.player1_had_pint || match.player2_had_pint) && (
                               <div className="mt-1 text-sm text-purple-600 flex items-center">
                                 <span className="text-lg">🍻</span>
                                 <span className="ml-1">Tomaron {match.player1_pints} pintas cada uno</span>
                               </div>
                             )}
+
+                            {/* --- BOTÓN AÑADIDO AQUÍ --- */}
+                            {(currentUser?.id === match.home_player_id || currentUser?.id === match.away_player_id) && (
+                              <div className="mt-2 text-right">
+                                <button
+                                  onClick={() => {
+                                    const currentSets = matchSets
+                                      .filter(s => s.match_id === match.id)
+                                      .sort((a, b) => a.set_number - b.set_number)
+                                      .map(s => ({ score1: String(s.p1_games), score2: String(s.p2_games) }));
+
+                                    setEditedMatchData({
+                                      sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
+                                      hadPint: match.player1_had_pint,
+                                      pintsCount: String(match.player1_pints ?? 1),
+                                      anecdote: '',
+                                    });
+                                    setEditingMatch(match);
+                                  }}
+                                  className="text-sm font-medium text-blue-600 hover:underline focus:outline-none"
+                                >
+                                  Edit Result
+                                </button>
+                              </div>
+                            )}
+                            {(match as any).anecdote && (
+                              <details className="mt-2 text-left">
+                                <summary className="text-blue-600 hover:underline cursor-pointer select-none">
+                                  Ver anécdota
+                                </summary>
+                                <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+                                  {(match as any).anecdote}
+                                </p>
+                              </details>
+                            )}
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <p className="text-gray-500">No match history yet.</p>
+                    <div className="text-center py-8 text-gray-500">
+                      No match history available
+                    </div>
                   )}
                 </div>
 
@@ -9248,44 +9167,28 @@ const App = () => {
                     <h2 className="text-2xl font-bold text-gray-800 mb-6">Scheduled Matches</h2>
                     <div className="space-y-4">
                       {playerMatches.scheduled.map((match, idx) => {
-                        const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
-                        const opponent = selectedIsHome
-                          ? getAnyPlayerById(getMatchAwayId(match))
-                          : getAnyPlayerById(getMatchHomeId(match));
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
-
+                        const isHome = match.home_player_id === selectedPlayer.id;
+                        const opponent = isHome
+                          ? profiles.find(p => p.id === match.away_player_id)
+                          : profiles.find(p => p.id === match.home_player_id);
+                        const b = homeAwayBadge(match, selectedPlayer.id);
                         return (
                           <div key={idx} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
-                                  {uiName(opponent?.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
-                                    {selectedIsHome ? 'Visita' : 'Local'}
+                                  {opponent?.name}
+                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${b.cls}`}>
+                                    {b.text}
                                   </span>
                                 </h4>
-
-                                <div className="mt-1 text-xs text-gray-500">
-                                  {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
-                                    {selectedIsHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </div>
+                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
-
                               <div className="text-right">
                                 <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
                                 <div className="text-sm text-gray-600">{match.time && match.time.slice(0,5)}</div>
                               </div>
                             </div>
-
                             <div className="text-sm text-gray-600">
                               <span className="font-medium">Location:</span>{' '}
                               {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
@@ -9304,42 +9207,22 @@ const App = () => {
                     <h2 className="text-2xl font-bold text-gray-800 mb-6">Upcoming Matches</h2>
                     <div className="space-y-4">
                       {upcomingMatches.map((opponent, index) => {
-                        const homeId = computeHomeForPair(
-                          selectedDivision.id,
-                          selectedTournament.id,
-                          selectedPlayer.id,
-                          opponent.id
-                        );
-
-                        const selectedIsHome = homeId === selectedPlayer.id;
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
+                        // 1) Calculamos Home/Visita de forma estable ANTES de agendar
+                        const homeId = computeHomeForPair(selectedDivision.id, selectedTournament.id, selectedPlayer.id, opponent.id);
+                        const isHome = homeId === selectedPlayer.id;
 
                         return (
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
-                                  {uiName(opponent.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
-                                    {selectedIsHome ? 'Visita' : 'Local'}
+                                  {opponent.name}
+                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${isHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                    {isHome ? 'juega de Local' : 'juega de Visita'}
                                   </span>
                                 </h4>
-
-                                <div className="mt-1 text-xs text-gray-500">
-                                  {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
-                                    {selectedIsHome ? 'Local' : 'Visita'}
-                                  </span>
-                                </div>
+                                <p className="text-sm text-gray-600">{selectedDivision.name} Division</p>
                               </div>
-
                               {(() => {
                                 if (hasActiveMatchWith(
                                   selectedPlayer.id,
@@ -9362,8 +9245,7 @@ const App = () => {
                                   <button
                                     className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
                                     onClick={() => {
-                                      const awayId = selectedIsHome ? opponent.id : selectedPlayer.id;
-
+                                      const awayId = (homeId === selectedPlayer.id) ? opponent.id : selectedPlayer.id;
                                       setNewMatch(prev => ({
                                         ...prev,
                                         player1: homeId,
@@ -9380,6 +9262,7 @@ const App = () => {
                                   </button>
                                 );
                               })()}
+
                             </div>
                           </div>
                         );
@@ -10253,148 +10136,6 @@ const App = () => {
             </div>
           )}
 
-          <div className="mb-6 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setShowAvailability(prev => !prev)}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
-            >
-              <span>📅</span>
-              <span>Ver disponibilidad de los jugadores</span>
-            </button>
-          </div>
-
-          {showAvailability && selectedDivision && selectedTournament && (
-            <div className="mb-8 bg-white rounded-xl shadow-lg p-4 sm:p-6">
-              <div className="mb-4">
-                <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
-                  Disponibilidad de los jugadores
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Jugadores activos de esta división, agrupados por día y bloque horario.
-                </p>
-              </div>
-
-              {activePlayers.length === 0 ? (
-                <p className="text-sm text-gray-500">No hay jugadores activos en esta división.</p>
-              ) : (
-                <>
-                  {/* Desktop / tablet */}
-                  <div className="hidden md:block overflow-x-auto">
-                    <table className="min-w-full table-fixed border-separate border-spacing-0">
-                      <thead>
-                        <tr>
-                          <th className="sticky left-0 z-20 bg-white px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b border-r w-[130px]">
-                            Bloque
-                          </th>
-                          {days.map(day => (
-                            <th
-                              key={day}
-                              className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 border-b min-w-[150px]"
-                            >
-                              {day}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {[
-                          { key: 'Morning', label: 'Morning', tone: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
-                          { key: 'Afternoon', label: 'Afternoon', tone: 'bg-orange-50 text-orange-800 border-orange-200' },
-                          { key: 'Evening', label: 'Evening', tone: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
-                        ].map(block => (
-                          <tr key={block.key} className="align-top">
-                            <td className="sticky left-0 z-10 bg-white px-3 py-3 border-b border-r">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${block.tone}`}>
-                                {block.label}
-                              </span>
-                            </td>
-
-                            {days.map(day => {
-                              const playersInSlot = activePlayers.filter(player => {
-                                const playerAvailability = divisionAvailabilityMap[player.id] || {};
-                                const slots = playerAvailability[day] || [];
-                                return slots.includes(block.key);
-                              });
-
-                              return (
-                                <td key={`${block.key}-${day}`} className="px-3 py-3 border-b align-top">
-                                  {playersInSlot.length === 0 ? (
-                                    <span className="text-xs text-gray-300">—</span>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {playersInSlot.map(player => (
-                                        <span
-                                          key={player.id}
-                                          className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium"
-                                        >
-                                          {uiName(player.name)}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile */}
-                  <div className="md:hidden space-y-4">
-                    {days.map(day => (
-                      <div key={day} className="rounded-xl border border-gray-200 p-4">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3">{day}</h4>
-
-                        <div className="space-y-3">
-                          {[
-                            { key: 'Morning', label: 'Morning', tone: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
-                            { key: 'Afternoon', label: 'Afternoon', tone: 'bg-orange-50 text-orange-800 border-orange-200' },
-                            { key: 'Evening', label: 'Evening', tone: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
-                          ].map(block => {
-                            const playersInSlot = activePlayers.filter(player => {
-                              const playerAvailability = divisionAvailabilityMap[player.id] || {};
-                              const slots = playerAvailability[day] || [];
-                              return slots.includes(block.key);
-                            });
-
-                            return (
-                              <div key={`${day}-${block.key}`}>
-                                <div className="mb-1.5">
-                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${block.tone}`}>
-                                    {block.label}
-                                  </span>
-                                </div>
-
-                                {playersInSlot.length === 0 ? (
-                                  <div className="text-xs text-gray-300">—</div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {playersInSlot.map(player => (
-                                      <span
-                                        key={player.id}
-                                        className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 text-[11px] font-medium"
-                                      >
-                                        {uiName(player.name)}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
             {/* Division Summary */}
             <div className="lg:col-span-1">
@@ -10453,36 +10194,6 @@ const App = () => {
                   <h2 className="text-2xl font-bold text-gray-800">Player Standings</h2>
                   <p className="text-gray-600">Click on a player's name to view their match history</p>
                 </div>
-
-                {hasDivisionZones(selectedDivision) && (
-                  <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                      {(selectedDivision?.direct_promotion_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-emerald-600 px-3 py-1 text-white">
-                          Ascenso directo
-                        </span>
-                      )}
-
-                      {(selectedDivision?.promotion_playoff_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-emerald-200 px-3 py-1 text-emerald-950">
-                          Repechaje ascenso
-                        </span>
-                      )}
-
-                      {(selectedDivision?.relegation_playoff_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-rose-200 px-3 py-1 text-rose-950">
-                          Repechaje descenso
-                        </span>
-                      )}
-
-                      {(selectedDivision?.direct_relegation_slots ?? 0) > 0 && (
-                        <span className="inline-flex items-center rounded-full bg-rose-600 px-3 py-1 text-white">
-                          Descenso directo
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
                 
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -10506,16 +10217,13 @@ const App = () => {
                         rosterSorted.map((stats, index) => {
                           const player = players.find(p => p.id === stats.profile_id);
                           if (!player) return null;
-
-                            const zoneClass = getStandingZone(index + 1, rosterSorted.length, selectedDivision);
-
-                            return (
-                              <tr
-                                key={stats.profile_id}
-                                className="cursor-pointer hover:bg-gray-50 transition"
-                                onClick={() => setSelectedPlayer(player)}
-                              >
-                              <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">
+                          return (
+                            <tr 
+                              key={stats.profile_id} 
+                              className="hover:bg-gray-50 cursor-pointer" 
+                              onClick={() => setSelectedPlayer(player)}
+                            >
+                              <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
                                     index === 0 ? 'bg-yellow-400 text-yellow-800' :
@@ -10527,7 +10235,7 @@ const App = () => {
                                   </span>
                                 </div>
                               </td>
-                              <td className={`px-6 py-4 whitespace-nowrap rounded-l-xl rounded-r-xl ${zoneClass}`}>
+                              <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <div className="flex-shrink-0 h-10 w-10">
                                     <img
@@ -10558,7 +10266,6 @@ const App = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_won}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_lost}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{stats.set_diff}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-amber-700">{stats.pints}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <span className="text-lg">🍻</span>
