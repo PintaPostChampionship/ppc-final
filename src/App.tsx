@@ -3218,10 +3218,16 @@ const App = () => {
       const target_start_time = `${startHHMM}:00`;
       const target_end_time = `${endHHMM}:00`;
 
-      // search_start_date = target_date - 7 días
-      const baseDate = new Date(`${targetDateStr}T00:00:00`);
+      // search_start_date = target_date - 7 días (en fecha local, sin UTC para evitar desfase BST)
+      const [yy, mm, dd] = targetDateStr.split('-').map(n => parseInt(n, 10));
+      const baseDate = new Date(yy, mm - 1, dd);
       baseDate.setDate(baseDate.getDate() - 7);
-      const search_start_date = baseDate.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+      const search_start_date = [
+        baseDate.getFullYear(),
+        String(baseDate.getMonth() + 1).padStart(2, '0'),
+        String(baseDate.getDate()).padStart(2, '0'),
+      ].join('-');
 
       const bookingVenueCfg = getBookingVenueConfig(newBooking.activity_slug);
 
