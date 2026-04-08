@@ -159,7 +159,8 @@ function getLeagueRegistrationsForPlayer(
       return tournament ? { registration: r, tournament } : null;
     })
     .filter((x): x is { registration: Registration; tournament: Tournament } => Boolean(x))
-    .filter(x => x.tournament.format === 'league');
+    .filter(x => x.tournament.format === 'league')
+    .filter(x => !isCalibrationTournamentByName(x.tournament.name));
 }
 
 function getLastLeagueEntryForPlayer(
@@ -279,18 +280,20 @@ function getPlayerStatsSummaryAll(
   const leagueRegs = registrations.filter(r => {
     if (r.profile_id !== profileId) return false;
     const t = tournaments.find(tt => tt.id === r.tournament_id);
-    return t?.format === 'league';
+    return t?.format === 'league' && !isCalibrationTournamentByName(t?.name);
   });
 
   const uniqueTournaments = new Set(leagueRegs.map(r => r.tournament_id));
   const uniqueDivisions = new Set(leagueRegs.map(r => r.division_id));
 
   const playedMatches = matches.filter(m =>
+    isOfficialMatchByTournamentId(m, tournaments) &&
     m.status === 'played' &&
     (m.home_player_id === profileId || m.away_player_id === profileId)
   );
 
   const scheduledMatches = matches.filter(m =>
+    isOfficialMatchByTournamentId(m, tournaments) &&
     (m.status === 'scheduled' || m.status === 'pending') &&
     (m.home_player_id === profileId || m.away_player_id === profileId)
   );
@@ -386,6 +389,18 @@ type PendingOnboarding = {
   tournament?: string | null;
   division?: string | null;
 };
+
+function isCalibrationTournamentByName(name?: string | null) {
+  return /^Calibraciones/i.test((name || '').trim());
+}
+
+function isOfficialMatchByTournamentId(
+  match: Match,
+  tournaments: Tournament[]
+) {
+  const tournamentName = tournaments.find(t => t.id === match.tournament_id)?.name || '';
+  return !isCalibrationTournamentByName(tournamentName);
+}
 
 // Escribe en sessionStorage con try/catch
 function savePending(p: PendingOnboarding) {
@@ -1326,6 +1341,8 @@ function divisionLogoSrc(name: string) {
     'Hierro': '/ppc-hierro.png',
     'Diamante': '/ppc-diamante.png',
     'Élite': '/ppc-elite.png',
+    'Anita Lizana': '/ppc-elite.png',
+    'Serena Williams': '/ppc-elite.png',
   };
   return map[name] || '/ppc-logo.png';
 }
@@ -1955,6 +1972,7 @@ const App = () => {
   });
   const [hasCommitted, setHasCommitted] = useState(false);
   const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
+  const [historicTab, setHistoricTab] = useState<'men' | 'women' | 'calibrations' | 'other'>('men');
   const [historicPlayers, setHistoricPlayers] = useState<HistoricPlayer[]>([]);
   const [birthDateInput, setBirthDateInput] = useState('');
   const [newMatch, setNewMatch] = useState({ 
@@ -2067,6 +2085,9 @@ const App = () => {
   const [showBookingPanel, setShowBookingPanel] = useState(false);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+
+  const [bookingHistoryLimit, setBookingHistoryLimit] = useState<'5' | '10' | '20' | 'all'>('10');
+  const [bookingHistoryStatusFilter, setBookingHistoryStatusFilter] = useState<'all' | 'BOOKED' | 'CANCELLED' | 'EXPIRED' | 'CLOSED' | 'FAILED'>('all');
 
   const [newBooking, setNewBooking] = useState<{
     better_account_id: string;
@@ -3109,6 +3130,27 @@ const App = () => {
 
   const visibleActiveRequests = isBookingAdmin ? activeRequests : myActiveRequests;
   const visibleHistoricalRequests = isBookingAdmin ? historicalRequests : myHistoricalRequests;
+
+  const sortedHistoricalRequests = [...visibleHistoricalRequests].sort((a, b) => {
+    const aDateTime = `${a.target_date || ''}T${a.target_start_time || '00:00:00'}`;
+    const bDateTime = `${b.target_date || ''}T${b.target_start_time || '00:00:00'}`;
+
+    if (bDateTime !== aDateTime) {
+      return bDateTime.localeCompare(aDateTime);
+    }
+
+    return (b.updated_at || '').localeCompare(a.updated_at || '');
+  });
+
+  const filteredHistoricalRequests = sortedHistoricalRequests.filter(req => {
+    if (bookingHistoryStatusFilter === 'all') return true;
+    return (req.status || '') === bookingHistoryStatusFilter;
+  });
+
+  const limitedHistoricalRequests =
+    bookingHistoryLimit === 'all'
+      ? filteredHistoricalRequests
+      : filteredHistoricalRequests.slice(0, Number(bookingHistoryLimit));
 
   useEffect(() => {
     if (!newBooking.better_account_id) return;
@@ -4341,7 +4383,7 @@ const App = () => {
       alert('No tournaments found for this player yet.');
       return;
     }
-
+    
     const reg = registrations.find(
       r =>
         r.profile_id === currentUser.id &&
@@ -4522,7 +4564,8 @@ const App = () => {
       'Bronce': '🥉',
       'Cobre': '⚜️',
       'Hierro': '⚙️',
-      'Élite': '⭐',
+      'Anita Lizana': '⭐',
+      'Serena Williams': '⭐',
       };
 
     if (name.includes('Calibración')) return '🔥';
@@ -4574,6 +4617,9 @@ const App = () => {
     return sorted[0];
   }
 
+  const currentUserLatestTournamentName = currentUser
+    ? (getLatestTournamentForUser(currentUser.id)?.name || 'No tournaments')
+    : 'No tournaments';
 
   function formatPendingShare(m: Match) {
     const creator = profiles.find(p => p.id === m.created_by)?.name || 'Alguien';
@@ -4743,6 +4789,7 @@ const App = () => {
     if (!playerAId || !playerBId) return { w: 0, l: 0 };
 
     const playedBetween = matches.filter(m =>
+      isOfficialMatchByTournamentId(m, tournaments) &&
       m.status === 'played' &&
       (
         (m.home_player_id === playerAId && m.away_player_id === playerBId) ||
@@ -4757,7 +4804,6 @@ const App = () => {
       const homeWins = (m.player1_sets_won ?? 0) > (m.player2_sets_won ?? 0);
       const awayWins = (m.player2_sets_won ?? 0) > (m.player1_sets_won ?? 0);
 
-      // Si por alguna razón viene empate/undefined, lo ignoramos (no suma a W/L)
       if (!homeWins && !awayWins) return;
 
       const aIsHome = m.home_player_id === playerAId;
@@ -4766,7 +4812,6 @@ const App = () => {
         if (homeWins) w++;
         else l++;
       } else {
-        // A es away
         if (awayWins) w++;
         else l++;
       }
@@ -5323,7 +5368,9 @@ const App = () => {
   };
 
   const getHeadToHeadResult = (divisionId: string, tournamentId: string, playerAId: string, playerBId: string) => {
-    const divisionMatches = getDivisionMatches(divisionId, tournamentId);
+    const divisionMatches = getDivisionMatches(divisionId, tournamentId)
+      .filter(m => isOfficialMatchByTournamentId(m, tournaments));
+
     const h2hMatches = divisionMatches.filter(match => {
       const h = getMatchHomeId(match);
       const aw = getMatchAwayId(match);
@@ -5333,22 +5380,22 @@ const App = () => {
         ((h === playerAId && aw === playerBId) || (h === playerBId && aw === playerAId))
       );
     });
-    
+
     if (h2hMatches.length === 0) return null;
-    
+
     let playerAWins = 0;
     let playerBWins = 0;
-    
+
     h2hMatches.forEach(match => {
-      // La lógica de victoria aquí ya usa player1_sets_won y player2_sets_won, lo cual es correcto
-      // pero la asignación de quién es quién debe ser explícita
       if (getMatchHomeId(match) === playerAId) {
-        if (match.player1_sets_won > match.player2_sets_won) playerAWins++; else playerBWins++;
-      } else { // El jugador A es el away_player
-        if (match.player2_sets_won > match.player1_sets_won) playerAWins++; else playerBWins++;
+        if (match.player1_sets_won > match.player2_sets_won) playerAWins++;
+        else playerBWins++;
+      } else {
+        if (match.player2_sets_won > match.player1_sets_won) playerAWins++;
+        else playerBWins++;
       }
     });
-    
+
     return {
       winner: playerAWins > playerBWins ? playerAId : playerBId,
       playerAWins,
@@ -5512,6 +5559,7 @@ const App = () => {
 
     const played = matches
       .filter(m =>
+        isOfficialMatchByTournamentId(m, tournaments) &&
         m.status === 'played' &&
         (m.home_player_id === playerId || m.away_player_id === playerId)
       )
@@ -5519,6 +5567,7 @@ const App = () => {
 
     const scheduled = matches
       .filter(m =>
+        isOfficialMatchByTournamentId(m, tournaments) &&
         (m.status === 'scheduled' || m.status === 'pending') &&
         (m.home_player_id === playerId || m.away_player_id === playerId || m.created_by === playerId)
       )
@@ -5533,8 +5582,6 @@ const App = () => {
 
   const getDivisionNameById = (id?: string | null) =>
     divisions.find(d => d.id === id)?.name ?? '';
-
-
 
   const getDivisionHighlights = (divisionName: string, tournamentName: string) => {
     // Different highlights for PPC Cup divisions
@@ -5649,6 +5696,37 @@ const App = () => {
   const historicTournaments = [...tournaments]
     .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
     .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
+
+  const menHistoricTournaments = historicTournaments.filter(t =>
+    /^PPC Edición/i.test((t.name || '').trim())
+  );
+
+  const womenHistoricTournaments = historicTournaments.filter(t =>
+    /^WPPC Edición/i.test((t.name || '').trim())
+  );
+
+  const calibrationHistoricTournaments = historicTournaments.filter(t =>
+    /^Calibraciones/i.test((t.name || '').trim())
+  );
+
+  const otherHistoricTournaments = historicTournaments.filter(t => {
+    const name = (t.name || '').trim();
+
+    const isMen = /^PPC Edición/i.test(name);
+    const isWomen = /^WPPC Edición/i.test(name);
+    const isCalibration = /^Calibraciones/i.test(name);
+
+    return !isMen && !isWomen && !isCalibration;
+  });
+
+  const activeHistoricTournaments =
+    historicTab === 'men'
+      ? menHistoricTournaments
+      : historicTab === 'women'
+      ? womenHistoricTournaments
+      : historicTab === 'calibrations'
+      ? calibrationHistoricTournaments
+      : otherHistoricTournaments;
 
   const handleEditAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const target = e.target;
@@ -6533,11 +6611,7 @@ const App = () => {
                       {uiName(currentUser.name)}
                     </p>
                     <p className="truncate text-sm text-gray-600">
-                      {registrations
-                        .filter((r) => r.profile_id === currentUser.id)
-                        .map((r) => tournaments.find((t) => t.id === r.tournament_id)?.name)
-                        .filter(Boolean)
-                        .join(', ') || 'No tournaments'}
+                      {currentUserLatestTournamentName}
                     </p>
                   </button>
 
@@ -6850,7 +6924,7 @@ const App = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {activeRequests.map((req) => {
+                          {visibleActiveRequests.map((req) => {
                             const account = bookingAccounts.find(a => a.id === req.better_account_id);
                             const courts = [req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
                               .filter(Boolean)
@@ -6905,10 +6979,46 @@ const App = () => {
               </div>
             </div>
             <div className="mt-4 border border-gray-200 rounded-xl p-4 bg-white">
-              <h3 className="font-semibold text-gray-800 mb-2">
-                Historial de bookings
-              </h3>
-              {visibleHistoricalRequests.length === 0 ? (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
+                <h3 className="font-semibold text-gray-800">
+                  Historial de bookings
+                </h3>
+
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                  <select
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    value={bookingHistoryStatusFilter}
+                    onChange={(e) =>
+                      setBookingHistoryStatusFilter(
+                        e.target.value as 'all' | 'BOOKED' | 'CANCELLED' | 'EXPIRED' | 'CLOSED' | 'FAILED'
+                      )
+                    }
+                  >
+                    <option value="all">Todos los estados</option>
+                    <option value="BOOKED">Booked</option>
+                    <option value="CANCELLED">Cancelled</option>
+                    <option value="EXPIRED">Expired</option>
+                    <option value="CLOSED">Closed</option>
+                    <option value="FAILED">Failed</option>
+                  </select>
+
+                  <select
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    value={bookingHistoryLimit}
+                    onChange={(e) =>
+                      setBookingHistoryLimit(
+                        e.target.value as '5' | '10' | '20' | 'all'
+                      )
+                    }
+                  >
+                    <option value="5">Últimos 5</option>
+                    <option value="10">Últimos 10</option>
+                    <option value="20">Últimos 20</option>
+                    <option value="all">Todos</option>
+                  </select>
+                </div>
+              </div>
+              {limitedHistoricalRequests.length === 0 ? (
                 <p className="text-sm text-gray-600">
                   Aún no hay historial de reservas.
                 </p>
@@ -6926,7 +7036,7 @@ const App = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {visibleHistoricalRequests.map((req) => {
+                      {limitedHistoricalRequests.map((req) => {
                         const account = bookingAccounts.find(a => a.id === req.better_account_id);
                         return (
                           <tr key={req.id} className="bg-white">
@@ -7007,10 +7117,7 @@ const App = () => {
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
-                      {(() => {
-                        const t = getLatestTournamentForUser(currentUser.id);
-                        return t ? t.name : 'No tournaments';
-                      })()}
+                      {currentUserLatestTournamentName}
                     </p>
                   </button>
 
@@ -7182,17 +7289,76 @@ const App = () => {
 
           {showHistoricTournaments && (
             <div className="mt-6">
-              <h2 className="text-white font-semibold mb-3 text-sm sm:text-base text-center">
+              <h2 className="text-white font-semibold mb-4 text-sm sm:text-base text-center">
                 Torneos Históricos
               </h2>
 
-              {historicTournaments.length === 0 ? (
+              <div className="flex flex-wrap justify-center gap-2 mb-5">
+                <button
+                  type="button"
+                  onClick={() => setHistoricTab('men')}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
+                    historicTab === 'men'
+                      ? 'bg-white text-slate-900'
+                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+                  }`}
+                >
+                  Torneos Hombres Históricos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHistoricTab('women')}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
+                    historicTab === 'women'
+                      ? 'bg-white text-slate-900'
+                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+                  }`}
+                >
+                  Torneos Mujeres Históricos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHistoricTab('other')}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
+                    historicTab === 'other'
+                      ? 'bg-white text-slate-900'
+                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+                  }`}
+                >
+                  Otros Formatos Históricos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHistoricTab('calibrations')}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
+                    historicTab === 'calibrations'
+                      ? 'bg-white text-slate-900'
+                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+                  }`}
+                >
+                  Calibraciones Históricos
+                </button>
+              </div>
+
+              <div className="text-center mb-4">
+                <p className="text-white/80 text-sm">
+                  {historicTab === 'men' && 'Torneos PPC Edición...'}
+                  {historicTab === 'women' && 'Torneos WPPC Edición...'}
+                  {historicTab === 'other' && 'PPC Cup y otros formatos históricos'}
+                  {historicTab === 'calibrations' && 'Torneos de Calibraciones...'}
+                </p>
+              </div>
+
+              {activeHistoricTournaments.length === 0 ? (
                 <p className="text-center text-white/70 text-sm">
-                  No hay torneos históricos todavía.
+                  No hay torneos en esta categoría todavía.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                  {historicTournaments.map(tournament => {
+                  {activeHistoricTournaments.map(tournament => {
                     const tournamentRegistrations = registrations.filter(
                       r => r.tournament_id === tournament.id
                     );
@@ -7698,10 +7864,7 @@ const App = () => {
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
-                      {(() => {
-                        const t = getLatestTournamentForUser(currentUser.id);
-                        return t ? t.name : 'No tournaments';
-                      })()}
+                      {currentUserLatestTournamentName}
                     </p>
                   </button>
 
@@ -8855,8 +9018,9 @@ const App = () => {
       });
       
       const playerMatches = getPlayerMatches(selectedDivision.id, selectedTournament.id, selectedPlayer.id); 
+
       const playerMatchesAll = getPlayerMatchesAll(selectedPlayer.id);
-      
+
       // Calculate upcoming matches against all other players
       const divisionPlayers = getActiveDivisionPlayers(selectedDivision.id, selectedTournament.id);
       const allOpponents = divisionPlayers.filter(p => p.id !== selectedPlayer.id);
@@ -8906,7 +9070,7 @@ const App = () => {
                     >
                       <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                       <p className="truncate text-sm text-gray-600">
-                        Division: {selectedDivision.name}
+                        {currentUserLatestTournamentName}
                       </p>
                     </button>
 
@@ -10157,7 +10321,7 @@ const App = () => {
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
-                      Division: {selectedDivision.name}
+                      {currentUserLatestTournamentName}
                     </p>
                   </button>
 
@@ -10263,7 +10427,7 @@ const App = () => {
             <button
               type="button"
               onClick={() => setShowAvailability(prev => !prev)}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-emerald-700 transition"
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700 transition"
             >
               <span>📅</span>
               <span>Ver disponibilidad de los jugadores</span>
