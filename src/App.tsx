@@ -3,6 +3,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 import FindTennisCourt from './components/FindTennisCourt';
+import BuscarClases from './components/BuscarClases';
+
+// Profile ID autorizado para ver "Buscar clases" — reemplaza con tu UUID de Supabase
+const BUSCAR_CLASES_ALLOWED_ID = "fb045715-86c6-48fc-88dc-c784fa5ed2bc";
 
 
 // 🔹 CARRUSEL DE FOTOS ANTERIORES (home)
@@ -1347,6 +1351,86 @@ function divisionLogoSrc(name: string) {
   return map[name] || '/ppc-logo.png';
 }
 
+// Colores por división: [gradiente barra top, ring avatar, sombra avatar, borde tarjeta]
+function divisionColors(name: string): {
+  barGradient: string;
+  ringColor: string;
+  avatarShadow: string;
+  cardBorder: string;
+  blurTop: string;
+  blurBottom: string;
+} {
+  const n = (name || '').trim();
+  switch (n) {
+    case 'Élite':
+    case 'Anita Lizana':
+    case 'Serena Williams':
+      return {
+        barGradient: 'from-purple-500 via-violet-400 to-indigo-500',
+        ringColor: 'ring-purple-200',
+        avatarShadow: '0_12px_30px_rgba(139,92,246,0.25)',
+        cardBorder: 'border-purple-100',
+        blurTop: 'bg-purple-100/70',
+        blurBottom: 'bg-indigo-100/70',
+      };
+    case 'Diamante':
+      return {
+        barGradient: 'from-cyan-400 via-sky-300 to-blue-400',
+        ringColor: 'ring-cyan-200',
+        avatarShadow: '0_12px_30px_rgba(34,211,238,0.25)',
+        cardBorder: 'border-cyan-100',
+        blurTop: 'bg-cyan-100/70',
+        blurBottom: 'bg-sky-100/70',
+      };
+    case 'Oro':
+      return {
+        barGradient: 'from-yellow-400 via-amber-400 to-orange-400',
+        ringColor: 'ring-yellow-200',
+        avatarShadow: '0_12px_30px_rgba(251,191,36,0.30)',
+        cardBorder: 'border-yellow-100',
+        blurTop: 'bg-yellow-100/70',
+        blurBottom: 'bg-amber-100/70',
+      };
+    case 'Plata':
+      return {
+        barGradient: 'from-slate-400 via-gray-300 to-slate-400',
+        ringColor: 'ring-slate-200',
+        avatarShadow: '0_12px_30px_rgba(148,163,184,0.30)',
+        cardBorder: 'border-slate-200',
+        blurTop: 'bg-slate-100/70',
+        blurBottom: 'bg-gray-100/70',
+      };
+    case 'Bronce':
+      return {
+        barGradient: 'from-orange-400 via-amber-500 to-yellow-600',
+        ringColor: 'ring-orange-200',
+        avatarShadow: '0_12px_30px_rgba(249,115,22,0.25)',
+        cardBorder: 'border-orange-100',
+        blurTop: 'bg-orange-100/70',
+        blurBottom: 'bg-amber-100/70',
+      };
+    case 'Cobre':
+      return {
+        barGradient: 'from-rose-400 via-red-400 to-orange-500',
+        ringColor: 'ring-rose-200',
+        avatarShadow: '0_12px_30px_rgba(251,113,133,0.25)',
+        cardBorder: 'border-rose-100',
+        blurTop: 'bg-rose-100/70',
+        blurBottom: 'bg-orange-100/70',
+      };
+    case 'Hierro':
+    default:
+      return {
+        barGradient: 'from-emerald-400 via-teal-400 to-green-500',
+        ringColor: 'ring-emerald-200',
+        avatarShadow: '0_12px_30px_rgba(16,185,129,0.20)',
+        cardBorder: 'border-emerald-100',
+        blurTop: 'bg-emerald-100/70',
+        blurBottom: 'bg-teal-100/70',
+      };
+  }
+}
+
 function getNextMatchPosition(round: string | null | undefined, pos: number | null | undefined) {
   if (!round || !pos) return null;
 
@@ -1486,29 +1570,27 @@ type BracketPlayerSlotProps = {
 
 function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps) {
   const base =
-    'flex items-center gap-2 px-3 py-2 rounded-lg border transition-all duration-150 min-w-[150px]';
+    'flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all duration-150 min-w-[150px]';
 
   let cls =
-    'bg-slate-900/70 border-slate-700 text-slate-100 shadow-sm';
+    'bg-white border-slate-200 text-slate-800 shadow-sm';
 
   if (!player) {
-    // Slot vacío (por ejemplo, rondas futuras sin jugador aún)
     cls =
-      'bg-slate-900/40 border-dashed border-slate-600 text-slate-400 italic';
+      'bg-slate-50 border-dashed border-slate-300 text-slate-400 italic';
   }
 
   if (isWinner) {
     cls =
-      'bg-lime-400/90 border-lime-300 text-slate-900 font-semibold shadow-md';
+      'bg-gradient-to-r from-emerald-100 via-teal-50 to-cyan-50 border-emerald-300 text-emerald-900 font-semibold shadow-md';
   } else if (isLoser) {
-    // Perdedor más oscuro
     cls =
-      'bg-slate-900/95 border-slate-800 text-slate-500 opacity-70';
+      'bg-slate-100 border-slate-200 text-slate-500 opacity-80';
   }
 
   return (
     <div className={`${base} ${cls}`}>
-      <div className="h-7 w-7 rounded-full overflow-hidden ring-1 ring-slate-600 bg-slate-800 flex-shrink-0">
+      <div className="h-8 w-8 rounded-full overflow-hidden ring-2 ring-white bg-slate-200 shadow-sm flex-shrink-0">
         {player?.avatar_url ? (
           <img
             src={player.avatar_url}
@@ -1521,8 +1603,8 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
           </div>
         )}
       </div>
-      <div className="text-sm truncate">
-        {player ? player.name : '—'}
+      <div className="text-sm font-medium truncate">
+        {player ? uiName(player.name) : '—'}
       </div>
     </div>
   );
@@ -1543,7 +1625,6 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
   header,
   sets = [],
 }) => {
-  // Detectar ganador / perdedor si el partido ya está jugado
   let winnerId: string | null = null;
   let loserId: string | null = null;
 
@@ -1562,7 +1643,6 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
   const isLoser = (p?: BracketAnyPlayer | null) =>
     !!loserId && p?.id === loserId;
 
-  // Crear línea de marcador, ej: "6-4  3-6  10-8"
   const orderedSets = [...sets].sort(
     (a, b) => (a.set_number ?? 0) - (b.set_number ?? 0)
   );
@@ -1574,12 +1654,12 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
   return (
     <div className="flex flex-col gap-2">
       {header && (
-        <div className="text-[11px] uppercase tracking-[0.2em] text-yellow-300 mb-1 text-center">
+        <div className="text-[11px] uppercase tracking-[0.20em] text-emerald-700 mb-1 text-center font-semibold">
           {header}
         </div>
       )}
 
-      <div className="bg-white/10 border border-white/30 rounded-xl p-3 text-white text-sm flex flex-col gap-2 min-h-[80px]">
+      <div className="rounded-2xl border border-white/80 bg-white/95 p-3 text-slate-900 text-sm flex flex-col gap-2 min-h-[88px] shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur-sm">
         <BracketPlayerSlot
           player={player1}
           isWinner={isWinner(player1)}
@@ -1592,7 +1672,7 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
         />
 
         {scoreLine && (
-          <div className="mt-1 text-[11px] text-slate-200 text-center tracking-[0.12em]">
+          <div className="mt-1 text-[11px] text-slate-600 text-center tracking-[0.14em] font-semibold">
             {scoreLine}
           </div>
         )}
@@ -1648,7 +1728,6 @@ function BracketView({
   const qfRight = [3, 4].map(pos => byRound('QF', pos));
   const sf = [1, 2].map(pos => byRound('SF', pos));
   const finalMatch = byRound('F', 1);
-
   const getMatchHomeId = (m?: Match | null): string | null => {
     if (!m) return null;
     return (m as any).home_player_id ?? (m as any).home_historic_player_id ?? null;
@@ -1659,35 +1738,54 @@ function BracketView({
     return (m as any).away_player_id ?? (m as any).away_historic_player_id ?? null;
   };
 
+  const championId = finalMatch
+    ? finalMatch.player1_sets_won > finalMatch.player2_sets_won
+      ? getMatchHomeId(finalMatch)
+      : finalMatch.player2_sets_won > finalMatch.player1_sets_won
+      ? getMatchAwayId(finalMatch)
+      : null
+    : null;
+
+  const champion = championId ? getPlayer(championId) : null;  
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
+    <div className="min-h-screen bg-gradient-to-br from-[#eefaf7] via-[#f7fffd] to-[#eef6ff] text-slate-900">
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Botón volver a torneos */}
         <div className="mb-4">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-2 text-sm text-slate-200 hover:text-white"
+            className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
           >
             <span className="text-lg">←</span>
             <span>Volver a torneos</span>
           </button>
         </div>
 
-        {/* Cabecera con copa */}
-        <div className="flex flex-col items-center mb-10">
-          {/* Pon aquí la imagen que quieras (trophy o layout) en /public */}
-          <img
-            src="/ppc-cup-trophy.jpg"
-            alt="PPC Cup Trophy"
-            className="h-40 w-auto mb-3 object-contain"
-          />
-          <h1 className="text-3xl font-extrabold tracking-wide">
-            {tournament.name}
-          </h1>
-          <p className="text-sm text-slate-300 mt-1">
-            Knockout · 16 jugadores
-          </p>
+        <div className="relative overflow-hidden rounded-[28px] border border-emerald-100 bg-white/90 shadow-[0_20px_60px_rgba(15,23,42,0.10)] mb-10">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-500" />
+          <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-emerald-100/70 blur-3xl" />
+          <div className="absolute -bottom-16 -left-16 w-56 h-56 rounded-full bg-sky-100/70 blur-3xl" />
+
+          <div className="relative flex flex-col items-center px-6 py-8 text-center">
+            <img
+              src="/ppc-cup-trophy.jpg"
+              alt="PPC Cup Trophy"
+              className="h-40 w-auto mb-4 object-contain drop-shadow-[0_10px_25px_rgba(16,185,129,0.18)]"
+            />
+            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-100 px-4 py-1.5 mb-3">
+              <span className="text-sm">🏆</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
+                PPC Cup
+              </span>
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-wide text-slate-900">
+              {tournament.name}
+            </h1>
+            <p className="text-sm text-slate-600 mt-2">
+              Knockout · 16 jugadores
+            </p>
+          </div>
         </div>
 
         {/* Grid del bracket */}
@@ -1701,7 +1799,7 @@ function BracketView({
                 match={m}
                 player1={getPlayer(getMatchHomeId(m))}
                 player2={getPlayer(getMatchAwayId(m))}
-                header={idx === 0 ? 'Round of 16' : undefined}
+                header={idx === 0 ? 'Ronda de 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
             ))}
@@ -1726,7 +1824,7 @@ function BracketView({
                   match={m}
                   player1={pTop}
                   player2={pBottom}
-                  header={idx === 0 ? 'Quarter-finals' : undefined}
+                  header={idx === 0 ? 'Cuartos de final' : undefined}
                   sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
                 />
               );
@@ -1742,13 +1840,13 @@ function BracketView({
                   match={m}
                   player1={getProfile(getMatchHomeId(m))}
                   player2={getProfile(getMatchAwayId(m))}
-                  header={idx === 0 ? 'Semi-finals' : undefined}
+                  header={idx === 0 ? 'Semifinales' : undefined}
                   sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
                 />
               ))}
             </div>
 
-            <div className="mt-10">
+            <div className="mt-10 flex flex-col items-center">
               <div className="text-center mb-2 text-[11px] uppercase tracking-[0.2em] text-yellow-300">
                 Final
               </div>
@@ -1758,6 +1856,39 @@ function BracketView({
                 player2={getProfile(getMatchAwayId(finalMatch))}
                 sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
               />
+
+              {champion && (
+                <div className="mt-8 w-full max-w-md rounded-[26px] border border-emerald-200 bg-gradient-to-br from-emerald-50 via-cyan-50 to-blue-50 p-6 text-center shadow-[0_18px_45px_rgba(16,185,129,0.16)]">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-700 font-semibold mb-3">
+                    Campeón
+                  </p>
+
+                  <div className="mx-auto mb-4 h-28 w-28 rounded-full overflow-hidden border-4 border-white shadow-[0_10px_28px_rgba(14,165,233,0.18)] bg-white ring-4 ring-emerald-100">
+                    {champion.avatar_url ? (
+                      <img
+                        src={champion.avatar_url}
+                        alt={champion.name ?? 'Champion'}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-4xl">
+                        🎾
+                      </div>
+                    )}
+                  </div>
+
+                  <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight">
+                    {uiName(champion.name)}
+                  </h2>
+
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/90 border border-emerald-100 px-3 py-1 shadow-sm">
+                    <span className="text-xs">🏆</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      PPC Cup Winner
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1780,7 +1911,7 @@ function BracketView({
                   match={m}
                   player1={pTop}
                   player2={pBottom}
-                  header={idx === 0 ? 'Quarter-finals' : undefined}
+                  header={idx === 0 ? 'Cuartos de final' : undefined}
                   sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
                 />
               );
@@ -1795,33 +1926,25 @@ function BracketView({
                 match={m}
                 player1={getProfile(getMatchHomeId(m))}
                 player2={getProfile(getMatchAwayId(m))}
-                header={idx === 0 ? 'Round of 16' : undefined}
+                header={idx === 0 ? 'Ronda de 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
             ))}
           </div>
         </div>
         
-        {/* Logo abajo */}
-        <div className="mt-12 flex flex-col items-center gap-4">
-          <img
-            src="/ppc-cup-logo.png"
-            alt="PPC Cup Logo"
-            className="h-42 w-auto opacity-90"
-          />
-        </div>
         </div>
       </div>
 
       {/* Panel inferior: lista de partidos y acciones */}
       <div className="px-4 pb-8 mt-6">
-        <h2 className="text-sm sm:text-base font-semibold text-white mb-3">
+        <h2 className="text-sm sm:text-base font-semibold text-slate-900 mb-3">
           Partidos y resultados
         </h2>
 
-        <div className="bg-slate-900/80 border border-white/10 rounded-xl overflow-hidden">
+        <div className="bg-white/95 border border-slate-200 rounded-2xl overflow-hidden shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
           <table className="min-w-full text-xs sm:text-sm">
-            <thead className="bg-slate-900/90 text-slate-300 uppercase text-[11px]">
+            <thead className="bg-gradient-to-r from-emerald-50 via-cyan-50 to-sky-50 text-slate-600 uppercase text-[11px]">
               <tr>
                 <th className="px-3 py-2 text-left">Ronda</th>
                 <th className="px-3 py-2 text-left">Partido</th>
@@ -1834,11 +1957,11 @@ function BracketView({
               {["R16", "QF", "SF", "F"].map((round) => {
                 const roundLabel =
                   round === "R16"
-                    ? "Round of 16"
+                    ? "Ronda de 16"
                     : round === "QF"
-                    ? "Quarter-finals"
+                    ? "Cuartos de final"
                     : round === "SF"
-                    ? "Semi-finals"
+                    ? "Semifinales"
                     : "Final";
 
                 const roundMatches = matches
@@ -1865,8 +1988,8 @@ function BracketView({
                   const placeText = m.location_details || "Por definir";
 
                   return (
-                    <tr key={m.id} className="hover:bg-slate-800/60">
-                      <td className="px-3 py-2 align-top text-slate-300">
+                    <tr key={m.id} className="hover:bg-emerald-50/50">
+                      <td className="px-3 py-2 align-top text-slate-600">
                         {roundLabel}
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -1882,13 +2005,13 @@ function BracketView({
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-2 align-top text-slate-200">
+                      <td className="px-3 py-2 align-top text-slate-700">
                         {dateText}
                         {timeText && (
                           <span className="ml-1 text-slate-400">· {timeText}</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 align-top text-slate-200">
+                      <td className="px-3 py-2 align-top text-slate-700">
                         {placeText}
                       </td>
                       <td className="px-3 py-2 align-top">
@@ -1896,7 +2019,7 @@ function BracketView({
                         {canEditSchedule(m) && (
                           <button
                             onClick={() => onEditSchedule(m)}
-                            className="px-2 py-1 rounded-full bg-slate-800 text-blue-300 hover:bg-slate-700 hover:text-blue-100 text-[11px] sm:text-xs"
+                            className="px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 text-[11px] sm:text-xs"
                           >
                             Editar horario
                           </button>
@@ -1904,7 +2027,7 @@ function BracketView({
                         {canEditSchedule(m) && (
                           <button
                             onClick={() => onEditResult(m)}
-                            className="px-2 py-1 rounded-full bg-green-600 text-white hover:bg-green-700 text-[11px] sm:text-xs"
+                            className="px-2.5 py-1 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 text-[11px] sm:text-xs"
                           >
                             Agregar resultados
                           </button>
@@ -1973,6 +2096,9 @@ const App = () => {
   const [hasCommitted, setHasCommitted] = useState(false);
   const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
   const [historicTab, setHistoricTab] = useState<'men' | 'women' | 'calibrations' | 'other'>('men');
+  const [showHallOfFameView, setShowHallOfFameView] = useState(false);
+  const [hallOfFameTournamentFilter, setHallOfFameTournamentFilter] = useState('all');
+  const [hallOfFameDivisionFilter, setHallOfFameDivisionFilter] = useState('all');
   const [historicPlayers, setHistoricPlayers] = useState<HistoricPlayer[]>([]);
   const [birthDateInput, setBirthDateInput] = useState('');
   const [newMatch, setNewMatch] = useState({ 
@@ -1989,6 +2115,10 @@ const App = () => {
     time: '' 
   });
   const [showMap, setShowMap] = useState(false);
+  const [showBuscarClases, setShowBuscarClases] = useState(false);
+  const [showNavMenu, setShowNavMenu] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [cameFromHistoric, setCameFromHistoric] = useState(false);
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [newRegistration, setNewRegistration] = useState({ tournamentId: '', divisionId: '' }); 
@@ -3194,10 +3324,10 @@ const App = () => {
       case 'SEARCHING': return 'Searching';
       case 'PENDING':   return 'Pending';
       case 'CREATED':   return 'Created';
-      case 'BOOKED':    return 'Booked';
-      case 'CANCELLED': return 'Cancelled';
-      case 'EXPIRED':   return 'Expired';
-      case 'CLOSED':    return 'Closed';
+      case 'BOOKED':    return 'Reservado';
+      case 'CANCELLED': return 'Cancelado';
+      case 'EXPIRED':   return 'Expirado';
+      case 'CLOSED':    return 'Cerrado';
       default:          return s || '—';
     }
   }; 
@@ -3522,12 +3652,12 @@ const App = () => {
     e.preventDefault();
 
     if (registrationStep === 1) {
-      if (!newUser.name || !newUser.email) return alert('Please fill in name/email.');
+      if (!newUser.name || !newUser.email) return alert('Por favor completa nombre y email.');
       setRegistrationStep(2);
       return;
     }
     if (registrationStep === 2) {
-      if (!newUser.profilePic) return alert('Please upload a profile picture.');
+      if (!newUser.profilePic) return alert('Por favor sube una foto de perfil.');
       setRegistrationStep(3);
       return;
     }
@@ -3540,7 +3670,7 @@ const App = () => {
         const divisionId = pickedDivisionId;
 
         if (!tournamentId || !divisionId || !password) {
-          throw new Error('Please select a tournament, division, and enter a password.');
+          throw new Error('Por favor selecciona un torneo, división e ingresa una contraseña.');
         }
         
         const onboardingData = {
@@ -3975,7 +4105,7 @@ const App = () => {
       if (error) throw error;
 
       // 4. Informar al usuario que revise su correo
-      alert("Password reset link has been sent! Please check your email.");
+      alert("¡Se envió el enlace para restablecer contraseña! Por favor revisa tu email.");
 
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -3987,10 +4117,10 @@ const App = () => {
 
   const handleJoinTournament = async () => {
     if (!newRegistration.tournamentId || !newRegistration.divisionId) {
-      return alert('Please select a tournament and a division.');
+      return alert('Por favor selecciona un torneo y una división.');
     }
     if (!currentUser) {
-      return alert('Could not find current user. Please log in again.');
+      return alert('No se pudo encontrar el usuario actual. Por favor inicia sesión de nuevo.');
     }
 
     setLoading(true);
@@ -4005,7 +4135,7 @@ const App = () => {
 
       if (error) throw error;
 
-      alert('Successfully registered for the new tournament!');
+      alert('¡Te registraste exitosamente en el nuevo torneo!');
       setShowJoinModal(false);
       setNewRegistration({ tournamentId: '', divisionId: '' });
       // Opcional: Recargar los datos de registros para que la UI se actualice
@@ -4312,6 +4442,7 @@ const App = () => {
     setSelectedDivision(null);
     setSelectedPlayer(null);
     setShowMap(false);
+    setShowBuscarClases(false);
     setSelectedTournament(null);
     setEditProfile(false);
   };
@@ -4380,7 +4511,7 @@ const App = () => {
 
     const latestTournament = getLatestTournamentForUser(currentUser.id);
     if (!latestTournament) {
-      alert('No tournaments found for this player yet.');
+      alert('No se encontraron torneos para este jugador aún.');
       return;
     }
     
@@ -4391,13 +4522,13 @@ const App = () => {
     );
 
     if (!reg) {
-      alert('No division found for this player yet.');
+      alert('No se encontró división para este jugador aún.');
       return;
     }
 
     const division = divisions.find(d => d.id === reg.division_id);
     if (!division) {
-      alert('Division not found.');
+      alert('División no encontrada.');
       return;
     }
 
@@ -4408,6 +4539,243 @@ const App = () => {
     setEditingPlayerCard(false);
     setPlayerCardSaveMessage('');
     window.scrollTo(0, 0);
+  };
+
+  // Navigate to the current user's active division (latest tournament)
+  const goToMyDivision = () => {
+    if (!currentUser) return;
+    const latestTournament = getLatestTournamentForUser(currentUser.id);
+    if (!latestTournament) return;
+    const reg = registrations.find(
+      r => r.profile_id === currentUser.id && r.tournament_id === latestTournament.id
+    );
+    if (!reg) return;
+    const division = divisions.find(d => d.id === reg.division_id);
+    if (!division) return;
+    setSelectedTournament(latestTournament);
+    setSelectedDivision(division);
+    setSelectedPlayer(null);
+    setShowNavMenu(false);
+    window.scrollTo(0, 0);
+  };
+
+  // ── Nav Menu ──────────────────────────────────────────────────────────────
+  const renderNavMenu = () => {
+    if (!currentUser || !showNavMenu) return null;
+
+    const hasActiveDivision = (() => {
+      const t = getLatestTournamentForUser(currentUser.id);
+      if (!t) return false;
+      return registrations.some(r => r.profile_id === currentUser.id && r.tournament_id === t.id);
+    })();
+
+    const menuItem = (
+      icon: React.ReactNode,
+      label: string,
+      onClick: () => void,
+      className = ''
+    ) => (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all hover:bg-white/10 active:scale-[0.98] ${className}`}
+      >
+        <span className="w-6 h-6 flex items-center justify-center shrink-0 opacity-80">{icon}</span>
+        <span>{label}</span>
+      </button>
+    );
+
+    const divider = () => <div className="my-1 h-px bg-white/10 mx-2" />;
+
+    return (
+      <>
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowNavMenu(false)}
+          aria-hidden="true"
+        />
+
+        {/* Drawer panel */}
+        <div className="fixed top-0 right-0 z-50 h-full w-72 max-w-[85vw] flex flex-col bg-gradient-to-b from-green-800 via-emerald-800 to-green-900 shadow-2xl">
+
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <img
+                src={avatarSrc(currentUser)}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                alt="avatar"
+                className="h-9 w-9 rounded-full object-cover ring-2 ring-white/30"
+              />
+              <div className="min-w-0">
+                <p className="text-white font-semibold text-sm truncate">{uiName(currentUser.name)}</p>
+                <p className="text-white/60 text-xs truncate">{currentUser.email}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowNavMenu(false)}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition"
+              aria-label="Cerrar menú"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Menu items */}
+          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 text-white">
+
+            {/* Primary */}
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="12" cy="7" r="4"/><path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeLinecap="round"/></svg>,
+              'Mi Perfil',
+              () => { openEditProfile(); setShowNavMenu(false); }
+            )}
+
+            {hasActiveDivision && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M10 3v18M14 3v18" opacity="0.4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>,
+              'Ir a mi División',
+              goToMyDivision
+            )}
+
+            {divider()}
+
+            {/* Back to home */}
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1V10"/></svg>,
+              'Menú principal',
+              () => {
+                setSelectedTournament(null);
+                setSelectedDivision(null);
+                setSelectedPlayer(null);
+                setShowHallOfFameView(false);
+                setShowHistoricTournaments(false);
+                setShowMap(false);
+                setShowBuscarClases(false);
+                setShowBookingPanel(false);
+                setCameFromHistoric(false);
+                setShowNavMenu(false);
+                window.scrollTo(0, 0);
+              }
+            )}
+
+            {divider()}
+
+            {/* Tournaments */}
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
+              'Torneos Históricos',
+              () => { setShowHistoricTournaments(true); setShowNavMenu(false); }
+            )}
+
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z"/></svg>,
+              'Salón de la Fama',
+              () => { setShowHallOfFameView(true); setHallOfFameTournamentFilter('all'); setHallOfFameDivisionFilter('all'); setShowNavMenu(false); }
+            )}
+
+            {divider()}
+
+            {/* Tools */}
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>,
+              'Encontrar Cancha',
+              () => { setShowMap(true); setShowNavMenu(false); }
+            )}
+
+            {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
+              <span className="text-base">🎾</span>,
+              'Buscar Clases',
+              () => { setShowBuscarClases(true); setShowNavMenu(false); }
+            )}
+
+            {(isBookingAdmin || visibleBookingAccounts.length > 0) && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><rect x="3" y="4" width="18" height="18" rx="2"/><path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>,
+              'Reservas automáticas',
+              () => { setShowBookingPanel(true); setShowMap(false); setSelectedTournament(null); setSelectedDivision(null); setSelectedPlayer(null); setShowNavMenu(false); }
+            )}
+
+            {divider()}
+
+            {/* Secondary */}
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/></svg>,
+              '@pintapostchampionship',
+              () => { window.open('https://instagram.com/pintapostchampionship', '_blank', 'noopener,noreferrer'); setShowNavMenu(false); }
+            )}
+
+          </nav>
+
+          {/* Join at bottom — above logout divider */}
+          <div className="px-3 pt-2 pb-1">
+            <button
+              type="button"
+              onClick={() => { setShowJoinModal(true); setShowNavMenu(false); }}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white transition-all active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
+              </svg>
+              <span>Unirse a un Torneo</span>
+            </button>
+          </div>
+
+          {/* Logout */}
+          <div className="px-3 pb-5 pt-2 border-t border-white/10">
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+              </svg>
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Logout confirmation modal */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">¿Cerrar sesión?</p>
+                  <p className="text-sm text-gray-500">Tendrás que volver a iniciar sesión.</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowLogoutConfirm(false); setShowNavMenu(false); handleLogout(); }}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition"
+                >
+                  Sí, salir
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -4487,7 +4855,7 @@ const App = () => {
       }
 
       setEditProfile(false);
-      alert('Profile updated successfully!');
+      alert('¡Perfil actualizado exitosamente!');
 
     } catch (err: any) {
       console.error('save profile error:', err);
@@ -4511,9 +4879,9 @@ const App = () => {
       textArea.select();
       try {
         document.execCommand('copy');
-        alert('Message is too long for WhatsApp sharing. It has been copied to your clipboard. Please paste it manually into WhatsApp.');
+        alert('El mensaje es demasiado largo para compartir por WhatsApp. Se copió al portapapeles. Por favor pégalo manualmente en WhatsApp.');
       } catch (err) {
-        alert('Could not copy to clipboard. Please manually copy the message and paste into WhatsApp.');
+        alert('No se pudo copiar al portapapeles. Por favor copia manualmente el mensaje y pégalo en WhatsApp.');
       }
       document.body.removeChild(textArea);
     }
@@ -4525,9 +4893,9 @@ const App = () => {
     // 1. Si el mensaje es muy largo, lo copiamos y avisamos al usuario.
     if (message.length > MAX_LENGTH) {
       navigator.clipboard.writeText(message).then(() => {
-        alert('The match list is too long to share directly. It has been copied to your clipboard. Please paste it into WhatsApp.');
+        alert('La lista de partidos es demasiado larga para compartir directamente. Se copió al portapapeles. Por favor pégala en WhatsApp.');
       }).catch(() => {
-        alert('The match list is too long to share directly and could not be copied. Please try copying it manually.');
+        alert('La lista de partidos es demasiado larga para compartir directamente y no se pudo copiar. Por favor intenta copiarla manualmente.');
       });
       return;
     }
@@ -4620,6 +4988,327 @@ const App = () => {
   const currentUserLatestTournamentName = currentUser
     ? (getLatestTournamentForUser(currentUser.id)?.name || 'No tournaments')
     : 'No tournaments';
+
+  const getChampionProfileById = (playerId?: string | null) => {
+    if (!playerId) return null;
+    return profiles.find(p => p.id === playerId)
+      || historicPlayers.find(p => p.id === playerId)
+      || null;
+  };
+
+  const getHallOfFameWinnerForDivision = (tournamentId: string, divisionId: string) => {
+    const finalsMainMatches = matches.filter(m =>
+      m.tournament_id === tournamentId &&
+      m.division_id === divisionId &&
+      m.phase === 'finals_main' &&
+      m.knockout_round === 'F' &&
+      m.status === 'played'
+    );
+
+    const finalMatch = finalsMainMatches[0];
+
+    if (finalMatch) {
+      const winnerId =
+        finalMatch.player1_sets_won > finalMatch.player2_sets_won
+          ? getMatchHomeId(finalMatch)
+          : finalMatch.player2_sets_won > finalMatch.player1_sets_won
+          ? getMatchAwayId(finalMatch)
+          : null;
+
+      if (winnerId) {
+        const winner = getChampionProfileById(winnerId);
+        if (winner) return winner;
+      }
+    }
+
+    const divisionStandings = standings
+      .filter(s => s.tournament_id === tournamentId && s.division_id === divisionId)
+      .slice()
+      .sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.set_diff !== a.set_diff) return b.set_diff - a.set_diff;
+
+        const aGamesDiff = (a.games_won || 0) - (a.games_lost || 0);
+        const bGamesDiff = (b.games_won || 0) - (b.games_lost || 0);
+        if (bGamesDiff !== aGamesDiff) return bGamesDiff - aGamesDiff;
+
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+    const firstPlace = divisionStandings[0];
+    if (!firstPlace?.profile_id) return null;
+
+    return getChampionProfileById(firstPlace.profile_id);
+  };
+
+  const getHallOfFameDivisionSortRank = (name?: string | null) => {
+    const n = (name || '').trim().toLowerCase();
+
+    if (n === 'oro') return 1;
+    if (n === 'plata') return 2;
+    if (n === 'bronce') return 3;
+    if (n === 'cobre') return 4;
+    if (n === 'hierro') return 5;
+    if (n === 'diamante') return 6;
+
+    if (n === 'anita lizana') return 20;
+    if (n === 'serena williams') return 21;
+    if (n === 'élite') return 22;
+    if (n === 'élite 1') return 23;
+    if (n === 'élite 2') return 24;
+
+    return 99;
+  };
+
+  const hallOfFameEntries = tournaments
+    .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
+    .filter(t => !isCalibrationTournamentByName(t.name))
+    .flatMap(tournament => {
+      const tournamentDivisions = divisions
+        .filter(d => d.tournament_id === tournament.id)
+        .slice()
+        .sort((a, b) => {
+          const rankA = getHallOfFameDivisionSortRank(a.name);
+          const rankB = getHallOfFameDivisionSortRank(b.name);
+          if (rankA !== rankB) return rankA - rankB;
+          return (a.name || '').localeCompare(b.name || '', 'es');
+        });
+
+      return tournamentDivisions
+        .map(division => {
+          const winner = getHallOfFameWinnerForDivision(tournament.id, division.id);
+          if (!winner) return null;
+
+          return {
+            tournamentId: tournament.id,
+            tournamentName: tournament.name,
+            tournamentEndDate: tournament.end_date || tournament.start_date || '',
+            divisionId: division.id,
+            divisionName: division.name,
+            winnerId: winner.id,
+            winnerName: winner.name || '—',
+            winnerAvatar: ('avatar_url' in winner ? winner.avatar_url : null) || null,
+          };
+        })
+        .filter(Boolean) as Array<{
+          tournamentId: string;
+          tournamentName: string;
+          tournamentEndDate: string;
+          divisionId: string;
+          divisionName: string;
+          winnerId: string;
+          winnerName: string;
+          winnerAvatar: string | null;
+        }>;
+    })
+    .filter(entry =>
+      hallOfFameTournamentFilter === 'all' || entry.tournamentId === hallOfFameTournamentFilter
+    )
+    .filter(entry =>
+      hallOfFameDivisionFilter === 'all' ||
+      entry.divisionName.trim().toLowerCase() === hallOfFameDivisionFilter
+    )
+    .sort((a, b) => {
+      const byDate = (b.tournamentEndDate || '').localeCompare(a.tournamentEndDate || '');
+      if (byDate !== 0) return byDate;
+
+      const byTournament = a.tournamentName.localeCompare(b.tournamentName, 'es');
+      if (byTournament !== 0) return byTournament;
+
+      return getHallOfFameDivisionSortRank(a.divisionName) - getHallOfFameDivisionSortRank(b.divisionName);
+    });
+
+  const hallOfFameTournamentOptions = tournaments
+    .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
+    .filter(t => !isCalibrationTournamentByName(t.name))
+    .slice()
+    .sort((a, b) => (b.end_date || b.start_date || '').localeCompare(a.end_date || a.start_date || ''));
+
+  const hallOfFameDivisionOptions = Array.from(
+    new Map(
+      divisions
+        .filter(d => {
+          const tournament = tournaments.find(t => t.id === d.tournament_id);
+          return tournament && !isCalibrationTournamentByName(tournament.name);
+        })
+        .map(d => [(d.name || '').trim().toLowerCase(), { id: (d.name || '').trim().toLowerCase(), name: d.name }])
+    ).values()
+  ).sort((a, b) => {
+    const ra = getHallOfFameDivisionSortRank(a.name);
+    const rb = getHallOfFameDivisionSortRank(b.name);
+    if (ra !== rb) return ra - rb;
+    return (a.name || '').localeCompare(b.name || '', 'es');
+  });
+
+
+  if (showHallOfFameView) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-100 via-yellow-50 to-emerald-100 text-slate-900">
+
+        {/* ── Header ── */}
+        <header className="bg-white shadow-lg sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowHallOfFameView(false);
+                      setSelectedTournament(null);
+                      setSelectedDivision(null);
+                      setSelectedPlayer(null);
+                    }}
+                    className="text-amber-600 hover:text-amber-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    ← Volver al menú principal
+                  </button>
+                  <h1 className="text-4xl font-bold text-gray-800">🏆 Salón de la Fama</h1>
+                  <p className="text-gray-600">Pinta Post Championship</p>
+                </div>
+              </div>
+              {currentUser && (
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">{currentUserLatestTournamentName}</p>
+                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                      aria-label="Ir a mi perfil"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+        {renderNavMenu()}
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+          {/* ── Filters ── */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <select
+              value={hallOfFameTournamentFilter}
+              onChange={(e) => setHallOfFameTournamentFilter(e.target.value)}
+              className="w-full sm:w-auto min-w-[240px] px-4 py-2.5 rounded-xl bg-white text-slate-900 border border-amber-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+            >
+              <option value="all">Todos los torneos</option>
+              {hallOfFameTournamentOptions.map(tournament => (
+                <option key={tournament.id} value={tournament.id}>
+                  {tournament.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={hallOfFameDivisionFilter}
+              onChange={(e) => setHallOfFameDivisionFilter(e.target.value)}
+              className="w-full sm:w-auto min-w-[220px] px-4 py-2.5 rounded-xl bg-white text-slate-900 border border-emerald-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
+            >
+              <option value="all">Todas las divisiones</option>
+              {hallOfFameDivisionOptions.map(division => (
+                <option key={division.id} value={division.id}>
+                  {division.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ── Grid / empty state ── */}
+          {hallOfFameEntries.length === 0 ? (
+            <div className="rounded-2xl border border-amber-100 bg-white/90 p-10 text-center shadow-sm">
+              <p className="text-3xl mb-3">🏆</p>
+              <p className="text-slate-700 font-medium">No se encontraron campeones</p>
+              <p className="text-slate-500 text-sm mt-1">Prueba a cambiar los filtros.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {hallOfFameEntries.map(entry => {
+                const dc = divisionColors(entry.divisionName);
+                return (
+                <div
+                  key={`${entry.tournamentId}-${entry.divisionId}`}
+                  className={`group relative overflow-hidden rounded-[26px] border bg-white shadow-[0_16px_45px_rgba(15,23,42,0.08)] transition-transform duration-200 hover:-translate-y-1 ${dc.cardBorder}`}
+                >
+                  <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${dc.barGradient}`} />
+                  <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full blur-2xl ${dc.blurTop}`} />
+                  <div className={`absolute -bottom-10 -left-10 w-36 h-36 rounded-full blur-2xl ${dc.blurBottom}`} />
+
+                  <div className="relative p-6">
+                    <div className="flex items-start gap-4 mb-5">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 shadow-sm">
+                        <img
+                          src={divisionLogoSrc(entry.divisionName)}
+                          alt={`${entry.divisionName} logo`}
+                          className="max-h-[42px] max-w-[42px] object-contain"
+                        />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-600 mb-1">
+                          Campeón
+                        </p>
+                        <h3 className="text-xl font-bold text-slate-900 leading-tight">
+                          {entry.tournamentName}
+                        </h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                          División {entry.divisionName}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-center text-center">
+                      <div className={`relative w-28 h-28 rounded-full overflow-hidden border-4 border-white mb-4 bg-slate-100 shadow-[${dc.avatarShadow}]`}>
+                        <div className={`absolute inset-0 rounded-full ring-4 ${dc.ringColor}`} />
+                        <img
+                          src={entry.winnerAvatar || '/default-avatar.png'}
+                          alt={entry.winnerName}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+
+                      <h4 className="text-lg font-bold text-slate-900">
+                        {uiName(entry.winnerName)}
+                      </h4>
+                    </div>
+                  </div>
+                </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {renderNotifs()}
+      </div>
+    );
+  }
 
   function formatPendingShare(m: Match) {
     const creator = profiles.find(p => p.id === m.created_by)?.name || 'Alguien';
@@ -4877,7 +5566,7 @@ const App = () => {
       blocks.push(msg.trimEnd());
     });
 
-    if (blocks.length === 0) return alert('No scheduled matches to share');
+    if (blocks.length === 0) return alert('No hay partidos programados para compartir');
 
     const siteUrl = window.location.origin;
     const finalMsg = blocks.join('\n\n') + `\n\n${siteUrl}`;
@@ -5136,7 +5825,7 @@ const App = () => {
     e.preventDefault();
     
     if (!newMatch.player1 || !newMatch.date) {
-      return alert('Please fill all required fields.');
+      return alert('Por favor completa todos los campos requeridos.');
     }
 
     const locationId = locations.find(l => l.name === newMatch.location)?.id || null;
@@ -5584,24 +6273,23 @@ const App = () => {
     divisions.find(d => d.id === id)?.name ?? '';
 
   const getDivisionHighlights = (divisionName: string, tournamentName: string) => {
-    // Different highlights for PPC Cup divisions
     if (tournamentName.includes('PPC Cup')) {
       const highlights: Record<string, string> = {
-        'Elite': 'Top players competing for the PPC Cup championship title.',
-        'Standard': 'Intermediate players looking to test their skills in the cup format.',
-        'Beginner': 'New players getting their first taste of competitive play in the cup.'
+        'Elite': 'Los mejores jugadores compitiendo por el título de la PPC Cup.',
+        'Standard': 'Jugadores intermedios poniendo a prueba sus habilidades en formato copa.',
+        'Beginner': 'Nuevos jugadores viviendo su primera experiencia competitiva en la copa.'
       };
-      return highlights[divisionName] || 'Exciting division with passionate players.';
+      return highlights[divisionName] || 'División emocionante con jugadores apasionados.';
     }
     
     const highlights: Record<string, string> = {
-      'Oro': 'The elite players who dominate with powerful serves and aggressive baseline play.',
-      'Plata': 'Highly skilled players with excellent all-around game and competitive spirit.',
-      'Bronce': 'Solid players improving rapidly with strong fundamentals and consistency.',
-      'Cobre': 'Developing players showing great potential and passion for the game.',
-      'Hierro': 'Newcomers and enthusiasts learning the game with enthusiasm and dedication.'
+      'Oro': 'Los mejores jugadores del torneo, con saques potentes y juego agresivo desde el fondo.',
+      'Plata': 'Jugadores de alto nivel con un juego completo y gran espíritu competitivo.',
+      'Bronce': 'Jugadores sólidos que mejoran rápidamente con buenos fundamentos y consistencia.',
+      'Cobre': 'Jugadores en desarrollo con gran potencial y pasión por el tenis.',
+      'Hierro': 'Nuevos jugadores y entusiastas aprendiendo el juego con dedicación y energía.'
     };
-    return highlights[divisionName] || 'Exciting division with passionate players.';
+    return highlights[divisionName] || 'División emocionante con jugadores apasionados.';
   };
 
   const getNearbyCourts = () => {
@@ -5753,7 +6441,7 @@ const App = () => {
 
         } catch (err) {
           console.error("Error resizing image:", err);
-          alert("There was an error processing the image.");
+          alert("Hubo un error al procesar la imagen.");
         } finally {
           setLoading(false);
         }
@@ -6056,7 +6744,7 @@ const App = () => {
               <form onSubmit={handleRegister}>
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Tournament</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Seleccionar Torneo</label>
                     <select
                       value={pickedTournamentId}
                       onChange={(e) => {
@@ -6066,7 +6754,7 @@ const App = () => {
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
                     >
-                      <option value="">Select Tournament</option>
+                      <option value="">Seleccionar Torneo</option>
                       {(tournaments || []).map(t => (
                         <option key={t.id} value={t.id}>
                           {t.name}
@@ -6075,7 +6763,7 @@ const App = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Division</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Seleccionar División</label>
                     <select
                       value={pickedDivisionId}
                       onChange={(e) => setPickedDivisionId(e.target.value)}
@@ -6083,7 +6771,7 @@ const App = () => {
                       required
                       disabled={!pickedTournamentId}
                     >
-                      <option value="">Select Division</option>
+                      <option value="">Seleccionar División</option>
                       {(divisions || [])
                         .filter(d => d.tournament_id === pickedTournamentId)
                         .map(d => (
@@ -6244,7 +6932,7 @@ const App = () => {
                 type="password"
                 value={editUser.password}
                 onChange={(e) => setEditUser(prev => ({ ...prev, password: e.target.value }))}
-                placeholder="Leave blank to keep current"
+                placeholder="Deja en blanco para mantener la actual"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
@@ -6632,50 +7320,14 @@ const App = () => {
                     </button>
 
                     <button
-                      onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                      title="Menú"
                     >
-                      <svg
-                        className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                      >
-                        <circle cx="12" cy="7" r="4" strokeWidth="2" />
-                        <path
-                          d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </button>
-
-                    <button
-                      onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
-                    >
-                      <svg
-                        className="w-7 h-7 sm:w-6 sm:h-6 text-red-600"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M9 16l-4-4m0 0l4-4m-4 4h11"
-                        />
-                        <path
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"
-                        />
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
                       </svg>
                     </button>
                   </div>
@@ -6685,6 +7337,7 @@ const App = () => {
             </div>
           </div>
         </header>
+        {renderNavMenu()}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <section className="bg-white/90 rounded-2xl shadow-lg p-6 border border-green-100">
@@ -6947,7 +7600,7 @@ const App = () => {
                                     <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
                                     <div className="mt-2 text-xs text-gray-600 space-y-1">
                                       {req.last_error && <div>Último: {req.last_error}</div>}
-                                      {req.booked_court_name && <div>Booked: {req.booked_court_name}</div>}
+                                      {req.booked_court_name && <div>Reservado: {req.booked_court_name}</div>}
                                       {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
                                       {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
                                       <div>Preferidas: {[req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
@@ -6995,11 +7648,11 @@ const App = () => {
                     }
                   >
                     <option value="all">Todos los estados</option>
-                    <option value="BOOKED">Booked</option>
-                    <option value="CANCELLED">Cancelled</option>
-                    <option value="EXPIRED">Expired</option>
-                    <option value="CLOSED">Closed</option>
-                    <option value="FAILED">Failed</option>
+                    <option value="BOOKED">Reservado</option>
+                    <option value="CANCELLED">Cancelado</option>
+                    <option value="EXPIRED">Expirado</option>
+                    <option value="CLOSED">Cerrado</option>
+                    <option value="FAILED">Fallido</option>
                   </select>
 
                   <select
@@ -7060,7 +7713,7 @@ const App = () => {
                                 <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
                                 <div className="mt-2 text-xs text-gray-600 space-y-1">
                                   {req.last_error && <div>Último: {req.last_error}</div>}
-                                  {req.booked_court_name && <div>Booked: {req.booked_court_name}</div>}
+                                  {req.booked_court_name && <div>Reservado: {req.booked_court_name}</div>}
                                   {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
                                   {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
                                   <div>
@@ -7087,10 +7740,232 @@ const App = () => {
     );
   }
 
-  if (showMap) {
+  if (showBuscarClases && currentUser?.id === BUSCAR_CLASES_ALLOWED_ID) {
     return (
       <div className="p-4 sm:p-6">
+        <BuscarClases onBack={() => setShowBuscarClases(false)} />
+      </div>
+    );
+  }
+
+  if (showMap) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowMap(false)}
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    ← Volver al menú principal
+                  </button>
+                  <h1 className="text-4xl font-bold text-gray-800">Encontrar Cancha</h1>
+                  <p className="text-gray-600">Pinta Post Championship</p>
+                </div>
+              </div>
+              {currentUser && (
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">{currentUserLatestTournamentName}</p>
+                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                      aria-label="Ir a mi perfil"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+        {renderNavMenu()}
         <FindTennisCourt onBack={() => setShowMap(false)} />
+      </div>
+    );
+  }
+
+  if (showHistoricTournaments) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        {/* ── Sticky header ── */}
+        <header className="bg-white shadow-lg sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistoricTournaments(false)}
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    ← Volver al menú principal
+                  </button>
+                  <h1 className="text-4xl font-bold text-gray-800">Torneos Históricos</h1>
+                  <p className="text-gray-600">Pinta Post Championship</p>
+                </div>
+              </div>
+              {currentUser && (
+                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                  >
+                    <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
+                    <p className="truncate text-sm text-gray-600">{currentUserLatestTournamentName}</p>
+                  </button>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                      aria-label="Ir a mi perfil"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                    >
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+        {renderNavMenu()}
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+          {/* ── Tabs ── */}
+          <div className="flex flex-wrap justify-center gap-2 mb-8">
+            {([
+              { key: 'men',          label: 'Hombres' },
+              { key: 'women',        label: 'Mujeres' },
+              { key: 'other',        label: 'Otros Formatos' },
+              { key: 'calibrations', label: 'Calibraciones' },
+            ] as const).map(tab => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setHistoricTab(tab.key)}
+                className={`px-5 py-2.5 rounded-full text-sm font-semibold transition ${
+                  historicTab === tab.key
+                    ? 'bg-white text-slate-900 shadow'
+                    : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Grid ── */}
+          {activeHistoricTournaments.length === 0 ? (
+            <div className="rounded-2xl bg-white/10 border border-white/20 p-10 text-center">
+              <p className="text-white/80 text-sm">No hay torneos en esta categoría todavía.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {activeHistoricTournaments.map(tournament => {
+                const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id);
+                const tournamentMatches = matches.filter(m => m.tournament_id === tournament.id);
+                const allScheduled = tournamentMatches.filter(m => m.status === 'scheduled' && isTodayOrFuture(m.date));
+                const totalPints = tournamentMatches.reduce((sum, m) => sum + Number(m.player1_pints ?? 0) + Number(m.player2_pints ?? 0), 0);
+
+                return (
+                  <div
+                    key={tournament.id}
+                    className="bg-white rounded-2xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition duration-300"
+                    onClick={() => { setSelectedTournament(tournament); setShowHistoricTournaments(false); setCameFromHistoric(true); }}
+                  >
+                    <div className="p-6">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="w-14 h-14 flex items-center justify-center shrink-0">
+                          <img
+                            src={tournamentLogoSrc(tournament.name)}
+                            alt={`${tournament.name} logo`}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-xl font-bold text-gray-800 leading-tight">{tournament.name}</h3>
+                          <p className="text-gray-500 text-sm mt-0.5">
+                            {tournament.start_date ? new Date(tournament.start_date).getFullYear() : ''}
+                            {tournament.end_date && tournament.start_date !== tournament.end_date
+                              ? ` – ${new Date(tournament.end_date).getFullYear()}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="text-center p-3 bg-gray-50 rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">{tournamentRegistrations.length}</div>
+                          <div className="text-sm text-gray-600">Jugadores</div>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">{tournamentMatches.length}</div>
+                          <div className="text-sm text-gray-600">Partidos</div>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 rounded-lg">
+                          <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
+                          <div className="text-sm text-gray-600">Pintas</div>
+                        </div>
+                        <div className="text-center p-3 bg-gray-50 rounded-lg">
+                          <div className="text-2xl font-bold text-orange-600">{allScheduled.length}</div>
+                          <div className="text-sm text-gray-600">Próximos</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {renderNotifs()}
       </div>
     );
   }
@@ -7137,27 +8012,16 @@ const App = () => {
                       />
                     </button>
 
+                    {/* Hamburger — opens nav drawer */}
                     <button
-                      onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                      title="Menú"
                     >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-
-                    <button
-                      onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
                       </svg>
                     </button>
                   </div>
@@ -7167,35 +8031,13 @@ const App = () => {
             </div>
           </div>
         </header>
+        {renderNavMenu()}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center mb-8">
-            <h2 className="text-3xl font-bold text-white mb-4">Welcome to the Pinta Post Championship</h2>
-            <p className="text-white text-lg opacity-90">Select a tournament to view divisions and player details</p>
-          
-          <div className="text-center mt-8">
-            <button
-              onClick={() => setShowMap(true)}
-              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 text-lg"
-            >
-              Encontrar Cancha
-            </button>
-            {(isBookingAdmin || visibleBookingAccounts.length > 0) && (
-              <button
-                onClick={() => {
-                  setShowBookingPanel(true);
-                  setShowMap(false);
-                  setSelectedTournament(null);
-                  setSelectedDivision(null);
-                  setSelectedPlayer(null);
-                }}
-                className="ml-2 mt-3 inline-flex items-center px-3 py-3.5 border border-green-700 text-white rounded-lg text-base font-medium hover:bg-green-400"
-              >
-                Reservas automáticas Better
-              </button>
-            )}
+            <h2 className="text-3xl font-bold text-white mb-4">Bienvenidos a la Pinta Post Championship</h2>
+            <p className="text-white text-lg opacity-90">Selecciona un torneo para ver divisiones y detalles de jugadores</p>
           </div>
-        </div>
 
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -7237,29 +8079,28 @@ const App = () => {
                       {/* Título arriba, descripción abajo */}
                       <div className="flex-1">
                         <h3 className="text-xl font-bold text-gray-800 leading-tight">{tournament.name}</h3>
-                        <p className="text-gray-600">Compete in our premier tennis championship</p>
                       </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
                         <div className="text-2xl font-bold text-blue-600">{tournamentRegistrations.length}</div>
-                        <div className="text-sm text-gray-600">Players</div>
+                        <div className="text-sm text-gray-600">Jugadores</div>
                       </div>
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
                         <div className="text-2xl font-bold text-green-600">{tournamentMatches.length}</div>
-                        <div className="text-sm text-gray-600">Matches</div>
+                        <div className="text-sm text-gray-600">Partidos</div>
                       </div>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
                         <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                        <div className="text-sm text-gray-600">Total Pintas</div>
+                        <div className="text-sm text-gray-600">Total de Pintas</div>
                       </div>
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
                         <div className="text-2xl font-bold text-orange-600">{allScheduled.length}</div>
-                        <div className="text-sm text-gray-600">Upcoming Matches</div>
+                        <div className="text-sm text-gray-600">Próximos Partidos</div>
                       </div>
                     </div>
                   </div>
@@ -7268,175 +8109,6 @@ const App = () => {
             })}
           </div>
           
-
-          {/* Botón + bloque desplegable de torneos históricos */}
-          <div className="flex justify-center mt-6 mb-8">
-            <button
-              type="button"
-              onClick={() => setShowHistoricTournaments(v => !v)}
-              className="w-full max-w-md inline-flex items-center justify-between px-5 py-3 rounded-xl bg-slate-900/60 text-white border border-white/20 shadow-lg hover:bg-slate-900/75 transition"
-              aria-expanded={showHistoricTournaments}
-            >
-              <span className="font-semibold">
-                {showHistoricTournaments ? 'Ocultar Torneos Históricos' : 'Ver Torneos Históricos'}
-              </span>
-
-              <span className="text-white/90 text-lg leading-none">
-                {showHistoricTournaments ? '▲' : '▼'}
-              </span>
-            </button>
-          </div>
-
-          {showHistoricTournaments && (
-            <div className="mt-6">
-              <h2 className="text-white font-semibold mb-4 text-sm sm:text-base text-center">
-                Torneos Históricos
-              </h2>
-
-              <div className="flex flex-wrap justify-center gap-2 mb-5">
-                <button
-                  type="button"
-                  onClick={() => setHistoricTab('men')}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    historicTab === 'men'
-                      ? 'bg-white text-slate-900'
-                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
-                  }`}
-                >
-                  Torneos Hombres Históricos
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setHistoricTab('women')}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    historicTab === 'women'
-                      ? 'bg-white text-slate-900'
-                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
-                  }`}
-                >
-                  Torneos Mujeres Históricos
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setHistoricTab('other')}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    historicTab === 'other'
-                      ? 'bg-white text-slate-900'
-                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
-                  }`}
-                >
-                  Otros Formatos Históricos
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setHistoricTab('calibrations')}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                    historicTab === 'calibrations'
-                      ? 'bg-white text-slate-900'
-                      : 'bg-white/10 text-white border border-white/20 hover:bg-white/20'
-                  }`}
-                >
-                  Calibraciones Históricos
-                </button>
-              </div>
-
-              <div className="text-center mb-4">
-                <p className="text-white/80 text-sm">
-                  {historicTab === 'men' && 'Torneos PPC Edición...'}
-                  {historicTab === 'women' && 'Torneos WPPC Edición...'}
-                  {historicTab === 'other' && 'PPC Cup y otros formatos históricos'}
-                  {historicTab === 'calibrations' && 'Torneos de Calibraciones...'}
-                </p>
-              </div>
-
-              {activeHistoricTournaments.length === 0 ? (
-                <p className="text-center text-white/70 text-sm">
-                  No hay torneos en esta categoría todavía.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                  {activeHistoricTournaments.map(tournament => {
-                    const tournamentRegistrations = registrations.filter(
-                      r => r.tournament_id === tournament.id
-                    );
-
-                    const tournamentMatches = matches.filter(
-                      m => m.tournament_id === tournament.id
-                    );
-
-                    const allScheduled = tournamentMatches.filter(
-                      m => m.status === 'scheduled' && isTodayOrFuture(m.date)
-                    );
-
-                    const totalPints = tournamentMatches.reduce((sum, m) => {
-                      const p1 = Number(m.player1_pints ?? 0);
-                      const p2 = Number(m.player2_pints ?? 0);
-                      return sum + p1 + p2;
-                    }, 0);
-
-                    return (
-                      <div key={tournament.id} className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                        <div
-                          className="p-6 cursor-pointer hover:bg-gray-50 transition duration-200"
-                          onClick={() => setSelectedTournament(tournament)}
-                        >
-                          <div className="flex items-center gap-4 mb-6">
-                            <div className="w-14 h-14 flex items-center justify-center">
-                              <img
-                                src={tournamentLogoSrc(tournament.name)}
-                                alt={`${tournament.name} logo`}
-                                className="max-h-full max-w-full object-contain"
-                              />
-                            </div>
-
-                            <div className="flex-1">
-                              <h3 className="text-xl font-bold text-gray-800 leading-tight">
-                                {tournament.name}
-                              </h3>
-                              <p className="text-gray-600">Compete in our premier tennis championship</p>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div className="text-center p-3 bg-gray-50 rounded-lg">
-                              <div className="text-2xl font-bold text-blue-600">
-                                {tournamentRegistrations.length}
-                              </div>
-                              <div className="text-sm text-gray-600">Players</div>
-                            </div>
-                            <div className="text-center p-3 bg-gray-50 rounded-lg">
-                              <div className="text-2xl font-bold text-green-600">
-                                {tournamentMatches.length}
-                              </div>
-                              <div className="text-sm text-gray-600">Matches</div>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="text-center p-3 bg-gray-50 rounded-lg">
-                              <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                              <div className="text-sm text-gray-600">Total Pintas</div>
-                            </div>
-                            <div className="text-center p-3 bg-gray-50 rounded-lg">
-                              <div className="text-2xl font-bold text-orange-600">
-                                {allScheduled.length}
-                              </div>
-                              <div className="text-sm text-gray-600">Upcoming Matches</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-
 
           {/* Carrusel de fotos de torneos anteriores */}
           {highlightPhotos.length > 0 && (
@@ -7531,13 +8203,13 @@ const App = () => {
               <div className="space-y-4">
                 {/* Selector de Torneo */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Tournament</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Seleccionar Torneo</label>
                   <select
                     value={newRegistration.tournamentId}
                     onChange={(e) => setNewRegistration({ tournamentId: e.target.value, divisionId: '' })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                   >
-                    <option value="">Select...</option>
+                    <option value="">Seleccionar...</option>
                     {tournaments.filter(t => t.status === 'active').map(t => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
@@ -7547,13 +8219,13 @@ const App = () => {
                 {/* Selector de División */}
                 {newRegistration.tournamentId && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Division</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Seleccionar División</label>
                     <select
                       value={newRegistration.divisionId}
                       onChange={(e) => setNewRegistration(prev => ({ ...prev, divisionId: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg"
                     >
-                      <option value="">Select...</option>
+                      <option value="">Seleccionar...</option>
                       {divisions.filter(d => d.tournament_id === newRegistration.tournamentId).map(d => (
                         <option key={d.id} value={d.id}>{d.name}</option>
                       ))}
@@ -7571,32 +8243,7 @@ const App = () => {
           </div>
         )}
 
-          {/* Find Tennis Courts */}
-          <div className="text-center mt-8">
-            <button
-              onClick={() => setShowJoinModal(true)}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 mt-4" // Añadimos un margen superior
-            >
-              Join a New Tournament
-            </button>
-          </div>
 
-          {/* Instagram footer */}
-          <div className="mt-4 text-center text-sm text-gray-700">
-            <span className="mr-2">Para más información, visita:</span>
-            <a
-              href="https://instagram.com/pintapostchampionship"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 font-medium text-pink-600 hover:text-pink-700"
-            >
-              {/* icono simple cámara/instagram */}
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/>
-              </svg>
-              <span className="align-middle">@pintapostchampionship</span>
-            </a>
-          </div>
 
           {socialEvents.length > 0 && (
             <div className="mt-6 mx-auto max-w-2xl">
@@ -7841,10 +8488,18 @@ const App = () => {
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
               <div>
                 <button
-                  onClick={() => setSelectedTournament(null)}
+                  onClick={() => {
+                    if (cameFromHistoric) {
+                      setSelectedTournament(null);
+                      setShowHistoricTournaments(true);
+                      setCameFromHistoric(false);
+                    } else {
+                      setSelectedTournament(null);
+                    }
+                  }}
                   className="text-green-600 hover:text-green-800 font-semibold mb-2"
                 >
-                  ← Volver a torneos
+                  {cameFromHistoric ? '← Volver a Torneos Históricos' : '← Volver a torneos'}
                 </button>
                 <div className="flex items-center gap-3 mt-1">
                   <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
@@ -7885,26 +8540,14 @@ const App = () => {
                     </button>
 
                     <button
-                      onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                      title="Menú"
                     >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-
-                    <button
-                      onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
                       </svg>
                     </button>
                   </div>
@@ -7914,6 +8557,7 @@ const App = () => {
             </div>
           </div>
         </header>
+        {renderNavMenu()}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
@@ -7986,22 +8630,22 @@ const App = () => {
             <>
               {tournamentTab === 'overview' && (
                 <>
-                  {/* Tournament Summary */}
+                  {/* Resumen del Torneo */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                     <div className="bg-white rounded-xl shadow-lg p-6">
-                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Summary</h3>
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Resumen del Torneo</h3>
                       <div className="grid grid-cols-2 gap-6">
                         <div className="text-center p-4 bg-gray-50 rounded-lg">
                           <div className="text-3xl font-bold text-blue-600">
                             {divisionsData.reduce((sum, d) => sum + d.players, 0)}
                           </div>
-                          <div className="text-sm text-gray-600">Total Players</div>
+                          <div className="text-sm text-gray-600">Total Jugadores</div>
                         </div>
                         <div className="text-center p-4 bg-gray-50 rounded-lg">
                           <div className="text-3xl font-bold text-green-600">
                             {divisionsData.reduce((sum, d) => sum + d.gamesPlayed, 0)}
                           </div>
-                          <div className="text-sm text-gray-600">Total Games Played</div>
+                          <div className="text-sm text-gray-600">Partidos Jugados</div>
                         </div>
                         <div className="text-center p-4 bg-gray-50 rounded-lg">
                           <div className="text-3xl font-bold text-purple-600">
@@ -8011,13 +8655,13 @@ const App = () => {
                         </div>
                         <div className="text-center p-4 bg-gray-50 rounded-lg">
                           <div className="text-3xl font-bold text-orange-600">{divisionsData.length}</div>
-                          <div className="text-sm text-gray-600">Divisions</div>
+                          <div className="text-sm text-gray-600">Divisiones</div>
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-white rounded-xl shadow-lg p-6">
-                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Division Winners</h3>
+                      <h3 className="text-2xl font-bold text-gray-800 mb-6">Líderes por División</h3>
                       <div className="space-y-4">
                         {divisionsData.map(d => (
                           <div
@@ -8057,18 +8701,18 @@ const App = () => {
                           <div className="grid grid-cols-2 gap-4 mb-4">
                             <div className="text-center p-3 bg-gray-50 rounded-lg">
                               <div className="text-2xl font-bold text-blue-600">{players}</div>
-                              <div className="text-sm text-gray-600">Players</div>
+                              <div className="text-sm text-gray-600">Jugadores</div>
                             </div>
                             <div className="text-center p-3 bg-gray-50 rounded-lg">
                               <div className="text-2xl font-bold text-green-600">{gamesPlayed}</div>
-                              <div className="text-sm text-gray-600">Matches</div>
+                              <div className="text-sm text-gray-600">Partidos</div>
                             </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-4 mb-4">
                             <div className="text-center p-3 bg-gray-50 rounded-lg">
                               <div className="text-2xl font-bold text-purple-600">{totalPints}</div>
-                              <div className="text-sm text-gray-600">Total Pintas</div>
+                              <div className="text-sm text-gray-600">Total de Pintas</div>
                             </div>
                             <div className="text-center p-3 bg-gray-50 rounded-lg">
                               <div className="text-2xl font-bold text-orange-600">
@@ -8338,7 +8982,7 @@ const App = () => {
                                   </div>
 
                                   <div className="text-xs text-gray-600">
-                                    Champion
+                                    Campeón
                                   </div>
                                 </div>
                               ) : (
@@ -8390,11 +9034,11 @@ const App = () => {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jugadores</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">División</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -8547,10 +9191,10 @@ const App = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jugadores</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Resultado</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -8648,12 +9292,12 @@ const App = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Players</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Division</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jugadores</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">División</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ubicación</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -8717,19 +9361,11 @@ const App = () => {
 
           {/* Photo Gallery */}
           <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-2xl font-bold text-gray-800 mb-6">Tournament Highlights</h3>
-            <p className="text-gray-600 text-center">No photos available yet. Start adding matches to create highlights!</p>
+            <h3 className="text-2xl font-bold text-gray-800 mb-6">Momentos del Torneo</h3>
+            <p className="text-gray-600 text-center">Aún no hay fotos disponibles. ¡Empieza a cargar partidos para crear momentos!</p>
           </div>
 
           {/* Find Tennis Courts */}
-          <div className="text-center mt-8">
-            <button
-              onClick={() => setShowMap(true)}
-              className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 text-lg"
-            >
-              Encontrar Cancha
-            </button>
-          </div>
           {/* Instagram footer */}
           <div className="mt-4 text-center text-sm text-gray-700">
             <span className="mr-2">Para más información, visita:</span>
@@ -9055,10 +9691,10 @@ const App = () => {
                     }}
                     className="text-green-600 hover:text-green-800 font-semibold mb-2"
                   >
-                    ← Back to {selectedDivision.name} Division
+                    ← Volver a {selectedDivision.name}
                   </button>
                   <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                  <p className="text-gray-600">Division Details</p>
+                  <p className="text-gray-600">Detalles de la División</p>
                 </div>
 
                 {currentUser && (
@@ -9090,26 +9726,14 @@ const App = () => {
                         />
                       </button>
                       <button
-                        onClick={openEditProfile}
-                        className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                        aria-label="Editar perfil"
-                        title="Editar perfil"
+                        type="button"
+                        onClick={() => setShowNavMenu(v => !v)}
+                        className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                        aria-label="Abrir menú"
+                        title="Menú"
                       >
-                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                          <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                        </svg>
-                      </button>
-
-                      <button
-                        onClick={handleLogout}
-                        className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                        aria-label="Cerrar sesión"
-                        title="Cerrar sesión"
-                      >
-                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                          <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
                         </svg>
                       </button>
                     </div>
@@ -9119,6 +9743,7 @@ const App = () => {
               </div>
             </div>
           </header>
+          {renderNavMenu()}
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="mb-8">
@@ -9162,7 +9787,7 @@ const App = () => {
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    Stats
+                    Estadísticas
                   </button>
                 </div>
               </div>
@@ -9196,7 +9821,7 @@ const App = () => {
                     </div>
 
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-gray-800 mb-2">Locations</h3>
+                      <h3 className="font-semibold text-gray-800 mb-2">Locaciones</h3>
                       <div className="flex flex-wrap gap-2">
                         {selectedPlayerAreas.length > 0 ? (
                           selectedPlayerAreas.map(name => (
@@ -9205,13 +9830,13 @@ const App = () => {
                             </span>
                           ))
                         ) : (
-                          <span className="text-sm text-gray-500">No preferred areas yet</span>
+                          <span className="text-sm text-gray-500">Sin preferencias</span>
                         )}
                       </div>
 
                       {/* Postcode debajo de Locations */}
                       <div className="mt-3 text-sm text-gray-700">
-                        <span className="font-medium">Postcode:</span>{' '}
+                        <span className="font-medium">Código Postal:</span>{' '}
                         {selectedPlayer?.postal_code ? (
                           <span>{selectedPlayer.postal_code}</span>
                         ) : (
@@ -9221,15 +9846,15 @@ const App = () => {
                     </div>
 
                     <div className="bg-yellow-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-yellow-800 mb-2">Tournaments & Division</h3>
+                      <h3 className="font-semibold text-yellow-800 mb-2">Torneos y Divisiones</h3>
                       <div className="space-y-3">
                         <div>
-                          <span className="font-medium text-gray-700">Division:</span>
+                          <span className="font-medium text-gray-700">Divisiones:</span>
                           <span className="ml-1 font-medium">{selectedDivision.name}</span>
                         </div>
 
                         <div>
-                          <span className="font-medium text-gray-700">Tournaments:</span>
+                          <span className="font-medium text-gray-700">Torneos:</span>
                           <div className="flex flex-wrap gap-1 mt-1">
                             <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded">
                               {selectedTournament.name}
@@ -9264,16 +9889,16 @@ const App = () => {
                 {playerProfileTab === 'overview' && (
                   <>
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Player Statistics</h2>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Estadísticas del Jugador - Torneo Actual</h2>
                   
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                     <div className="text-center p-4 bg-gray-50 rounded-lg">
                       <div className="text-2xl font-bold text-blue-600">{playerStats.points}</div>
-                      <div className="text-sm text-gray-600">Points</div>
+                      <div className="text-sm text-gray-600">Puntos</div>
                     </div>
                     <div className="text-center p-4 bg-gray-50 rounded-lg">
                       <div className="text-2xl font-bold text-green-600">{playerStats.wins + playerStats.losses}</div>
-                      <div className="text-sm text-gray-600">Matches Played</div>
+                      <div className="text-sm text-gray-600">Partidos Jugados</div>
                     </div>
                     <div className="text-center p-4 bg-gray-50 rounded-lg">
                       <div className="text-2xl font-bold text-purple-600">{playerStats.pints}</div>
@@ -9281,11 +9906,11 @@ const App = () => {
                     </div>
                     <div className="text-center p-4 bg-gray-50 rounded-lg">
                       <div className="text-2xl font-bold text-orange-600">{playerStats.sets_won}</div>
-                      <div className="text-sm text-gray-600">Sets Won</div>
+                      <div className="text-sm text-gray-600">Sets Ganados</div>
                     </div>
                     <div className="text-center p-4 bg-gray-50 rounded-lg">
                       <div className="text-2xl font-bold text-red-600">{playerStats.set_diff}</div>
-                      <div className="text-sm text-gray-600">Sets Diff</div>
+                      <div className="text-sm text-gray-600">Diferencial de Sets</div>
                     </div>
                   </div>
 
@@ -9293,16 +9918,16 @@ const App = () => {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MP</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">W</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Posición</th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Jugador</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PJ</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">G</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">D</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">L</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SW</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SL</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SD</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SG</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SP</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DS</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pintas</th>
                         </tr>
                       </thead>
@@ -9350,7 +9975,7 @@ const App = () => {
 
                 {/* Match History */}
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Match History</h2>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Historial de Partidos</h2>
                   
                   {playerMatches.played.length > 0 ? (
                     <div className="space-y-4">
@@ -9409,13 +10034,13 @@ const App = () => {
                       })}
                     </div>
                   ) : (
-                    <p className="text-gray-500">No match history yet.</p>
+                    <p className="text-gray-500">Sin historial de partidos todavía.</p>
                   )}
                 </div>
 
                 {playerMatches.scheduled.length > 0 && (
                   <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Scheduled Matches</h2>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Agendar Partido</h2>
                     <div className="space-y-4">
                       {playerMatches.scheduled.map((match, idx) => {
                         const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
@@ -9471,7 +10096,7 @@ const App = () => {
                 {/* Upcoming Matches */}
                 {upcomingMatches.length > 0 && (
                   <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Upcoming Matches</h2>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Próximos Partidos</h2>
                     <div className="space-y-4">
                       {upcomingMatches.map((opponent, index) => {
                         const homeId = computeHomeForPair(
@@ -9559,9 +10184,9 @@ const App = () => {
                 )}
 
                 
-                {/* Head-to-Head Matches */}
+                {/* Cara a Cara */}
                 <div className="bg-white rounded-xl shadow-lg p-6">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Head-to-Head Matches</h2>
+                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Partidos Cara a Cara</h2>
 
                   {playerMatchesAll.played.length > 0 ? (
                     <div className="space-y-6">
@@ -9690,7 +10315,7 @@ const App = () => {
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
-                      No head-to-head matches available
+                      Sin partidos cara a cara disponibles
                     </div>
                   )}
                 </div>
@@ -10081,7 +10706,7 @@ const App = () => {
                   <div className="space-y-8">
                     <div className="bg-white rounded-xl shadow-lg p-6">
                       <div className="mb-6">
-                        <h2 className="text-2xl font-bold text-gray-800">Stats</h2>
+                        <h2 className="text-2xl font-bold text-gray-800">Estadísticas</h2>
                         <p className="text-sm text-gray-500 mt-1">
                           Resumen general del rendimiento del jugador en PPC
                         </p>
@@ -10105,7 +10730,7 @@ const App = () => {
 
                         <div className="bg-gray-50 rounded-xl p-4 text-center">
                           <div className="text-2xl font-bold text-emerald-600">{playerStatsSummary.winRate.toFixed(1)}%</div>
-                          <div className="text-sm text-gray-600">Win rate</div>
+                          <div className="text-sm text-gray-600">% Victorias</div>
                         </div>
                       </div>
                     </div>
@@ -10130,7 +10755,7 @@ const App = () => {
 
                         <div className="bg-yellow-50 rounded-xl p-4 text-center">
                           <div className="text-2xl font-bold text-yellow-700">{playerStatsSummary.gameDiff}</div>
-                          <div className="text-sm text-gray-600">Dif. games</div>
+                          <div className="text-sm text-gray-600">Dif. juegos</div>
                         </div>
                       </div>
                     </div>
@@ -10145,12 +10770,12 @@ const App = () => {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-purple-50 rounded-xl p-4 text-center">
                           <div className="text-2xl font-bold text-purple-600">{playerStatsSummary.totalPints}</div>
-                          <div className="text-sm text-gray-600">Pints totales</div>
+                          <div className="text-sm text-gray-600">Pintas totales</div>
                         </div>
 
                         <div className="bg-pink-50 rounded-xl p-4 text-center">
                           <div className="text-2xl font-bold text-pink-600">{playerStatsSummary.pintMatches}</div>
-                          <div className="text-sm text-gray-600">Partidos con pint</div>
+                          <div className="text-sm text-gray-600">Partidos con pinta</div>
                         </div>
 
                         <div className="bg-fuchsia-50 rounded-xl p-4 text-center">
@@ -10306,10 +10931,10 @@ const App = () => {
                   }}
                   className="text-green-600 hover:text-green-800 font-semibold mb-2"
                 >
-                  ← Back to {selectedTournament.name}
+                  ← Volver a {selectedTournament.name}
                 </button>
                 <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                <p className="text-gray-600">Division Details</p>
+                <p className="text-gray-600">Detalles de la División</p>
               </div>
 
               {currentUser && (
@@ -10341,26 +10966,14 @@ const App = () => {
                       />
                     </button>
                     <button
-                      onClick={openEditProfile}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Editar perfil"
-                      title="Editar perfil"
+                      type="button"
+                      onClick={() => setShowNavMenu(v => !v)}
+                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                      aria-label="Abrir menú"
+                      title="Menú"
                     >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="7" r="4" strokeWidth="2"/>
-                        <path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeWidth="2" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-
-                    <button
-                      onClick={handleLogout}
-                      className="p-3 sm:p-2 rounded-full hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Cerrar sesión"
-                      title="Cerrar sesión"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M9 16l-4-4m0 0l4-4m-4 4h11"/>
-                        <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M13 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h4a2 2 0 002-2v-2"/>
+                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
                       </svg>
                     </button>
                   </div>
@@ -10370,6 +10983,7 @@ const App = () => {
             </div>
           </div>
         </header>
+        {renderNavMenu()}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center mb-8">
@@ -10573,7 +11187,7 @@ const App = () => {
                 
                 <div className="space-y-4">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Players:</span>
+                    <span className="text-gray-600">Jugadores:</span>
                     <span className="font-bold text-blue-600">{players.length}</span>
                   </div>
                   <div className="flex justify-between">
@@ -10620,8 +11234,8 @@ const App = () => {
             <div className="lg:col-span-2">
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-2xl font-bold text-gray-800">Player Standings</h2>
-                  <p className="text-gray-600">Click on a player's name to view their match history</p>
+                  <h2 className="text-2xl font-bold text-gray-800">Tabla Posiciones</h2>
+                  <p className="text-gray-600">Presiona sobre el nombre de un jugador para ver el historial de partidos</p>
                 </div>
 
                 {hasDivisionZones(selectedDivision) && (
@@ -10658,16 +11272,16 @@ const App = () => {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MP</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">W</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Posición</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jugador</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PJ</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">G</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">D</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">L</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SW</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SL</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SD</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SG</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SP</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DS</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pintas</th>
                       </tr>
                     </thead>
@@ -10713,7 +11327,7 @@ const App = () => {
                                       </div>
                                       {stats.isRetired && (
                                         <span className="text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded">
-                                          Retired
+                                          Retirado
                                         </span>
                                       )}
                                     </div>
@@ -10723,7 +11337,6 @@ const App = () => {
                               <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{stats.points}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stats.wins + stats.losses}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">{stats.wins}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">0</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">{stats.losses}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_won}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_lost}</td>
@@ -10741,7 +11354,7 @@ const App = () => {
                       ) : (
                         <tr>
                           <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
-                            No players in this division yet
+                            Aún no hay jugadores en esta división
                           </td>
                         </tr>
                       )}
@@ -10769,7 +11382,7 @@ const App = () => {
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
                     >
-                      <option value="">Select Player</option>
+                      <option value="">Seleccionar Jugador</option>
                       {players.map(player => (
                         <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                       ))}
@@ -10785,7 +11398,7 @@ const App = () => {
                       required
                       disabled={!newMatch.player1} // Se deshabilita si no se ha elegido Jugador 1
                     >
-                      <option value="">Select Player</option>
+                      <option value="">Seleccionar Jugador</option>
                       {/* El filtro ahora compara por ID, que es más seguro y correcto */}
                       {players.filter(p => p.id !== newMatch.player1).map(player => (
                         <option key={player.id} value={player.id}>{uiName(player.name)}</option>
@@ -11128,10 +11741,10 @@ const App = () => {
                                 
                                 // Recargamos los datos para que el partido eliminado desaparezca de la lista
                                 await fetchData(session?.user.id);
-                                alert('Pending match cancelled.');
+                                alert('Partido pendiente cancelado.');
 
                               } catch (e:any) {
-                                alert(`Error cancelling match: ${e.message}`);
+                                alert(`Error al cancelar el partido: ${e.message}`);
                               } finally {
                                 setLoading(false);
                               }
@@ -11182,12 +11795,12 @@ const App = () => {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Players</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Division</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th> {/* <-- NUEVA */}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">División</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ubicación</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th> {/* <-- NUEVA */}
                     </tr>
                   </thead>
 

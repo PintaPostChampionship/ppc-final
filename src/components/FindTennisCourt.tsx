@@ -39,23 +39,13 @@ export default function FindTennisCourt({ onBack }: { onBack: () => void }) {
   const [embedLoaded, setEmbedLoaded] = React.useState(false);
 
   return (
-    <div className="w-full min-h-screen bg-gradient-to-br from-emerald-50 via-white to-gray-100 py-10 px-4">
+    <div className="w-full bg-gradient-to-br from-emerald-50 via-white to-gray-100 py-10 px-4">
       <div className="w-full max-w-5xl mx-auto">
 
-        {/* 🔙 Botón volver */}
-        <div className="flex items-center justify-start mb-6">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 text-sm font-medium text-emerald-700 hover:text-emerald-900 transition"
-          >
-            ← Volver a Torneos
-          </button>
-        </div>
-
         {/* Título principal */}
-        <h1 className="text-center text-3xl sm:text-4xl font-bold tracking-tight text-emerald-800 mb-10">
+        <h2 className="text-center text-3xl sm:text-4xl font-bold tracking-tight text-emerald-800 mb-10">
           Encuentra y agenda tu próxima cancha 🎾
-        </h1>
+        </h2>
 
         {/* === TIPS === */}
         <section className="mb-10">
