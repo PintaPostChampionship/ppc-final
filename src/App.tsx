@@ -2132,6 +2132,175 @@ function BracketView({
   );
 }
 
+// ── Nav sub-components (defined outside App for proper React scoping) ─────
+
+function NavPlayerSearch({ profiles, registrations, tournaments, divisions, onSelect }: {
+  profiles: Profile[];
+  registrations: Registration[];
+  tournaments: Tournament[];
+  divisions: Division[];
+  onSelect: (player: Profile, tournament: Tournament, division: Division) => void;
+}) {
+  const [query, setQuery] = React.useState('');
+
+  const results = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return profiles
+      .filter(p => p.name?.toLowerCase().includes(q) || p.nickname?.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [query, profiles]);
+
+  const getPlayerContext = (player: Profile) => {
+    const regs = registrations
+      .filter(r => r.profile_id === player.id)
+      .sort((a, b) => {
+        const ta = tournaments.find(t => t.id === a.tournament_id);
+        const tb = tournaments.find(t => t.id === b.tournament_id);
+        return (tb?.sort_order ?? 0) - (ta?.sort_order ?? 0);
+      });
+    const reg = regs[0];
+    if (!reg) return null;
+    const tournament = tournaments.find(t => t.id === reg.tournament_id);
+    const division = divisions.find(d => d.id === reg.division_id);
+    if (!tournament || !division) return null;
+    return { tournament, division };
+  };
+
+  return (
+    <div className="px-1 py-1">
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Buscar jugador..."
+          className="w-full bg-white/10 text-white placeholder-white/40 text-sm rounded-xl pl-9 pr-3 py-2.5 border border-white/10 focus:outline-none focus:border-white/30 focus:bg-white/15 transition"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {results.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          {results.map(player => {
+            const ctx = getPlayerContext(player);
+            return (
+              <button
+                key={player.id}
+                onClick={() => {
+                  if (!ctx) return;
+                  setQuery('');
+                  onSelect(player, ctx.tournament, ctx.division);
+                }}
+                disabled={!ctx}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-white/10 transition text-left disabled:opacity-40"
+              >
+                <img
+                  src={player.avatar_url || '/default-avatar.png'}
+                  onError={e => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                  alt=""
+                  className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/20"
+                />
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{player.name}</p>
+                  {ctx && (
+                    <p className="text-white/50 text-[11px] truncate">{ctx.division.name}</p>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {query.trim() && results.length === 0 && (
+        <p className="text-white/40 text-xs px-3 py-2">Sin resultados</p>
+      )}
+    </div>
+  );
+}
+
+function NavTournamentsSection({ tournaments, divisions, registrations, onSelectTournament, onSelectDivision }: {
+  tournaments: Tournament[];
+  divisions: Division[];
+  registrations: Registration[];
+  onSelectTournament: (t: Tournament) => void;
+  onSelectDivision: (t: Tournament, d: Division) => void;
+}) {
+  const [expanded, setExpanded] = React.useState<string | null>(
+    tournaments.length === 1 ? tournaments[0].id : null
+  );
+
+  return (
+    <div className="px-1 py-1">
+      <p className="text-white/40 text-[10px] font-semibold uppercase tracking-wider px-3 mb-1">Torneos activos</p>
+      {tournaments.map(t => {
+        const divs = divisions.filter(d =>
+          registrations.some(r => r.tournament_id === t.id && r.division_id === d.id)
+        ).sort((a, b) => a.name.localeCompare(b.name));
+
+        const isOpen = expanded === t.id;
+
+        return (
+          <div key={t.id}>
+            <button
+              onClick={() => {
+                if (divs.length === 0) { onSelectTournament(t); return; }
+                setExpanded(isOpen ? null : t.id);
+              }}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl hover:bg-white/10 transition text-left"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-base shrink-0">🏆</span>
+                <span className="text-white text-sm font-medium truncate">{t.name}</span>
+              </div>
+              {divs.length > 0 && (
+                <svg
+                  className={`w-4 h-4 text-white/50 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+                </svg>
+              )}
+            </button>
+
+            {isOpen && divs.length > 0 && (
+              <div className="ml-4 mb-1 space-y-0.5 border-l border-white/10 pl-3">
+                {divs.map(d => (
+                  <button
+                    key={d.id}
+                    onClick={() => onSelectDivision(t, d)}
+                    className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/10 transition text-left"
+                  >
+                    {d.color && (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: d.color }}
+                      />
+                    )}
+                    <span className="text-white/80 text-sm truncate">{d.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 
 const App = () => {
@@ -4658,6 +4827,21 @@ const App = () => {
       return registrations.some(r => r.profile_id === currentUser.id && r.tournament_id === t.id);
     })();
 
+    // Fully reset all navigation state before going somewhere new
+    const resetNav = () => {
+      setSelectedTournament(null);
+      setSelectedDivision(null);
+      setSelectedPlayer(null);
+      setShowHallOfFameView(false);
+      setShowHistoricTournaments(false);
+      setShowMap(false);
+      setShowBuscarClases(false);
+      setShowBookingPanel(false);
+      setCameFromHistoric(false);
+      setShowNavMenu(false);
+      window.scrollTo(0, 0);
+    };
+
     const menuItem = (
       icon: React.ReactNode,
       label: string,
@@ -4675,6 +4859,10 @@ const App = () => {
     );
 
     const divider = () => <div className="my-1 h-px bg-white/10 mx-2" />;
+
+    const activeTournaments = tournaments
+      .filter(t => t.status === 'active')
+      .sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0));
 
     return (
       <>
@@ -4717,7 +4905,6 @@ const App = () => {
           {/* Menu items */}
           <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 text-white">
 
-            {/* Primary */}
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="12" cy="7" r="4"/><path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeLinecap="round"/></svg>,
               'Mi Perfil',
@@ -4732,64 +4919,87 @@ const App = () => {
 
             {divider()}
 
-            {/* Back to home */}
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1V10"/></svg>,
               'Menú principal',
-              () => {
-                setSelectedTournament(null);
-                setSelectedDivision(null);
-                setSelectedPlayer(null);
-                setShowHallOfFameView(false);
-                setShowHistoricTournaments(false);
-                setShowMap(false);
-                setShowBuscarClases(false);
-                setShowBookingPanel(false);
-                setCameFromHistoric(false);
-                setShowNavMenu(false);
-                window.scrollTo(0, 0);
-              }
+              resetNav
             )}
 
             {divider()}
 
-            {/* Tournaments */}
+            {/* Player search */}
+            <NavPlayerSearch
+              profiles={profiles}
+              registrations={registrations}
+              tournaments={tournaments}
+              divisions={divisions}
+              onSelect={(player: Profile, tournament: Tournament, division: Division) => {
+                resetNav();
+                setSelectedTournament(tournament);
+                setSelectedDivision(division);
+                setSelectedPlayer(player);
+                setPlayerProfileTab('ficha');
+                setEditingPlayerCard(false);
+                setPlayerCardSaveMessage('');
+              }}
+            />
+
+            {divider()}
+
+            {/* Active tournaments + divisions */}
+            {activeTournaments.length > 0 && (
+              <NavTournamentsSection
+                tournaments={activeTournaments}
+                divisions={divisions}
+                registrations={registrations}
+                onSelectTournament={(t: Tournament) => {
+                  resetNav();
+                  setSelectedTournament(t);
+                }}
+                onSelectDivision={(t: Tournament, d: Division) => {
+                  resetNav();
+                  setSelectedTournament(t);
+                  setSelectedDivision(d);
+                }}
+              />
+            )}
+
+            {divider()}
+
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
               'Torneos Históricos',
-              () => { setShowHistoricTournaments(true); setShowNavMenu(false); }
+              () => { resetNav(); setShowHistoricTournaments(true); }
             )}
 
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z"/></svg>,
               'Salón de la Fama',
-              () => { setShowHallOfFameView(true); setHallOfFameTournamentFilter('all'); setHallOfFameDivisionFilter('all'); setShowNavMenu(false); }
+              () => { resetNav(); setShowHallOfFameView(true); setHallOfFameTournamentFilter('all'); setHallOfFameDivisionFilter('all'); }
             )}
 
             {divider()}
 
-            {/* Tools */}
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>,
               'Encontrar Cancha',
-              () => { setShowMap(true); setShowNavMenu(false); }
+              () => { resetNav(); setShowMap(true); }
             )}
 
             {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
               <span className="text-base">🎾</span>,
               'Buscar Clases',
-              () => { setShowBuscarClases(true); setShowNavMenu(false); }
+              () => { resetNav(); setShowBuscarClases(true); }
             )}
 
             {(isBookingAdmin || visibleBookingAccounts.length > 0) && menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><rect x="3" y="4" width="18" height="18" rx="2"/><path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>,
               'Reservas automáticas',
-              () => { setShowBookingPanel(true); setShowMap(false); setSelectedTournament(null); setSelectedDivision(null); setSelectedPlayer(null); setShowNavMenu(false); }
+              () => { resetNav(); setShowBookingPanel(true); }
             )}
 
             {divider()}
 
-            {/* Secondary */}
             {menuItem(
               <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3a5 5 0 110 10 5 5 0 010-10zm0 2.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/></svg>,
               '@pintapostchampionship',
@@ -4798,7 +5008,7 @@ const App = () => {
 
           </nav>
 
-          {/* Join at bottom — above logout divider */}
+          {/* Join at bottom */}
           <div className="px-3 pt-2 pb-1">
             <button
               type="button"
