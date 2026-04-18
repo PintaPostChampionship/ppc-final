@@ -587,7 +587,8 @@ interface Match {
   knockout_round?: string | null;
   bracket_position?: number | null;
   phase?: string | null;
-  group_code?: string | null;  
+  group_code?: string | null;
+  anecdote?: string | null;
 }
 
 interface MatchSet {
@@ -1942,7 +1943,8 @@ function BracketView({
           Partidos y resultados
         </h2>
 
-        <div className="bg-white/95 border border-slate-200 rounded-2xl overflow-hidden shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+        {/* Desktop: tabla */}
+        <div className="hidden sm:block bg-white/95 border border-slate-200 rounded-2xl overflow-hidden shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
           <table className="min-w-full text-xs sm:text-sm">
             <thead className="bg-gradient-to-r from-emerald-50 via-cyan-50 to-sky-50 text-slate-600 uppercase text-[11px]">
               <tr>
@@ -2040,6 +2042,88 @@ function BracketView({
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: tarjetas */}
+        <div className="sm:hidden space-y-3">
+          {["R16", "QF", "SF", "F"].map((round) => {
+            const roundLabel =
+              round === "R16"
+                ? "Ronda de 16"
+                : round === "QF"
+                ? "Cuartos de final"
+                : round === "SF"
+                ? "Semifinales"
+                : "Final";
+
+            const roundMatches = matches
+              .filter((m) => m.knockout_round === round)
+              .sort((a, b) => {
+                const da = a.date || "";
+                const db = b.date || "";
+                if (da !== db) return da.localeCompare(db);
+                return (a.time || "").localeCompare(b.time || "");
+              });
+
+            if (roundMatches.length === 0) return null;
+
+            return roundMatches.map((m) => {
+              const p1 = profiles.find((p) => p.id === m.home_player_id) || null;
+              const p2 = m.away_player_id
+                ? profiles.find((p) => p.id === m.away_player_id) || null
+                : null;
+
+              const dateText = m.date ? m.date.slice(0, 10) : "Por definir";
+              const timeText = m.time ? m.time.slice(0, 5) : "";
+              const placeText = m.location_details || "Por definir";
+
+              return (
+                <div
+                  key={m.id}
+                  className="bg-white/95 border border-slate-200 rounded-2xl p-4 shadow-sm"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                      {roundLabel}
+                    </span>
+                    {m.status === "played" && (
+                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        ✓ Jugado
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-sm font-medium text-slate-800 mb-2">
+                    {p1?.name ?? "Por definir"}
+                    <span className="text-slate-400 mx-1">vs</span>
+                    {p2?.name ?? "—"}
+                  </p>
+
+                  <div className="text-xs text-slate-500 space-y-0.5 mb-3">
+                    <div>📅 {dateText}{timeText && ` · ${timeText}`}</div>
+                    <div>📍 {placeText}</div>
+                  </div>
+
+                  {canEditSchedule(m) && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onEditSchedule(m)}
+                        className="flex-1 py-2 rounded-xl bg-sky-50 text-sky-700 border border-sky-200 text-xs font-medium"
+                      >
+                        Editar horario
+                      </button>
+                      <button
+                        onClick={() => onEditResult(m)}
+                        className="flex-1 py-2 rounded-xl bg-emerald-500 text-white text-xs font-medium"
+                      >
+                        Agregar resultados
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })}
         </div>
       </div>
 
@@ -3905,11 +3989,16 @@ const App = () => {
         score2: String(s.p2_games ?? ''),
       }));
 
+    const hadPint = m.player1_had_pint || m.player2_had_pint;
+    const pintsCount = hadPint
+      ? String(Math.max(m.player1_pints ?? 1, m.player2_pints ?? 1))
+      : '1';
+
     setEditedMatchData({
       sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
-      hadPint: false,
-      pintsCount: '1',
-      anecdote: '',
+      hadPint,
+      pintsCount,
+      anecdote: m.anecdote ?? '',
     });
 
     setEditingMatch(m);
@@ -9993,6 +10082,13 @@ const App = () => {
                           ? 'bg-blue-100 text-blue-800'
                           : 'bg-green-100 text-green-800';
 
+                        const canEdit = currentUser && (
+                          currentUser.role === 'admin' ||
+                          currentUser.id === match.home_player_id ||
+                          currentUser.id === match.away_player_id ||
+                          currentUser.id === match.created_by
+                        );
+
                         return (
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
@@ -10027,6 +10123,23 @@ const App = () => {
                               <div className="mt-1 text-sm text-purple-600 flex items-center">
                                 <span className="text-lg">🍻</span>
                                 <span className="ml-1">Tomaron {match.player1_pints} pintas cada uno</span>
+                              </div>
+                            )}
+
+                            {match.anecdote && (
+                              <div className="mt-1 text-sm text-gray-500 italic">
+                                💬 {match.anecdote}
+                              </div>
+                            )}
+
+                            {canEdit && (
+                              <div className="mt-3 flex justify-end">
+                                <button
+                                  onClick={() => openEditResult(match)}
+                                  className="text-xs text-amber-600 hover:text-amber-800 underline underline-offset-2 transition"
+                                >
+                                  Editar resultado
+                                </button>
                               </div>
                             )}
                           </div>
