@@ -2152,11 +2152,16 @@ function NavPlayerSearch({ profiles, registrations, tournaments, divisions, onSe
   }, [query, profiles]);
 
   const getPlayerContext = (player: Profile) => {
+    // Prefer active tournaments, then by sort_order descending
     const regs = registrations
       .filter(r => r.profile_id === player.id)
       .sort((a, b) => {
         const ta = tournaments.find(t => t.id === a.tournament_id);
         const tb = tournaments.find(t => t.id === b.tournament_id);
+        // Active first
+        const aActive = ta?.status === 'active' ? 1 : 0;
+        const bActive = tb?.status === 'active' ? 1 : 0;
+        if (bActive !== aActive) return bActive - aActive;
         return (tb?.sort_order ?? 0) - (ta?.sort_order ?? 0);
       });
     const reg = regs[0];
@@ -2951,6 +2956,86 @@ const App = () => {
   function formatDateLocal(iso?: string | null) {
     const dt = parseYMDLocal(iso);
     return dt.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+
+  // ── Calendar helpers ──────────────────────────────────────────────────────
+  function buildCalendarData(match: Match) {
+    const p1 = profiles.find(p => p.id === match.home_player_id);
+    const p2 = match.away_player_id ? profiles.find(p => p.id === match.away_player_id) : null;
+    const divisionName = divisions.find(d => d.id === match.division_id)?.name ?? '';
+    const locationName = [
+      locations.find(l => l.id === match.location_id)?.name,
+      match.location_details,
+    ].filter(Boolean).join(' - ') || 'Por definir';
+    const title = `PPC: ${p1?.name ?? 'J1'} vs ${p2?.name ?? 'J2'}${divisionName ? ` (${divisionName})` : ''}`;
+    const description = `Partido PPC Tennis${divisionName ? ` - ${divisionName}` : ''}`;
+    const dateStr = match.date ? match.date.slice(0, 10) : '';
+    const timeStr = match.time ? match.time.slice(0, 5) : '12:00';
+    const [hh, mm] = timeStr.split(':').map(Number);
+    const [yy, mo, dd] = dateStr.split('-').map(Number);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startDT = `${yy}${pad(mo)}${pad(dd)}T${pad(hh)}${pad(mm)}00`;
+    const endHH = hh + 1 < 24 ? hh + 1 : 23;
+    const endDT = `${yy}${pad(mo)}${pad(dd)}T${pad(endHH)}${pad(mm)}00`;
+    const icsLines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PPC Tennis//ES',
+      'BEGIN:VEVENT',
+      `DTSTART:${startDT}`, `DTEND:${endDT}`,
+      `SUMMARY:${title}`, `DESCRIPTION:${description}`, `LOCATION:${locationName}`,
+      'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n');
+    const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startDT}/${endDT}&details=${encodeURIComponent(description)}&location=${encodeURIComponent(locationName)}`;
+    const outlookUrl = `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(title)}&startdt=${yy}-${pad(mo)}-${pad(dd)}T${pad(hh)}:${pad(mm)}:00&enddt=${yy}-${pad(mo)}-${pad(dd)}T${pad(endHH)}:${pad(mm)}:00&body=${encodeURIComponent(description)}&location=${encodeURIComponent(locationName)}`;
+    return { title, icsLines, googleUrl, outlookUrl, hasDate: !!dateStr };
+  }
+
+  function downloadIcs(match: Match) {
+    const { icsLines, title } = buildCalendarData(match);
+    const blob = new Blob([icsLines], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]/gi, '_')}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function AddToCalendarButton({ match }: { match: Match }) {
+    const { googleUrl, outlookUrl, hasDate } = buildCalendarData(match);
+    const [open, setOpen] = React.useState(false);
+    if (!hasDate) return null;
+    return (
+      <div className="relative inline-block">
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="text-xs text-indigo-600 hover:text-indigo-800 underline underline-offset-2 transition"
+        >
+          📅 Agregar al calendario
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <div className="absolute left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[180px]">
+              <a href={googleUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                <img src="https://www.google.com/favicon.ico" alt="" className="w-4 h-4" />
+                Google Calendar
+              </a>
+              <a href={outlookUrl} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                <span className="text-base leading-none">📧</span>
+                Outlook
+              </a>
+              <button onClick={() => { downloadIcs(match); setOpen(false); }}
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
+                <span className="text-base leading-none">📥</span>
+                Apple / Otro (.ics)
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   }
 
   type GroupRow = {
@@ -9300,17 +9385,24 @@ const App = () => {
                                   const p2 = getAnyPlayerById(m.away_player_id);
                                   return (
                                     <div key={m.id} className="border rounded-xl p-4 bg-white">
-                                      <div className="flex items-center justify-between gap-3">
-                                        <div className="min-w-0">
-                                          <div className="font-semibold text-gray-800 truncate">{uiName(p1?.name)} vs {uiName(p2?.name)}</div>
-                                          <div className="text-xs text-gray-500">
-                                            {m.date ? formatDateLocal(m.date) : '—'} {m.time ? `• ${m.time.slice(0,5)}` : ''}
+                                      {/* Jugadores */}
+                                      <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                                        <span className="font-semibold text-gray-800 text-sm">{uiName(p1?.name)}</span>
+                                        <span className="text-gray-400 text-xs">vs</span>
+                                        <span className="font-semibold text-gray-800 text-sm">{uiName(p2?.name)}</span>
+                                      </div>
+                                      {/* Resultado + fecha */}
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-xs text-gray-500">
+                                          {m.date ? formatDateLocal(m.date) : '—'}{m.time ? ` · ${m.time.slice(0,5)}` : ''}
+                                        </div>
+                                        {m.status === 'played' ? (
+                                          <div className="text-sm font-semibold text-slate-700 tabular-nums whitespace-nowrap">
+                                            {scoreLineForMatch(m)}
                                           </div>
-                                        </div>
-                                        <div className="text-right">
-                                          <div className="text-sm font-semibold text-slate-700 tracking-wide">{scoreLineForMatch(m)}</div>
-                                          <div className="text-xs text-gray-500">{m.status}</div>
-                                        </div>
+                                        ) : (
+                                          <span className="text-[11px] text-gray-400">{m.status}</span>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -9633,22 +9725,27 @@ const App = () => {
 
                           {/* Actions */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm align-middle">
-                            {canEditSchedule(match) && (
-                              <div className="space-x-2">
-                                <button
-                                  onClick={() => openEditSchedule(match)}
-                                  className="text-blue-600 hover:text-blue-800 underline"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteScheduledMatch(match)}
-                                  className="text-red-600 hover:text-red-800 underline"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex flex-col gap-1">
+                              {canEditSchedule(match) && (
+                                <div className="flex gap-3">
+                                  <button onClick={() => openEditSchedule(match)}
+                                    className="text-blue-600 hover:text-blue-800 underline">
+                                    Editar
+                                  </button>
+                                  <button onClick={() => handleDeleteScheduledMatch(match)}
+                                    className="text-red-600 hover:text-red-800 underline">
+                                    Borrar
+                                  </button>
+                                </div>
+                              )}
+                              {currentUser && (
+                                currentUser.role === 'admin' ||
+                                currentUser.id === match.home_player_id ||
+                                currentUser.id === match.away_player_id
+                              ) && (
+                                <AddToCalendarButton match={match} />
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -10363,50 +10460,71 @@ const App = () => {
 
                 {playerMatches.scheduled.length > 0 && (
                   <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Agendar Partido</h2>
-                    <div className="space-y-4">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-4">Partidos Agendados</h2>
+                    <div className="space-y-3">
                       {playerMatches.scheduled.map((match, idx) => {
                         const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
                         const opponent = selectedIsHome
                           ? getAnyPlayerById(getMatchAwayId(match))
                           : getAnyPlayerById(getMatchHomeId(match));
-
-                        const selectedBadgeCls = selectedIsHome
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-blue-100 text-blue-800';
-
-                        const opponentBadgeCls = selectedIsHome
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-green-100 text-green-800';
+                        const loc = match.location_details || locations.find(l => l.id === match.location_id)?.name || 'Por definir';
+                        const isMyMatch = currentUser && (
+                          currentUser.id === match.home_player_id ||
+                          currentUser.id === match.away_player_id ||
+                          currentUser.id === match.created_by
+                        );
+                        const isAdminUser = currentUser?.role === 'admin';
 
                         return (
-                          <div key={idx} className="border rounded-lg p-4">
+                          <div key={idx} className="border border-gray-200 rounded-lg p-4">
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h4 className="font-semibold text-gray-800">
                                   {uiName(opponent?.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${opponentBadgeCls}`}>
+                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${selectedIsHome ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
                                     {selectedIsHome ? 'Visita' : 'Local'}
                                   </span>
                                 </h4>
-
                                 <div className="mt-1 text-xs text-gray-500">
                                   {uiName(selectedPlayer.name)}
-                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedBadgeCls}`}>
+                                  <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] ${selectedIsHome ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
                                     {selectedIsHome ? 'Local' : 'Visita'}
                                   </span>
                                 </div>
                               </div>
-
-                              <div className="text-right">
-                                <div className="text-sm font-semibold text-blue-600">{formatDateLocal(match.date)}</div>
-                                <div className="text-sm text-gray-600">{match.time && match.time.slice(0,5)}</div>
-                              </div>
+                              <span className="shrink-0 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                {match.status === 'scheduled' ? 'Confirmado' : 'Pendiente'}
+                              </span>
                             </div>
-
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium">Location:</span>{' '}
-                              {match.location_details || locations.find(l => l.id === match.location_id)?.name || 'TBD'}
+                            <div className="text-xs text-gray-500 space-y-0.5 mb-3">
+                              {match.date && <div>📅 {formatDateLocal(match.date)}{match.time ? ` · ${match.time.slice(0,5)}` : ''}</div>}
+                              <div>📍 {loc}</div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-4 pt-1 border-t border-gray-100">
+                              {(isMyMatch || isAdminUser) && (
+                                <>
+                                  <button onClick={() => openEditSchedule(match)}
+                                    className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2">
+                                    Editar horario
+                                  </button>
+                                  <button onClick={() => {
+                                    const currentSets = matchSets.filter(s => s.match_id === match.id)
+                                      .sort((a,b) => (a.set_number??0)-(b.set_number??0))
+                                      .map(s => ({ score1: String(s.p1_games??''), score2: String(s.p2_games??'') }));
+                                    setEditedMatchData({ sets: currentSets.length > 0 ? currentSets : [{score1:'',score2:''}], hadPint: false, pintsCount: '1', anecdote: '' });
+                                    setEditingMatch(match);
+                                  }} className="text-xs text-emerald-600 hover:text-emerald-800 underline underline-offset-2">
+                                    Agregar resultado
+                                  </button>
+                                  <button onClick={() => handleDeleteScheduledMatch(match)}
+                                    className="text-xs text-red-500 hover:text-red-700 underline underline-offset-2 ml-auto">
+                                    Eliminar
+                                  </button>
+                                </>
+                              )}
+                              {match.date && (isMyMatch || isAdminUser) && (
+                                <AddToCalendarButton match={match} />
+                              )}
                             </div>
                           </div>
                         );
@@ -11147,89 +11265,65 @@ const App = () => {
 
                   return (
                     <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
-                      <h2 className="text-2xl font-bold text-gray-800 mb-6">Partidos agendados</h2>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">División / Tipo</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
-                              <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase ">Acciones</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {myScheduled.map(m => {
-                              const loc =
-                                [locations.find(l => l.id === m.location_id)?.name, m.location_details]
-                                  .filter(Boolean).join(' - ') || 'Por definir';
+                      <h2 className="text-2xl font-bold text-gray-800 mb-4">Partidos agendados</h2>
+                      <div className="space-y-3">
+                        {myScheduled.map(m => {
+                          const loc = [locations.find(l => l.id === m.location_id)?.name, m.location_details]
+                            .filter(Boolean).join(' - ') || 'Por definir';
+                          const isMyMatch = currentUser && (
+                            currentUser.id === m.home_player_id ||
+                            currentUser.id === m.away_player_id ||
+                            currentUser.id === m.created_by
+                          );
+                          const isAdminUser = currentUser?.role === 'admin';
 
-                              return (
-                                <tr key={m.id} className="hover:bg-gray-50">
-                                  <td className="px-4 py-2">
-                                    {formatDate(new Date(m.date))} {m.time ? `· ${m.time.slice(0,5)}` : ''}
-                                  </td>
-                                  <td className="px-4 py-2">
+                          return (
+                            <div key={m.id} className="border border-gray-200 rounded-lg p-4">
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-800">
                                     {uiName(nameById(m.home_player_id))} vs {uiName(nameById(m.away_player_id)) || '(busca rival)'}
-                                  </td>
-                                  <td className="px-4 py-2">
-                                    <div className="text-sm text-gray-900">{divName(m.division_id)}</div>
-                                    <div className="text-xs text-gray-500">{matchTypeLabel(m)}</div>
-                                  </td>
-                                  <td className="px-4 py-2">{loc}</td>
-                                  <td className="px-4 py-2">
-                                    <div className="flex flex-wrap gap-2">
-                                      {/* Editar fecha / hora / lugar */}
-                                      <button
-                                        onClick={() => openEditSchedule(m)}
-                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700"
-                                      >
-                                        Editar horario
-                                      </button>
-
-                                      {/* Agregar resultados */}
-                                      <button
-                                        onClick={() => {
-                                          const currentSets = matchSets
-                                            .filter(s => s.match_id === m.id)
-                                            .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
-                                            .map(s => ({
-                                              score1: String(s.p1_games ?? ''),
-                                              score2: String(s.p2_games ?? ''),
-                                            }));
-
-                                          setEditedMatchData({
-                                            sets: currentSets.length > 0 ? currentSets : [{ score1: '', score2: '' }],
-                                            hadPint: false,
-                                            pintsCount: '1',
-                                            anecdote: '',
-                                          });
-                                          setEditingMatch(m);
-                                        }}
-                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
-                                      >
-                                        Agregar resultados
-                                      </button>
-
-                                      {/* Eliminar partido (opcional, pero útil) */}
-                                      <button
-                                        onClick={() => handleDeleteScheduledMatch(m)}
-                                        className="px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white hover:bg-red-700"
-                                      >
-                                        Eliminar
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    {divName(m.division_id)} · {matchTypeLabel(m)}
+                                  </p>
+                                </div>
+                                <span className="shrink-0 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                                  {m.status === 'scheduled' ? 'Confirmado' : 'Pendiente'}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500 space-y-0.5 mb-3">
+                                <div>📅 {formatDate(new Date(m.date))}{m.time ? ` · ${m.time.slice(0,5)}` : ''}</div>
+                                <div>📍 {loc}</div>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-4 pt-1 border-t border-gray-100">
+                                {(isMyMatch || isAdminUser) && (
+                                  <>
+                                    <button onClick={() => openEditSchedule(m)}
+                                      className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2">
+                                      Editar horario
+                                    </button>
+                                    <button onClick={() => {
+                                      const currentSets = matchSets.filter(s => s.match_id === m.id)
+                                        .sort((a,b) => (a.set_number??0)-(b.set_number??0))
+                                        .map(s => ({ score1: String(s.p1_games??''), score2: String(s.p2_games??'') }));
+                                      setEditedMatchData({ sets: currentSets.length > 0 ? currentSets : [{score1:'',score2:''}], hadPint: false, pintsCount: '1', anecdote: '' });
+                                      setEditingMatch(m);
+                                    }} className="text-xs text-emerald-600 hover:text-emerald-800 underline underline-offset-2">
+                                      Agregar resultado
+                                    </button>
+                                    <AddToCalendarButton match={m} />
+                                    <button onClick={() => handleDeleteScheduledMatch(m)}
+                                      className="text-xs text-red-500 hover:text-red-700 underline underline-offset-2 ml-auto">
+                                      Eliminar
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                      <p className="text-xs text-gray-500 mt-4">
-                        *Aquí ves todos tus partidos agendados (pendientes o programados). Puedes editarlos o eliminarlos.
-                      </p>
                     </div>
                   );
                 })()}
@@ -12112,67 +12206,97 @@ const App = () => {
               </div>
             </div>
             
-            {/* Division-only table (same layout as “Todos los Partidos”) */}
+            {/* Division-only table */}
             {scheduledMatches.filter(m => isTodayOrFuture(m.date)).length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">División</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ubicación</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th> {/* <-- NUEVA */}
-                    </tr>
-                  </thead>
-
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {scheduledMatches
-                      .filter(m => isTodayOrFuture(m.date))
-                      .sort((a,b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
-                      .map(m => {
-                        const p1 = profiles.find(p => p.id === m.home_player_id);
-                        const p2 = profiles.find(p => p.id === m.away_player_id);
-                        const locationName = [
-                          locations.find(l => l.id === m.location_id)?.name,
-                          m.location_details
-                        ].filter(Boolean).join(' - ') || 'TBD';
-                        return (
-                          <tr key={m.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(new Date(m.date))}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{uiName(p1?.name)} vs {uiName(p2?.name)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{selectedDivision.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{locationName}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              {canEditSchedule(m) && (
-                                <div className="space-x-2">
-                                  <button
-                                    onClick={() => openEditSchedule(m)}
-                                    className="text-blue-600 hover:text-blue-800 underline"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteScheduledMatch(m)}
-                                    className="text-red-600 hover:text-red-800 underline"
-                                  >
-                                    Delete
-                                  </button>
+              <>
+                {/* Desktop */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jugadores</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ubicación</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {scheduledMatches
+                        .filter(m => isTodayOrFuture(m.date))
+                        .sort((a,b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
+                        .map(m => {
+                          const p1 = profiles.find(p => p.id === m.home_player_id);
+                          const p2 = profiles.find(p => p.id === m.away_player_id);
+                          const locationName = [locations.find(l => l.id === m.location_id)?.name, m.location_details].filter(Boolean).join(' - ') || 'TBD';
+                          const isMyMatch = currentUser && (
+                            currentUser.role === 'admin' ||
+                            currentUser.id === m.home_player_id ||
+                            currentUser.id === m.away_player_id
+                          );
+                          return (
+                            <tr key={m.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDateLocal(m.date)}</td>
+                              <td className="px-6 py-4 text-sm text-gray-900">{uiName(p1?.name)} vs {uiName(p2?.name)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{m.time && m.time.slice(0,5)}</td>
+                              <td className="px-6 py-4 text-sm text-gray-900">{locationName}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                <div className="flex flex-col gap-1">
+                                  {canEditSchedule(m) && (
+                                    <div className="flex gap-3">
+                                      <button onClick={() => openEditSchedule(m)} className="text-blue-600 hover:text-blue-800 underline">Editar</button>
+                                      <button onClick={() => handleDeleteScheduledMatch(m)} className="text-red-600 hover:text-red-800 underline">Borrar</button>
+                                    </div>
+                                  )}
+                                  {isMyMatch && <AddToCalendarButton match={m} />}
                                 </div>
-                              )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
 
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
+                {/* Mobile */}
+                <div className="sm:hidden space-y-3">
+                  {scheduledMatches
+                    .filter(m => isTodayOrFuture(m.date))
+                    .sort((a,b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
+                    .map(m => {
+                      const p1 = profiles.find(p => p.id === m.home_player_id);
+                      const p2 = profiles.find(p => p.id === m.away_player_id);
+                      const locationName = [locations.find(l => l.id === m.location_id)?.name, m.location_details].filter(Boolean).join(' - ') || 'Por definir';
+                      const isMyMatch = currentUser && (
+                        currentUser.role === 'admin' ||
+                        currentUser.id === m.home_player_id ||
+                        currentUser.id === m.away_player_id
+                      );
+                      return (
+                        <div key={m.id} className="border border-gray-200 rounded-lg p-4">
+                          <p className="text-sm font-semibold text-gray-800 mb-1">{uiName(p1?.name)} vs {uiName(p2?.name)}</p>
+                          <div className="text-xs text-gray-500 space-y-0.5 mb-3">
+                            <div>📅 {formatDateLocal(m.date)}{m.time ? ` · ${m.time.slice(0,5)}` : ''}</div>
+                            <div>📍 {locationName}</div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-4 pt-1 border-t border-gray-100">
+                            {canEditSchedule(m) && (
+                              <>
+                                <button onClick={() => openEditSchedule(m)} className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2">Editar horario</button>
+                                <button onClick={() => handleDeleteScheduledMatch(m)} className="text-xs text-red-500 hover:text-red-700 underline underline-offset-2 ml-auto">Borrar</button>
+                              </>
+                            )}
+                            {isMyMatch && <AddToCalendarButton match={m} />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </>
             ) : (
-              <div className="text-center py-8 text-gray-500">No upcoming matches scheduled for this division</div>
+              <div className="text-center py-8 text-gray-500">No hay partidos programados para esta división</div>
             )}
+
 
           </div>
         </div>
@@ -12187,4 +12311,3 @@ const App = () => {
 
 
 export default App;
-
