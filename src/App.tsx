@@ -3566,23 +3566,19 @@ const App = () => {
         acc => String(acc.owner_profile_id) === String(uid)
       );
 
-  const betterTimeOptions = [
-    '08:00',
-    '09:00',
-    '10:00',
-    '11:00',
-    '12:00',
-    '13:00',
-    '14:00',
-    '15:00',
-    '16:00',
-    '17:00',
-    '18:00',
-    '19:00',
-    '20:00',
-    '21:00',
-    '22:00',
-  ];
+  // Bloques de 1h disponibles en Better (Highbury Fields y Rosemary Gardens)
+  const betterTimeSlots: { value: string; label: string }[] = Array.from(
+    { length: 13 },
+    (_, i) => {
+      const startH = 8 + i;
+      const endH = startH + 1;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return {
+        value: `${pad(startH)}:00`,
+        label: `${pad(startH)}:00–${pad(endH)}:00`,
+      };
+    }
+  ); // 08:00–09:00 … 20:00–21:00
 
   const ACTIVE_STATES = ['PENDING','SEARCHING','QUEUED','CREATED'];
 
@@ -7847,7 +7843,7 @@ const App = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Hora de inicio
+                        Bloque horario
                       </label>
                       <select
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -7860,14 +7856,14 @@ const App = () => {
                         }
                         required
                       >
-                        {betterTimeOptions.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
+                        {betterTimeSlots.map((slot) => (
+                          <option key={slot.value} value={slot.value}>
+                            {slot.label}
                           </option>
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500">
-                        La reserva será siempre de 1 hora.
+                        Bloques disponibles en Better (1 hora).
                       </p>
                     </div>
                   </div>
