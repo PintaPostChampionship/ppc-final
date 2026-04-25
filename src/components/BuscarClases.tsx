@@ -1,4 +1,5 @@
 import * as React from "react";
+import { supabase } from "../lib/supabaseClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,8 +124,55 @@ function availabilityBadge(available: number, capacity: number) {
 
 // ─── Session Card ─────────────────────────────────────────────────────────────
 
-function SessionCard({ session }: { session: TennisSession }) {
+function SessionCard({
+  session,
+  watchlist,
+  onWatchlistChange,
+  currentUserId,
+}: {
+  session: TennisSession;
+  watchlist: Set<string>;
+  onWatchlistChange: (key: string, add: boolean) => void;
+  currentUserId: string | null;
+}) {
   const unavailable = session.availability === 0;
+  const watchKey = `${session.booking_link}|${session.start_datetime}`;
+  const isWatching = watchlist.has(watchKey);
+  const [loadingWatch, setLoadingWatch] = React.useState(false);
+
+  async function handleWatchToggle(e: React.MouseEvent) {
+    e.preventDefault();
+    if (!currentUserId || loadingWatch) return;
+    setLoadingWatch(true);
+    try {
+      if (isWatching) {
+        await supabase
+          .from("session_watchlist")
+          .delete()
+          .eq("profile_id", currentUserId)
+          .eq("booking_link", session.booking_link)
+          .eq("start_datetime", session.start_datetime);
+        onWatchlistChange(watchKey, false);
+      } else {
+        await supabase.from("session_watchlist").upsert({
+          profile_id: currentUserId,
+          booking_link: session.booking_link,
+          start_datetime: session.start_datetime,
+          title: session.title,
+          venue_name: session.venue_name,
+          venue_postcode: session.venue_postcode,
+          price_gbp: session.price_gbp,
+          session_type: session.session_type,
+          level: session.level,
+          source: session.source,
+        }, { onConflict: "profile_id,booking_link,start_datetime" });
+        onWatchlistChange(watchKey, true);
+      }
+    } finally {
+      setLoadingWatch(false);
+    }
+  }
+
   return (
     <div
       className={`rounded-xl border bg-white shadow-sm p-4 flex flex-col gap-3 transition hover:shadow-md ${
@@ -184,26 +232,49 @@ function SessionCard({ session }: { session: TennisSession }) {
         </span>
       </div>
 
-      {/* Booking link */}
-      <a
-        href={session.booking_link}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={`mt-1 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-          unavailable
-            ? "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none"
-            : "bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95"
-        }`}
-      >
-        {unavailable ? "No disponible" : "Reservar →"}
-      </a>
+      {/* Booking link + avísame */}
+      <div className="mt-1 flex flex-col gap-2">
+        <a
+          href={session.booking_link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            unavailable
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none"
+              : "bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95"
+          }`}
+        >
+          {unavailable ? "No disponible" : "Reservar →"}
+        </a>
+
+        {/* Botón Avísame — solo en sesiones completas */}
+        {unavailable && currentUserId && (
+          <button
+            onClick={handleWatchToggle}
+            disabled={loadingWatch}
+            className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition border ${
+              isWatching
+                ? "bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+                : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400 hover:text-emerald-700"
+            } ${loadingWatch ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            {loadingWatch ? (
+              <span className="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+            ) : isWatching ? (
+              "🔕 Cancelar aviso"
+            ) : (
+              "🔔 Avísame si se libera"
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function BuscarClases({ onBack }: { onBack: () => void }) {
+export default function BuscarClases({ onBack, currentUserId }: { onBack: () => void; currentUserId: string | null }) {
   const [data, setData] = React.useState<SessionsData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -213,7 +284,10 @@ export default function BuscarClases({ onBack }: { onBack: () => void }) {
   const [filterSource, setFilterSource] = React.useState<"all" | "flow" | "better" | "clubspark">("all");
   const [filterLevel, setFilterLevel] = React.useState<string>("all");
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // Watchlist — set de "booking_link|start_datetime"
+  const [watchlist, setWatchlist] = React.useState<Set<string>>(new Set());
+
+  // ── Fetch sessions ─────────────────────────────────────────────────────────
   React.useEffect(() => {
     const fetchSessions = async () => {
       setLoading(true);
@@ -250,6 +324,30 @@ export default function BuscarClases({ onBack }: { onBack: () => void }) {
 
     fetchSessions();
   }, []);
+
+  // ── Fetch watchlist ────────────────────────────────────────────────────────
+  React.useEffect(() => {
+    if (!currentUserId) return;
+    supabase
+      .from("session_watchlist")
+      .select("booking_link, start_datetime")
+      .eq("profile_id", currentUserId)
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        setWatchlist(
+          new Set(rows.map((r) => `${r.booking_link}|${r.start_datetime}`))
+        );
+      });
+  }, [currentUserId]);
+
+  function handleWatchlistChange(key: string, add: boolean) {
+    setWatchlist((prev) => {
+      const next = new Set(prev);
+      if (add) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
 
   // ── Filter logic ──────────────────────────────────────────────────────────
   const filteredSessions = React.useMemo(() => {
@@ -464,7 +562,13 @@ export default function BuscarClases({ onBack }: { onBack: () => void }) {
                 {/* Session cards grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {sessions.map((session, idx) => (
-                    <SessionCard key={`${dateKey}-${idx}`} session={session} />
+                    <SessionCard
+                      key={`${dateKey}-${idx}`}
+                      session={session}
+                      watchlist={watchlist}
+                      onWatchlistChange={handleWatchlistChange}
+                      currentUserId={currentUserId}
+                    />
                   ))}
                 </div>
               </section>

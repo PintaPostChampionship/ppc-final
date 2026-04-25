@@ -4,6 +4,9 @@ import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 import FindTennisCourt from './components/FindTennisCourt';
 import BuscarClases from './components/BuscarClases';
+import LiveScoreboard from './components/LiveScoreboard/LiveScoreboard';
+import LiveMatchBanner from './components/LiveScoreboard/LiveMatchBanner';
+import { isEditor } from './components/LiveScoreboard/liveScoreUtils';
 
 // Profile ID autorizado para ver "Buscar clases" — reemplaza con tu UUID de Supabase
 const BUSCAR_CLASES_ALLOWED_ID = "fb045715-86c6-48fc-88dc-c784fa5ed2bc";
@@ -2374,6 +2377,12 @@ const App = () => {
   });
   const [showMap, setShowMap] = useState(false);
   const [showBuscarClases, setShowBuscarClases] = useState(false);
+  const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
+    // Inicializar desde el hash actual al cargar la página
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    const m = hash.match(/^live\/match\/([a-f0-9-]+)$/i);
+    return m ? m[1] : null;
+  });
   const [showNavMenu, setShowNavMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [cameFromHistoric, setCameFromHistoric] = useState(false);
@@ -3409,6 +3418,15 @@ const App = () => {
         await ensurePendingOnboarding(session.user.id, session.user);
         // Limpia “pending” solo después de persistir
         clearPending();
+
+        // Redirigir a partido en vivo si había un hash pendiente
+        try {
+          const pendingHash = sessionStorage.getItem('pending_hash');
+          if (pendingHash) {
+            sessionStorage.removeItem('pending_hash');
+            window.location.hash = pendingHash.replace(/^#/, '');
+          }
+        } catch {}
       }
 
       if (event === 'SIGNED_OUT') {
@@ -3444,6 +3462,26 @@ const App = () => {
   useEffect(() => {
     fetchData(session?.user.id);
   }, [session]); 
+
+  // EFECTO HASH ROUTING: Detecta navegación a /#live/match/:id
+  useEffect(() => {
+    function handleHashChange() {
+      const hash = window.location.hash.replace(/^#\/?/, '');
+      const m = hash.match(/^live\/match\/([a-f0-9-]+)$/i);
+      if (m) {
+        // Si no hay sesión, guardar el hash y mostrar login
+        if (!session) {
+          try { sessionStorage.setItem('pending_hash', window.location.hash); } catch {}
+        }
+        setLiveMatchId(m[1]);
+      } else {
+        setLiveMatchId(null);
+      }
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [session]);
 
   useEffect(() => {
     if (!selectedDivision || !selectedTournament) return;
@@ -8120,10 +8158,30 @@ const App = () => {
     );
   }
 
+  // 🎾 Live Scoreboard — accesible via /#live/match/:id
+  if (liveMatchId && currentUser) {
+    return (
+      <LiveScoreboard
+        matchId={liveMatchId}
+        currentUser={sessionUser}
+        currentProfile={currentUser}
+        onBack={() => {
+          window.location.hash = '';
+          setLiveMatchId(null);
+        }}
+      />
+    );
+  }
+
+  // Si hay liveMatchId pero no hay sesión → mostrar login (el hash se guardó en pending_hash)
+  if (liveMatchId && !currentUser) {
+    // loginView ya se activa por el efecto de sesión; no hacemos nada extra aquí
+  }
+
   if (showBuscarClases && currentUser?.id === BUSCAR_CLASES_ALLOWED_ID) {
     return (
       <div className="p-4 sm:p-6">
-        <BuscarClases onBack={() => setShowBuscarClases(false)} />
+        <BuscarClases onBack={() => setShowBuscarClases(false)} currentUserId={currentUser?.id ?? null} />
       </div>
     );
   }
@@ -8353,6 +8411,8 @@ const App = () => {
   if (!selectedTournament) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
+        <LiveMatchBanner currentProfile={currentUser} />
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -8863,6 +8923,8 @@ const App = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
+        <LiveMatchBanner currentProfile={currentUser} />
         <header className="bg-white shadow-lg">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -9733,6 +9795,16 @@ const App = () => {
                                     Borrar
                                   </button>
                                 </div>
+                              )}
+                              {/* 🎾 Iniciar marcador en vivo */}
+                              {(match.status === 'pending' || match.status === 'scheduled') &&
+                                isEditor(currentUser?.id, match.home_player_id, match.away_player_id, currentUser?.role, []) && (
+                                <button
+                                  onClick={() => { window.location.hash = `live/match/${match.id}`; }}
+                                  className="text-sm font-semibold text-emerald-600 hover:text-emerald-800 underline"
+                                >
+                                  🎾 Iniciar en vivo
+                                </button>
                               )}
                               {currentUser && (
                                 currentUser.role === 'admin' ||
@@ -12244,6 +12316,16 @@ const App = () => {
                                       <button onClick={() => handleDeleteScheduledMatch(m)} className="text-red-600 hover:text-red-800 underline">Borrar</button>
                                     </div>
                                   )}
+                                  {/* 🎾 Iniciar marcador en vivo */}
+                                  {(m.status === 'pending' || m.status === 'scheduled') &&
+                                    isEditor(currentUser?.id, m.home_player_id, m.away_player_id, currentUser?.role, []) && (
+                                    <button
+                                      onClick={() => { window.location.hash = `live/match/${m.id}`; }}
+                                      className="text-sm font-semibold text-emerald-600 hover:text-emerald-800 underline"
+                                    >
+                                      🎾 Iniciar en vivo
+                                    </button>
+                                  )}
                                   {isMyMatch && <AddToCalendarButton match={m} />}
                                 </div>
                               </td>
@@ -12281,6 +12363,16 @@ const App = () => {
                                 <button onClick={() => openEditSchedule(m)} className="text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2">Editar horario</button>
                                 <button onClick={() => handleDeleteScheduledMatch(m)} className="text-xs text-red-500 hover:text-red-700 underline underline-offset-2 ml-auto">Borrar</button>
                               </>
+                            )}
+                            {/* 🎾 Iniciar marcador en vivo */}
+                            {(m.status === 'pending' || m.status === 'scheduled') &&
+                              isEditor(currentUser?.id, m.home_player_id, m.away_player_id, currentUser?.role, []) && (
+                              <button
+                                onClick={() => { window.location.hash = `live/match/${m.id}`; }}
+                                className="text-xs font-semibold text-emerald-600 hover:text-emerald-800 underline underline-offset-2"
+                              >
+                                🎾 Iniciar en vivo
+                              </button>
                             )}
                             {isMyMatch && <AddToCalendarButton match={m} />}
                           </div>
