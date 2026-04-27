@@ -67,6 +67,11 @@ const TYPE_COLORS: Record<string, string> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Normalise any ISO datetime string to UTC ISO so keys match regardless of timezone offset */
+function toUtcIso(isoString: string): string {
+  return new Date(isoString).toISOString();
+}
+
 function formatTime(isoString: string): string {
   const d = new Date(isoString);
   return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
@@ -136,7 +141,7 @@ function SessionCard({
   currentUserId: string | null;
 }) {
   const unavailable = session.availability === 0;
-  const watchKey = `${session.booking_link}|${session.start_datetime}`;
+  const watchKey = `${session.booking_link}|${toUtcIso(session.start_datetime)}`;
   const isWatching = watchlist.has(watchKey);
   const [loadingWatch, setLoadingWatch] = React.useState(false);
 
@@ -151,13 +156,13 @@ function SessionCard({
           .delete()
           .eq("profile_id", currentUserId)
           .eq("booking_link", session.booking_link)
-          .eq("start_datetime", session.start_datetime);
+          .eq("start_datetime", toUtcIso(session.start_datetime));
         onWatchlistChange(watchKey, false);
       } else {
         await supabase.from("session_watchlist").upsert({
           profile_id: currentUserId,
           booking_link: session.booking_link,
-          start_datetime: session.start_datetime,
+          start_datetime: toUtcIso(session.start_datetime),
           title: session.title,
           venue_name: session.venue_name,
           venue_postcode: session.venue_postcode,
@@ -335,7 +340,7 @@ export default function BuscarClases({ onBack, currentUserId }: { onBack: () => 
       .then(({ data: rows }) => {
         if (!rows) return;
         setWatchlist(
-          new Set(rows.map((r) => `${r.booking_link}|${r.start_datetime}`))
+          new Set(rows.map((r) => `${r.booking_link}|${toUtcIso(r.start_datetime)}`))
         );
       });
   }, [currentUserId]);

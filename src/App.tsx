@@ -3562,10 +3562,7 @@ const App = () => {
         const currentUid = session?.user?.id ?? null;
         const currentIsAdmin =
           !!currentUid &&
-          (
-            currentUser?.role === 'admin' ||
-            adminsData.some(a => String(a.profile_id) === String(currentUid))
-          );
+          adminsData.some(a => String(a.profile_id) === String(currentUid));
 
         const visibleAccounts = currentIsAdmin
           ? accountsData
@@ -3593,10 +3590,8 @@ const App = () => {
   const role: string = currentUser?.role ?? 'user';
 
   const isBookingAdmin: boolean =
-    uid !== null && (
-      role === 'admin' ||
-      (bookingAdmins?.some?.(a => String(a.profile_id) === uid) === true)
-    );
+    uid !== null &&
+    (bookingAdmins?.some?.(a => String(a.profile_id) === uid) === true);
 
   const visibleBookingAccounts: BookingAccount[] = isBookingAdmin
     ? bookingAccounts
