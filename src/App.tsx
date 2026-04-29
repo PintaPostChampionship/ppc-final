@@ -7,6 +7,9 @@ import BuscarClases from './components/BuscarClases';
 import LiveScoreboard from './components/LiveScoreboard/LiveScoreboard';
 import LiveMatchBanner from './components/LiveScoreboard/LiveMatchBanner';
 import { isEditor } from './components/LiveScoreboard/liveScoreUtils';
+import { usePaymentStatus } from './hooks/usePaymentStatus';
+import { PaymentStatusIcon } from './components/PaymentStatusIcon';
+import { PaymentModal } from './components/PaymentModal';
 
 // Profile ID autorizado para ver "Buscar clases" — reemplaza con tu UUID de Supabase
 const BUSCAR_CLASES_ALLOWED_ID = "fb045715-86c6-48fc-88dc-c784fa5ed2bc";
@@ -2395,6 +2398,20 @@ const App = () => {
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
   const [tournamentTab, setTournamentTab] = useState<'overview' | 'playoffs'>('overview');
   const [playoffsDivisionFilter, setPlayoffsDivisionFilter] = useState<string>('all');
+
+  // Payment status from Google Sheets
+  const { paymentMap, reportPayment, reporting, reportError } = usePaymentStatus(selectedTournament?.season ?? null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+
+  const handleConfirmPayment = async () => {
+    if (!currentUser?.id || !selectedTournament?.season) return;
+    await reportPayment(currentUser.id, selectedTournament.season);
+    // Only close modal if there was no error (reportError will be set by the hook)
+    if (!reportError) {
+      setPaymentModalOpen(false);
+    }
+  };
+
   const [showAvailability, setShowAvailability] = useState(false);
   const [editProfile, setEditProfile] = useState(false);
   const [editUser, setEditUser] = useState({ 
@@ -11752,6 +11769,7 @@ const App = () => {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
+                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-8">💳</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Posición</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jugador</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
@@ -11779,6 +11797,20 @@ const App = () => {
                                 className="cursor-pointer hover:bg-gray-50 transition"
                                 onClick={() => setSelectedPlayer(player)}
                               >
+                              {/* Payment status column */}
+                              <td className="px-2 py-4 text-center whitespace-nowrap">
+                                <div className="flex flex-col items-center gap-1">
+                                  <PaymentStatusIcon status={paymentMap.get(stats.profile_id)} />
+                                  {currentUser?.id === stats.profile_id && paymentMap.get(stats.profile_id) === 'pendiente' && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setPaymentModalOpen(true); }}
+                                      className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold hover:bg-green-200 transition whitespace-nowrap"
+                                    >
+                                      Ya pagué
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">
                                 <div className="flex items-center">
                                   <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
@@ -11833,7 +11865,7 @@ const App = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
+                          <td colSpan={12} className="px-6 py-4 text-center text-gray-500">
                             Aún no hay jugadores en esta división
                           </td>
                         </tr>
@@ -11845,6 +11877,15 @@ const App = () => {
               </div>
             </div>
           </div>
+
+          {/* Payment confirmation modal */}
+          <PaymentModal
+            isOpen={paymentModalOpen}
+            onConfirm={handleConfirmPayment}
+            onCancel={() => setPaymentModalOpen(false)}
+            isSubmitting={reporting}
+            error={reportError}
+          />
 
           {/* Create Match Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
