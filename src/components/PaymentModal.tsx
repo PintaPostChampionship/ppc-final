@@ -33,6 +33,10 @@ export function PaymentModal({
         </p>
         <div className="bg-gray-50 rounded-xl p-4 mb-5 text-sm space-y-1">
           <div className="flex justify-between">
+            <span className="text-gray-500">Monto</span>
+            <span className="font-mono font-semibold text-gray-900">£45</span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-gray-500">Account number</span>
             <span className="font-mono font-semibold text-gray-900">71906880</span>
           </div>

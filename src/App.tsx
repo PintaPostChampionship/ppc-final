@@ -2401,14 +2401,13 @@ const App = () => {
 
   // Payment status from Google Sheets
   const { paymentMap, reportPayment, reporting, reportError } = usePaymentStatus(selectedTournament?.season ?? null);
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
 
   const handleConfirmPayment = async () => {
-    if (!currentUser?.id || !selectedTournament?.season) return;
-    await reportPayment(currentUser.id, selectedTournament.season);
-    // Only close modal if there was no error (reportError will be set by the hook)
+    if (!paymentTargetId || !selectedTournament?.season) return;
+    await reportPayment(paymentTargetId, selectedTournament.season);
     if (!reportError) {
-      setPaymentModalOpen(false);
+      setPaymentTargetId(null);
     }
   };
 
@@ -11801,9 +11800,9 @@ const App = () => {
                               <td className="px-2 py-4 text-center whitespace-nowrap">
                                 <div className="flex flex-col items-center gap-1">
                                   <PaymentStatusIcon status={paymentMap.get(stats.profile_id)} />
-                                  {currentUser?.id === stats.profile_id && paymentMap.get(stats.profile_id) === 'pendiente' && (
+                                  {paymentMap.get(stats.profile_id) === 'pendiente' && (currentUser?.id === stats.profile_id || currentUser?.role === 'admin') && (
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); setPaymentModalOpen(true); }}
+                                      onClick={(e) => { e.stopPropagation(); setPaymentTargetId(stats.profile_id); }}
                                       className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold hover:bg-green-200 transition whitespace-nowrap"
                                     >
                                       Ya pagué
@@ -11880,9 +11879,9 @@ const App = () => {
 
           {/* Payment confirmation modal */}
           <PaymentModal
-            isOpen={paymentModalOpen}
+            isOpen={paymentTargetId !== null}
             onConfirm={handleConfirmPayment}
-            onCancel={() => setPaymentModalOpen(false)}
+            onCancel={() => setPaymentTargetId(null)}
             isSubmitting={reporting}
             error={reportError}
           />
