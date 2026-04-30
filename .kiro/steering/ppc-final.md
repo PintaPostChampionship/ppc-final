@@ -1,0 +1,219 @@
+# ppc-final — Contexto del proyecto
+
+Web oficial del **PPC (Pinta Post Championship)**, una liga de tenis amateur entre amigos en Londres. Desplegada en Vercel, con Supabase como backend.
+
+URL: **ppctennis.vercel.app**
+
+---
+
+## Stack técnico
+
+| Capa | Tecnología |
+|------|-----------|
+| Frontend | React 19 + TypeScript 5.8 + Vite 7 |
+| Estilos | Tailwind CSS 3.4 (plugins: forms, aspect-ratio, typography) |
+| Backend | Supabase (PostgreSQL + Realtime + Auth + Storage) |
+| Serverless | Vercel Functions (Node.js 20.x) |
+| Testing | Vitest + fast-check + @testing-library/react |
+
+---
+
+## Estructura del proyecto
+
+```
+ppc-final/
+├── src/
+│   ├── App.tsx                          # Componente principal (~5000+ líneas, toda la app)
+│   ├── lib/
+│   │   ├── supabaseClient.ts            # Cliente Supabase (VITE_SUPABASE_URL + ANON_KEY)
+│   │   └── paymentUtils.ts              # Funciones puras: parseo Google Sheets, mapa de pagos
+│   ├── hooks/
+│   │   └── usePaymentStatus.ts          # Hook de estado de pagos (fetch gviz + reportPayment)
+│   ├── types/
+│   │   └── payment.ts                   # PaymentStatus, PaymentStatusMap, PagosWebRow
+│   ├── components/
+│   │   ├── BuscarClases.tsx             # Buscador de clases de tenis (weekly board)
+│   │   ├── FindTennisCourt.tsx          # Guía para encontrar canchas + apps recomendadas
+│   │   ├── PaymentModal.tsx             # Modal de confirmación de pago de cuota
+│   │   ├── PaymentStatusIcon.tsx        # Ícono 💰/✅ según estado de pago
+│   │   └── LiveScoreboard/
+│   │       ├── LiveScoreboard.tsx       # Componente principal del marcador en vivo
+│   │       ├── LiveScoreDisplay.tsx     # Display visual del marcador (estilo PPC)
+│   │       ├── LiveMatchBanner.tsx      # Banner de partidos en vivo en la home
+│   │       ├── useLiveScore.ts          # Hook: estado + Realtime + persistencia
+│   │       └── liveScoreUtils.ts        # Lógica pura de puntuación (sin React)
+│   └── __tests__/                       # Tests de utilidades
+├── api/
+│   ├── sheets-update.ts                 # POST: registra pago en Google Sheets (JWT)
+│   ├── telegram.ts                      # Webhook: bot Telegram → dispatch GitHub Actions
+│   └── lib/
+│       └── sheetsLogic.ts               # Funciones puras de validación de pagos
+├── public/
+│   ├── fotos-anteriores/                # Fotos de ediciones pasadas del PPC
+│   └── images/                          # Logos de divisiones, assets estáticos
+├── .kiro/
+│   ├── steering/                        # Archivos de contexto (este archivo, supabase, etc.)
+│   └── specs/                           # Specs de features (live-scoreboard, fee-payment)
+├── index.html
+├── vite.config.ts
+├── tailwind.config.js
+└── package.json
+```
+
+---
+
+## Features principales
+
+### 1. Gestión de torneos y divisiones
+- Torneos con temporadas (PPC 1, PPC 2, etc.), estados: `active`, `finished`, `upcoming`
+- Divisiones jerárquicas: Cobre, Plata, Oro (con colores, capacidad, slots de ascenso/descenso)
+- Tabla de posiciones con ranking, victorias, derrotas, puntos, games
+- Inscripción de jugadores a torneos/divisiones
+- Soporte para torneos de calibración y formato knockout (bracket view)
+
+### 2. Partidos y resultados
+- Programación de partidos con fecha, hora, ubicación
+- Carga de resultados set por set (match_sets)
+- Anécdotas de partidos (máx 50 palabras)
+- Tracking de pintas 🍺 (tradición PPC)
+- Edición de resultados y reprogramación
+- Notificaciones de partidos pendientes
+
+### 3. Live Scoreboard (en desarrollo)
+- Marcador en tiempo real con Supabase Realtime
+- Formatos: Standard, NextGen, SuperTiebreak
+- Punto a punto con undo (historial en memoria)
+- Compartir por link o WhatsApp (`/#live/match/:id`)
+- Banner de partidos en vivo en la home
+- Al finalizar, guarda resultado automáticamente en `matches` + `match_sets`
+
+### 4. Perfiles de jugadores
+- Ficha completa: nombre, nickname, avatar, código postal
+- Player Card estilo carta de tenista (edad, nacionalidad, mano dominante, raqueta, etc.)
+- Disponibilidad por día/hora/ubicación
+- Estadísticas: partidos jugados, ganados, perdidos, racha, rival más frecuente
+- Historial de torneos y divisiones
+
+### 5. Reserva automática de canchas (bot)
+- Panel de booking integrado en la web (solo admins/bookers)
+- Formulario para crear solicitudes de reserva
+- Venues configurados: Highbury Fields (11 canchas), Rosemary Gardens (2 canchas)
+- Estado de solicitudes: PENDING → SEARCHING → BOOKED / FAILED / EXPIRED
+- Conectado con `court_booking_requests` en Supabase → leído por bot en `book-better-bot`
+
+### 6. Buscar clases de tenis (vista privada)
+- Fetch de `tennis_sessions.json` desde repo privado `booking_ppc` via GitHub API
+- Weekly board con filtros: tipo (drill/1x1), plataforma (Flow/Better/ClubSpark), nivel
+- Tarjetas con venue, hora, precio, disponibilidad, link de booking
+- Solo visible para profile ID autorizado: `fb045715-86c6-48fc-88dc-c784fa5ed2bc`
+
+### 7. Encontrar cancha (guía)
+- Iframe embebido de localtenniscourts.com
+- Tips para reservar canchas en Londres
+- Apps recomendadas: Tiebreak, SPIN, LTA Rally, Playfinder, Better
+
+### 8. Sistema de pagos de cuota
+- Lee estado de pagos desde Google Sheets (endpoint gviz público)
+- Tres estados: `pendiente` (💰), `pagado_sin_validar` (✅), `pagado` (✅)
+- Botón "Ya pagué" para auto-reportar → Vercel Function actualiza Google Sheets
+- Integrado en la tabla de divisiones con íconos de estado
+
+### 9. Eventos sociales
+- Tabla `social_events` para cenas, celebraciones, etc.
+- Título, descripción, fecha, venue, imagen, link RSVP
+
+### 10. Bot de Telegram
+- Webhook en `/api/telegram` para ejecutar comandos remotos
+- Dispara GitHub Actions workflows en repos `ppc-final` y `booking_ppc`
+- Comandos: `ppc: instrucción` o `booking: instrucción`
+- Flags: `--readonly`, `--nopr`
+
+---
+
+## Navegación
+
+La app NO usa React Router. Toda la navegación es por estado en `App.tsx`:
+
+| Vista | Estado que la controla |
+|-------|----------------------|
+| Home (lista de torneos) | `!selectedTournament && !selectedPlayer && !showMap && ...` |
+| Detalle de torneo | `selectedTournament !== null` |
+| Tabla de división | `selectedDivision !== null` |
+| Perfil de jugador | `selectedPlayer !== null` |
+| Live Scoreboard | `liveMatchId !== null` (hash: `/#live/match/:id`) |
+| Encontrar cancha | `showMap === true` |
+| Buscar clases | `showBuscarClases === true` |
+| Panel de booking | `showBookingPanel === true` |
+| Hall of Fame | `showHallOfFameView === true` |
+| Torneos históricos | `showHistoricTournaments === true` |
+
+---
+
+## Variables de entorno
+
+### Frontend (.env.local)
+```
+VITE_SUPABASE_URL=https://tzmbznenarrpjayntyjt.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
+VITE_GITHUB_TOKEN=<GitHub PAT con scope repo>
+```
+
+### Vercel (producción)
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GITHUB_TOKEN`
+- `GOOGLE_SERVICE_ACCOUNT_JSON` — credenciales de Google Sheets (JSON string)
+- `TELEGRAM_BOT_TOKEN` — token del bot de Telegram
+- `TELEGRAM_CHAT_ID` — chat ID autorizado
+- `GH_PAT_TOKEN` — GitHub PAT para dispatch de workflows
+
+---
+
+## Patrones de diseño
+
+1. **Todo en App.tsx**: La app es un solo componente gigante (~5000+ líneas). Los componentes extraídos son features independientes (LiveScoreboard, BuscarClases, FindTennisCourt, PaymentModal).
+2. **Hash routing**: Solo el Live Scoreboard usa hash (`/#live/match/:id`). El resto es estado de React.
+3. **Optimistic updates**: El sistema de pagos actualiza la UI inmediatamente y sincroniza con el servidor.
+4. **Funciones puras**: La lógica de puntuación y pagos está separada en archivos sin efectos secundarios.
+5. **Supabase Realtime**: El Live Scoreboard se suscribe a cambios en `live_score_state` para sincronizar entre clientes.
+6. **Acceso condicional**: Features como "Buscar clases" y el panel de booking están restringidos por profile ID o rol.
+
+---
+
+## Paleta de colores
+
+- **Principal**: Verde esmeralda (`emerald-600` a `emerald-800`)
+- **Fondo**: Gradientes de `emerald-50` a `gray-100`
+- **Divisiones**: Cada división tiene su color hex (Cobre: `#a16207`, Plata: `#6b7280`, Oro: `#ca8a04`, etc.)
+- **Live Scoreboard**: Fondo oscuro verdoso (`#1a3a2a` a `#163320`), acentos amarillo-lima
+
+---
+
+## Comandos de desarrollo
+
+```bash
+npm run dev          # Servidor de desarrollo Vite (HMR)
+npm run build        # Build de producción
+npm run lint         # ESLint
+npm test             # Vitest (--run, sin watch)
+npm run preview      # Preview del build de producción
+```
+
+---
+
+## Specs en desarrollo
+
+| Feature | Estado | Archivo |
+|---------|--------|---------|
+| Live Scoreboard | 🚧 En progreso | `.kiro/specs/live-scoreboard/` |
+| Fee Payment Tracking | 🚧 En progreso | `.kiro/specs/fee-payment-tracking/` |
+
+---
+
+## Notas importantes
+
+- **App.tsx es monolítico**: Toda la lógica de torneos, divisiones, partidos, perfiles, booking, etc. está en un solo archivo. Cualquier refactor debe ser incremental.
+- **Sin React Router**: No hay routing library. Agregar una requeriría un refactor significativo.
+- **RLS activo**: Supabase tiene Row Level Security en todas las tablas. La anon key solo lee datos públicos.
+- **Storage bucket `avatars`**: Fotos de perfil de jugadores.
+- **Carrusel de fotos**: La home tiene un carrusel con fotos de ediciones anteriores del PPC.
+- **Onboarding**: Flujo de registro con pasos (nombre, avatar, disponibilidad, torneo, división).
+- **Booking venues**: Highbury Fields (11 canchas) y Rosemary Gardens (2 canchas) están hardcodeados en App.tsx.
