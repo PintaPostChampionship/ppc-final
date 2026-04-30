@@ -38,11 +38,50 @@ jobs:
       - name: Install Kiro CLI
         run: curl -fsSL https://cli.kiro.dev/install | bash
 
+      - name: Install uv (for MCP servers)
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Configure Supabase MCP
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          mkdir -p .kiro/settings
+          cat > .kiro/settings/mcp.json << 'MCPEOF'
+          {
+            "mcpServers": {
+              "supabase": {
+                "command": "uvx",
+                "args": ["supabase-mcp-server@latest", "--project-ref", "tzmbznenarrpjayntyjt"],
+                "env": {
+                  "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+                },
+                "disabled": false,
+                "autoApprove": [
+                  "list_tables",
+                  "execute_sql",
+                  "list_extensions",
+                  "list_migrations",
+                  "get_project_url",
+                  "get_publishable_keys",
+                  "generate_typescript_types",
+                  "search_docs",
+                  "get_logs",
+                  "get_advisors"
+                ]
+              }
+            }
+          }
+          MCPEOF
+          # Replace the env var placeholder with actual value
+          sed -i "s|\${SUPABASE_ACCESS_TOKEN}|${SUPABASE_ACCESS_TOKEN}|g" .kiro/settings/mcp.json
+          echo "✅ MCP config created"
+
       - name: Run Kiro headless
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           TRUST_FLAG="--trust-all-tools"
           if [ "${{ inputs.trust_level }}" = "read-only" ]; then
@@ -66,6 +105,10 @@ jobs:
           # Configurar git
           git config user.name "kiro-bot"
           git config user.email "kiro-bot@users.noreply.github.com"
+
+          # Excluir archivos temporales de MCP config
+          git checkout -- .kiro/settings/mcp.json 2>/dev/null || true
+          rm -f .kiro/settings/mcp.json
 
           # Verificar si hay cambios
           git add -A
