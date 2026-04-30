@@ -51,16 +51,40 @@ jobs:
           KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # Register MCP server using kiro-cli (needs KIRO_API_KEY for auth)
-          kiro-cli mcp add \
-            --name supabase \
-            --command "uvx supabase-mcp-server@latest --project-ref tzmbznenarrpjayntyjt" \
-            --env "SUPABASE_ACCESS_TOKEN=${SUPABASE_ACCESS_TOKEN}" \
-            --scope global \
-            --force
-
-          echo "✅ MCP server registered"
-          kiro-cli mcp list global
+          # Write MCP config file directly
+          mkdir -p ~/.kiro/settings
+          cat > ~/.kiro/settings/mcp.json << 'EOF'
+          {
+            "mcpServers": {
+              "supabase": {
+                "command": "uvx",
+                "args": ["supabase-mcp-server@latest", "--project-ref", "tzmbznenarrpjayntyjt"],
+                "env": {
+                  "SUPABASE_ACCESS_TOKEN": "PLACEHOLDER"
+                },
+                "disabled": false,
+                "autoApprove": ["list_tables","execute_sql","list_extensions","list_migrations","get_project_url","get_publishable_keys","generate_typescript_types","search_docs","get_logs","get_advisors"]
+              }
+            }
+          }
+          EOF
+          # Fix heredoc indentation and inject token
+          python3 -c "
+          import json, os
+          with open(os.path.expanduser('~/.kiro/settings/mcp.json')) as f:
+              content = f.read().strip()
+          # Remove leading whitespace from each line
+          lines = [line.lstrip() for line in content.split('\n')]
+          data = json.loads('\n'.join(lines))
+          data['mcpServers']['supabase']['env']['SUPABASE_ACCESS_TOKEN'] = os.environ['SUPABASE_ACCESS_TOKEN']
+          with open(os.path.expanduser('~/.kiro/settings/mcp.json'), 'w') as f:
+              json.dump(data, f, indent=2)
+          print('✅ MCP config written and validated')
+          print(json.dumps(data, indent=2).replace(os.environ['SUPABASE_ACCESS_TOKEN'], '***'))
+          "
+          # Also copy to workspace
+          mkdir -p .kiro/settings
+          cp ~/.kiro/settings/mcp.json .kiro/settings/mcp.json
 
       - name: Run Kiro headless
         env:
@@ -78,7 +102,7 @@ jobs:
           echo "${{ inputs.prompt }}"
           echo "---"
 
-          kiro-cli chat --no-interactive --require-mcp-startup $TRUST_FLAG "${{ inputs.prompt }}" 2>&1 | tee .kiro_output.txt
+          KIRO_LOG_LEVEL=debug kiro-cli chat --no-interactive --require-mcp-startup $TRUST_FLAG "${{ inputs.prompt }}" 2>&1 | tee .kiro_output.txt
 
           echo "---"
           echo "✅ Kiro terminó"
