@@ -80,9 +80,19 @@ jobs:
             # If prompt asks about specific data, try to fetch it
             EXTRA_DATA=""
             if echo "$PROMPT_LOWER" | grep -qE '(jugador|player|profiles|cuantos|cuántos|count.*profile)'; then
-              EXTRA_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/profiles?select=id,name,nickname,role&order=created_at.desc&limit=50" \
+              PROFILE_COUNT=$(curl -s "${SUPABASE_URL}/rest/v1/profiles?select=id" \
                 -H "apikey: ${SUPABASE_KEY}" \
-                -H "Authorization: Bearer ${SUPABASE_KEY}" 2>/dev/null || echo "[]")
+                -H "Authorization: Bearer ${SUPABASE_KEY}" \
+                -H "Prefer: count=exact" \
+                -H "Range: 0-0" \
+                -D /tmp/headers_profiles_detail.txt -o /dev/null 2>/dev/null)
+              TOTAL_PROFILES=$(grep -i content-range /tmp/headers_profiles_detail.txt 2>/dev/null | sed 's/.*\///' | tr -d '\r\n' || echo "?")
+              EXTRA_DATA="Total profiles: ${TOTAL_PROFILES}
+
+          Sample data (first 10):
+          $(curl -s "${SUPABASE_URL}/rest/v1/profiles?select=id,name,nickname,role&order=created_at.desc&limit=10" \
+                -H "apikey: ${SUPABASE_KEY}" \
+                -H "Authorization: Bearer ${SUPABASE_KEY}" 2>/dev/null || echo "[]")"
             fi
 
             # Save context for Kiro
@@ -187,7 +197,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ inputs.telegram_chat_id }}
         run: |
           if [ -f .kiro_output.txt ]; then
-            OUTPUT=$(tail -80 .kiro_output.txt | head -c 3500)
+            # Strip ANSI escape codes and get clean output
+            OUTPUT=$(sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\[[0-9;]*m//g; s/\[?25[hl]//g; s/\[0m//g; s/\[1G//g; s/\[2K//g; s/\[1A//g' .kiro_output.txt | grep -v "^$" | grep -v "WARNING.*MCP" | grep -v "^---$" | grep -v "Credits:" | grep -v "Ejecutando Kiro" | grep -v "Kiro terminó" | tail -40 | head -c 3500)
           else
             OUTPUT="(sin output)"
           fi
