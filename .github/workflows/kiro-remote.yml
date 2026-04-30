@@ -47,19 +47,19 @@ jobs:
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
       - name: Configure Supabase MCP
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # Create MCP config in both workspace and user-level paths
-          # Use ${VAR} syntax — Kiro CLI expands env vars at runtime
-          MCP_JSON='{"mcpServers":{"supabase":{"command":"uvx","args":["supabase-mcp-server@latest","--project-ref","tzmbznenarrpjayntyjt"],"env":{"SUPABASE_ACCESS_TOKEN":"${SUPABASE_ACCESS_TOKEN}"},"disabled":false,"autoApprove":["list_tables","execute_sql","list_extensions","list_migrations","get_project_url","get_publishable_keys","generate_typescript_types","search_docs","get_logs","get_advisors"]}}}'
+          # Register MCP server using kiro-cli directly
+          kiro-cli mcp add \
+            --name supabase \
+            --command "uvx supabase-mcp-server@latest --project-ref tzmbznenarrpjayntyjt" \
+            --env "SUPABASE_ACCESS_TOKEN=${SUPABASE_ACCESS_TOKEN}" \
+            --scope global \
+            --force
 
-          mkdir -p .kiro/settings
-          echo "$MCP_JSON" > .kiro/settings/mcp.json
-
-          mkdir -p ~/.kiro/settings
-          echo "$MCP_JSON" > ~/.kiro/settings/mcp.json
-
-          echo "✅ MCP config created"
-          cat .kiro/settings/mcp.json
+          echo "✅ MCP server registered"
+          kiro-cli mcp list global
 
       - name: Run Kiro headless
         env:
