@@ -11797,16 +11797,25 @@ const App = () => {
                                 onClick={() => setSelectedPlayer(player)}
                               >
                               {/* Payment status column */}
-                              <td className="px-2 py-4 text-center whitespace-nowrap">
+                              <td
+                                className={`px-2 py-4 text-center whitespace-nowrap ${
+                                  paymentMap.get(stats.profile_id) === 'pendiente' && (currentUser?.id === stats.profile_id || currentUser?.role === 'admin')
+                                    ? 'cursor-pointer hover:bg-green-50 transition'
+                                    : ''
+                                }`}
+                                onClick={(e) => {
+                                  if (paymentMap.get(stats.profile_id) === 'pendiente' && (currentUser?.id === stats.profile_id || currentUser?.role === 'admin')) {
+                                    e.stopPropagation();
+                                    setPaymentTargetId(stats.profile_id);
+                                  }
+                                }}
+                              >
                                 <div className="flex flex-col items-center gap-1">
                                   <PaymentStatusIcon status={paymentMap.get(stats.profile_id)} />
                                   {paymentMap.get(stats.profile_id) === 'pendiente' && (currentUser?.id === stats.profile_id || currentUser?.role === 'admin') && (
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setPaymentTargetId(stats.profile_id); }}
-                                      className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold hover:bg-green-200 transition whitespace-nowrap"
-                                    >
+                                    <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap">
                                       Ya pagué
-                                    </button>
+                                    </span>
                                   )}
                                 </div>
                               </td>
