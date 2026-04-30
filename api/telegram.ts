@@ -30,7 +30,7 @@ interface TelegramUpdate {
 
 const REPOS: Record<string, { owner: string; repo: string; workflow: string }> = {
   ppc: {
-    owner: 'jifones',
+    owner: 'PintaPostChampionship',
     repo: 'ppc-final',
     workflow: 'kiro-remote.yml',
   },
@@ -227,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await sendTelegram(
       chatId,
       `✅ *Workflow disparado* en ${repoLabel}\n\n` +
-        `Revisa el progreso en:\nhttps://github.com/jifones/${repoLabel === 'ppc-final' ? 'ppc-final' : 'booking_ppc'}/actions`
+        `Revisa el progreso en:\nhttps://github.com/${parsed.repoKey === 'ppc' ? 'PintaPostChampionship/ppc-final' : 'jifones/booking_ppc'}/actions`
     );
   } else {
     await sendTelegram(chatId, `❌ Error: ${result.error}`);
