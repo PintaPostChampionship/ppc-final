@@ -20,6 +20,11 @@ on:
         required: true
         default: true
         type: boolean
+      telegram_chat_id:
+        description: "Chat ID de Telegram para enviar resultado (vacío = no notificar)"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   kiro-execute:
@@ -72,7 +77,6 @@ jobs:
             }
           }
           MCPEOF
-          # Replace the env var placeholder with actual value
           sed -i "s|\${SUPABASE_ACCESS_TOKEN}|${SUPABASE_ACCESS_TOKEN}|g" .kiro/settings/mcp.json
           echo "✅ MCP config created"
 
@@ -102,22 +106,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Configurar git
           git config user.name "kiro-bot"
           git config user.email "kiro-bot@users.noreply.github.com"
 
-          # Excluir archivos temporales de MCP config
           git checkout -- .kiro/settings/mcp.json 2>/dev/null || true
           rm -f .kiro/settings/mcp.json
 
-          # Verificar si hay cambios
           git add -A
           if git diff --staged --quiet; then
             echo "📭 Sin cambios — nada que commitear"
             exit 0
           fi
 
-          # Crear branch y PR
           BRANCH="kiro/remote-$(date +%Y%m%d-%H%M%S)"
           git checkout -b "$BRANCH"
           git commit -m "feat: cambios remotos via Kiro
@@ -126,7 +126,7 @@ jobs:
 
           git push -u origin "$BRANCH"
 
-          gh pr create \
+          PR_URL=$(gh pr create \
             --title "🤖 Kiro remote: $(echo '${{ inputs.prompt }}' | head -c 60)" \
             --body "## Prompt enviado
           \`\`\`
@@ -140,9 +140,54 @@ jobs:
 
           ---
           _Generado automáticamente por Kiro headless mode_" \
-            --base main
+            --base main 2>&1)
 
-          echo "✅ PR creado en branch $BRANCH"
+          echo "$PR_URL"
+          echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
+
+      - name: Notify Telegram
+        if: always() && inputs.telegram_chat_id != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.telegram_chat_id }}
+        run: |
+          # Prepare output (truncate to ~3500 chars for Telegram's 4096 limit)
+          if [ -f .kiro_output.txt ]; then
+            OUTPUT=$(tail -80 .kiro_output.txt | head -c 3500)
+          else
+            OUTPUT="(sin output)"
+          fi
+
+          # Determine status
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="✅ Completado"
+          else
+            STATUS="❌ Falló"
+          fi
+
+          # Build message
+          PR_INFO=""
+          if [ -n "${PR_URL:-}" ]; then
+            PR_INFO="
+          📦 PR: ${PR_URL}"
+          fi
+
+          MESSAGE="${STATUS} — *ppc-final*
+
+          📝 _${{ inputs.prompt }}_
+          ${PR_INFO}
+
+          \`\`\`
+          ${OUTPUT}
+          \`\`\`"
+
+          # Send to Telegram
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg chat_id "$TELEGRAM_CHAT_ID" \
+              --arg text "$MESSAGE" \
+              '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')"
 
       - name: Upload Kiro output as artifact
         if: always()

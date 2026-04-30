@@ -64,7 +64,8 @@ async function dispatchWorkflow(
   repoKey: string,
   prompt: string,
   trustLevel: string,
-  createPr: boolean
+  createPr: boolean,
+  chatId: number
 ): Promise<{ ok: boolean; error?: string }> {
   const ghToken = process.env.GH_PAT_TOKEN;
   if (!ghToken) return { ok: false, error: 'GH_PAT_TOKEN not configured' };
@@ -87,6 +88,7 @@ async function dispatchWorkflow(
         prompt,
         trust_level: trustLevel,
         create_pr: String(createPr),
+        telegram_chat_id: String(chatId),
       },
     }),
   });
@@ -217,7 +219,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     parsed.repoKey,
     parsed.prompt,
     parsed.trustLevel,
-    parsed.createPr
+    parsed.createPr,
+    chatId
   );
 
   if (result.ok) {
