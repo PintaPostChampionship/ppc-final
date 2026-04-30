@@ -51,14 +51,14 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           mkdir -p .kiro/settings
-          cat > .kiro/settings/mcp.json << 'MCPEOF'
+          cat > .kiro/settings/mcp.json <<'MCPEOF'
           {
             "mcpServers": {
               "supabase": {
                 "command": "uvx",
                 "args": ["supabase-mcp-server@latest", "--project-ref", "tzmbznenarrpjayntyjt"],
                 "env": {
-                  "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+                  "SUPABASE_ACCESS_TOKEN": "PLACEHOLDER_TOKEN"
                 },
                 "disabled": false,
                 "autoApprove": [
@@ -77,8 +77,11 @@ jobs:
             }
           }
           MCPEOF
-          sed -i "s|\${SUPABASE_ACCESS_TOKEN}|${SUPABASE_ACCESS_TOKEN}|g" .kiro/settings/mcp.json
+          # Fix indentation from heredoc and inject token
+          sed -i 's/^          //' .kiro/settings/mcp.json
+          sed -i "s|PLACEHOLDER_TOKEN|${SUPABASE_ACCESS_TOKEN}|g" .kiro/settings/mcp.json
           echo "✅ MCP config created"
+          cat .kiro/settings/mcp.json
 
       - name: Run Kiro headless
         env:
