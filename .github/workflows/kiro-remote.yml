@@ -48,9 +48,10 @@ jobs:
 
       - name: Configure Supabase MCP
         env:
+          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # Register MCP server using kiro-cli directly
+          # Register MCP server using kiro-cli (needs KIRO_API_KEY for auth)
           kiro-cli mcp add \
             --name supabase \
             --command "uvx supabase-mcp-server@latest --project-ref tzmbznenarrpjayntyjt" \
