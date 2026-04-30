@@ -43,66 +43,93 @@ jobs:
       - name: Install Kiro CLI
         run: curl -fsSL https://cli.kiro.dev/install | bash
 
-      - name: Install uv (for MCP servers)
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Configure Supabase MCP
+      - name: Query Supabase (if prompt mentions db/tabla/supabase/profiles/etc)
+        id: supabase
         env:
-          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          # Write MCP config file directly
-          mkdir -p ~/.kiro/settings
-          cat > ~/.kiro/settings/mcp.json << 'EOF'
-          {
-            "mcpServers": {
-              "supabase": {
-                "command": "uvx",
-                "args": ["supabase-mcp-server@latest", "--project-ref", "tzmbznenarrpjayntyjt"],
-                "env": {
-                  "SUPABASE_ACCESS_TOKEN": "PLACEHOLDER"
-                },
-                "disabled": false,
-                "autoApprove": ["list_tables","execute_sql","list_extensions","list_migrations","get_project_url","get_publishable_keys","generate_typescript_types","search_docs","get_logs","get_advisors"]
-              }
-            }
-          }
-          EOF
-          # Fix heredoc indentation and inject token
-          python3 -c "
-          import json, os
-          with open(os.path.expanduser('~/.kiro/settings/mcp.json')) as f:
-              content = f.read().strip()
-          # Remove leading whitespace from each line
-          lines = [line.lstrip() for line in content.split('\n')]
-          data = json.loads('\n'.join(lines))
-          data['mcpServers']['supabase']['env']['SUPABASE_ACCESS_TOKEN'] = os.environ['SUPABASE_ACCESS_TOKEN']
-          with open(os.path.expanduser('~/.kiro/settings/mcp.json'), 'w') as f:
-              json.dump(data, f, indent=2)
-          print('✅ MCP config written and validated')
-          print(json.dumps(data, indent=2).replace(os.environ['SUPABASE_ACCESS_TOKEN'], '***'))
-          "
-          # Also copy to workspace
-          mkdir -p .kiro/settings
-          cp ~/.kiro/settings/mcp.json .kiro/settings/mcp.json
+          PROMPT="${{ inputs.prompt }}"
+          PROMPT_LOWER=$(echo "$PROMPT" | tr '[:upper:]' '[:lower:]')
+
+          # Check if prompt is about database queries
+          if echo "$PROMPT_LOWER" | grep -qE '(supabase|tabla|tablas|profiles|matches|tournaments|divisions|jugador|partidos|torneo|base de datos|database|query|sql|cuantos|cuántos|count|filas|rows|registros)'; then
+            echo "🔍 Prompt parece requerir datos de Supabase — ejecutando query previa..."
+
+            # Get table list with row counts
+            TABLES_INFO=$(curl -s "${SUPABASE_URL}/rest/v1/rpc/get_table_info" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" 2>/dev/null || echo "")
+
+            if [ -z "$TABLES_INFO" ] || [ "$TABLES_INFO" = "[]" ]; then
+              # Fallback: query common tables individually
+              echo "Querying tables individually..."
+              TABLES_INFO="Table row counts:"
+              for table in profiles tournaments divisions matches match_sets locations availability social_events court_booking_requests booking_accounts booking_admins player_cards live_score_state tournament_registrations; do
+                COUNT=$(curl -s "${SUPABASE_URL}/rest/v1/${table}?select=count" \
+                  -H "apikey: ${SUPABASE_KEY}" \
+                  -H "Authorization: Bearer ${SUPABASE_KEY}" \
+                  -H "Prefer: count=exact" \
+                  -H "Range: 0-0" \
+                  -D /tmp/headers_${table}.txt -o /dev/null 2>/dev/null)
+                ROW_COUNT=$(grep -i content-range /tmp/headers_${table}.txt 2>/dev/null | sed 's/.*\///' | tr -d '\r\n' || echo "?")
+                TABLES_INFO="${TABLES_INFO}\n- ${table}: ${ROW_COUNT} rows"
+              done
+            fi
+
+            # If prompt asks about specific data, try to fetch it
+            EXTRA_DATA=""
+            if echo "$PROMPT_LOWER" | grep -qE '(jugador|player|profiles|cuantos|cuántos|count.*profile)'; then
+              EXTRA_DATA=$(curl -s "${SUPABASE_URL}/rest/v1/profiles?select=id,name,nickname,role&order=created_at.desc&limit=50" \
+                -H "apikey: ${SUPABASE_KEY}" \
+                -H "Authorization: Bearer ${SUPABASE_KEY}" 2>/dev/null || echo "[]")
+            fi
+
+            # Save context for Kiro
+            {
+              echo "=== SUPABASE DATA (pre-fetched) ==="
+              echo -e "$TABLES_INFO"
+              if [ -n "$EXTRA_DATA" ] && [ "$EXTRA_DATA" != "[]" ]; then
+                echo ""
+                echo "=== QUERY RESULTS ==="
+                echo "$EXTRA_DATA" | python3 -m json.tool 2>/dev/null || echo "$EXTRA_DATA"
+              fi
+              echo "=== END SUPABASE DATA ==="
+            } > .supabase_context.txt
+
+            echo "has_context=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Supabase context gathered"
+            cat .supabase_context.txt
+          else
+            echo "has_context=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ Prompt no requiere datos de Supabase"
+          fi
 
       - name: Run Kiro headless
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           TRUST_FLAG="--trust-all-tools"
           if [ "${{ inputs.trust_level }}" = "read-only" ]; then
             TRUST_FLAG="--trust-tools=read,grep"
           fi
 
+          # Build prompt with Supabase context if available
+          FULL_PROMPT="${{ inputs.prompt }}"
+          if [ "${{ steps.supabase.outputs.has_context }}" = "true" ] && [ -f .supabase_context.txt ]; then
+            CONTEXT=$(cat .supabase_context.txt)
+            FULL_PROMPT="Tengo estos datos de Supabase pre-consultados para ti:
+
+          ${CONTEXT}
+
+          Ahora responde esta instrucción usando los datos anteriores: ${{ inputs.prompt }}"
+          fi
+
           echo "🤖 Ejecutando Kiro con prompt:"
           echo "${{ inputs.prompt }}"
           echo "---"
 
-          KIRO_LOG_LEVEL=debug kiro-cli chat --no-interactive --require-mcp-startup $TRUST_FLAG "${{ inputs.prompt }}" 2>&1 | tee .kiro_output.txt
+          kiro-cli chat --no-interactive $TRUST_FLAG "$FULL_PROMPT" 2>&1 | tee .kiro_output.txt
 
           echo "---"
           echo "✅ Kiro terminó"
@@ -115,6 +142,8 @@ jobs:
           git config user.name "kiro-bot"
           git config user.email "kiro-bot@users.noreply.github.com"
 
+          # Clean up temp files
+          rm -f .supabase_context.txt .kiro_output.txt
           git checkout -- .kiro/settings/mcp.json 2>/dev/null || true
           rm -f .kiro/settings/mcp.json
 
@@ -157,21 +186,18 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.telegram_chat_id }}
         run: |
-          # Prepare output (truncate to ~3500 chars for Telegram's 4096 limit)
           if [ -f .kiro_output.txt ]; then
             OUTPUT=$(tail -80 .kiro_output.txt | head -c 3500)
           else
             OUTPUT="(sin output)"
           fi
 
-          # Determine status
           if [ "${{ job.status }}" = "success" ]; then
             STATUS="✅ Completado"
           else
             STATUS="❌ Falló"
           fi
 
-          # Build message
           PR_INFO=""
           if [ -n "${PR_URL:-}" ]; then
             PR_INFO="
@@ -187,7 +213,6 @@ jobs:
           ${OUTPUT}
           \`\`\`"
 
-          # Send to Telegram
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
