@@ -1,0 +1,110 @@
+name: Kiro Remote (ppc-final)
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Instrucción para Kiro (qué quieres que haga)"
+        required: true
+        type: string
+      trust_level:
+        description: "Nivel de permisos para tools"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - read-only
+      create_pr:
+        description: "¿Crear PR con los cambios?"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  kiro-execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Kiro CLI
+        run: curl -fsSL https://cli.kiro.dev/install | bash
+
+      - name: Run Kiro headless
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          TRUST_FLAG="--trust-all-tools"
+          if [ "${{ inputs.trust_level }}" = "read-only" ]; then
+            TRUST_FLAG="--trust-tools=read,grep"
+          fi
+
+          echo "🤖 Ejecutando Kiro con prompt:"
+          echo "${{ inputs.prompt }}"
+          echo "---"
+
+          kiro-cli chat --no-interactive $TRUST_FLAG "${{ inputs.prompt }}" 2>&1 | tee .kiro_output.txt
+
+          echo "---"
+          echo "✅ Kiro terminó"
+
+      - name: Check for changes and create PR
+        if: inputs.create_pr && inputs.trust_level == 'all'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configurar git
+          git config user.name "kiro-bot"
+          git config user.email "kiro-bot@users.noreply.github.com"
+
+          # Verificar si hay cambios
+          git add -A
+          if git diff --staged --quiet; then
+            echo "📭 Sin cambios — nada que commitear"
+            exit 0
+          fi
+
+          # Crear branch y PR
+          BRANCH="kiro/remote-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git commit -m "feat: cambios remotos via Kiro
+
+          Prompt: ${{ inputs.prompt }}"
+
+          git push -u origin "$BRANCH"
+
+          gh pr create \
+            --title "🤖 Kiro remote: $(echo '${{ inputs.prompt }}' | head -c 60)" \
+            --body "## Prompt enviado
+          \`\`\`
+          ${{ inputs.prompt }}
+          \`\`\`
+
+          ## Output de Kiro
+          \`\`\`
+          $(cat .kiro_output.txt | tail -100)
+          \`\`\`
+
+          ---
+          _Generado automáticamente por Kiro headless mode_" \
+            --base main
+
+          echo "✅ PR creado en branch $BRANCH"
+
+      - name: Upload Kiro output as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kiro-output
+          path: .kiro_output.txt
+          retention-days: 7
