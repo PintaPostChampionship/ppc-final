@@ -205,15 +205,64 @@ npm run preview      # Preview del build de producción
 |---------|--------|---------|
 | Live Scoreboard | 🚧 En progreso | `.kiro/specs/live-scoreboard/` |
 | Fee Payment Tracking | 🚧 En progreso | `.kiro/specs/fee-payment-tracking/` |
+| Garmin Scoreboard | ✅ Fase 1 (offline) | `garmin-scoreboard/` |
+
+---
+
+## PWA (Progressive Web App)
+
+La web ya está configurada como PWA instalable:
+- **Manifest**: `public/site.webmanifest` (nombre, íconos, display standalone)
+- **Service Worker**: `public/sw.js` (registrado en `src/main.tsx`, pass-through básico)
+- **Íconos**: `android-chrome-192x192.png`, `android-chrome-512x512.png` + versiones maskable
+- **Apple Touch Icon**: `apple-touch-icon.png`
+- **Meta tags**: `apple-mobile-web-app-capable`, `theme-color` en `index.html`
+
+Para instalar: abrir ppctennis.vercel.app en Chrome → menú ⋮ → "Instalar app" o "Agregar a pantalla de inicio".
+
+---
+
+## Roadmap priorizado
+
+### 🔴 Prioridad alta (próximo)
+
+| # | Feature | Descripción | Esfuerzo |
+|---|---------|-------------|----------|
+| 1 | **Descomponer App.tsx** | Extraer componentes: DivisionTable, PlayerProfile, MatchResultForm, BookingPanel, etc. Sin cambiar funcionalidad. Mejora mantenibilidad futura. | Medio |
+| 2 | **Notificaciones push** | Notificar: partido nuevo, resultado cargado, partido en vivo, fecha límite. Ya hay base con Supabase Realtime + service worker. Falta implementar push del navegador + UI de preferencias. | Medio-Alto |
+| 3 | **Garmin Fase 2 (sync)** | Conectar la app Garmin con el Live Scoreboard web via HTTP. Vercel Function `/api/live-score` como proxy. | Medio |
+
+### 🟡 Prioridad media (futuro cercano)
+
+| # | Feature | Descripción | Esfuerzo |
+|---|---------|-------------|----------|
+| 4 | **Dark mode** | Tailwind `dark:` prefix. El Live Scoreboard ya usa fondo oscuro. Resto de la app necesita colores invertidos. | Bajo-Medio |
+| 5 | **Buscador de canchas mejorado** | Combinar "Buscar Cancha" + "Buscar Clases" en una sola vista tipo Spin App. Mostrar canchas cercanas por ubicación, disponibilidad, y notificar si se libera una hora. | Alto |
+| 6 | **Calendario de partidos** | Vista calendario semanal/mensual con partidos programados. Cada jugador ve los suyos destacados. Compartir a WhatsApp. | Medio |
+
+### 🟢 Prioridad baja (futuro)
+
+| # | Feature | Descripción | Esfuerzo |
+|---|---------|-------------|----------|
+| 7 | **React Router** | URLs compartibles para torneos, divisiones, perfiles. Botón atrás del navegador. Deep linking. | Alto |
+| 8 | **Estadísticas avanzadas** | Rachas (🔥 3 victorias), jugador del mes, evolución por temporada. Más útil cuando haya más historial. | Medio |
+| 9 | **ELO Rating** | Ranking numérico global basado en historial de partidos. Predicciones pre-partido. | Medio |
+
+### ❌ Descartado
+
+| Feature | Motivo |
+|---------|--------|
+| Sistema de challenges | Los jugadores son conocidos y juegan amistosos fuera de la web. Solo partidos oficiales en la plataforma. |
 
 ---
 
 ## Notas importantes
 
-- **App.tsx es monolítico**: Toda la lógica de torneos, divisiones, partidos, perfiles, booking, etc. está en un solo archivo. Cualquier refactor debe ser incremental.
-- **Sin React Router**: No hay routing library. Agregar una requeriría un refactor significativo.
+- **App.tsx es monolítico** (~12,000 líneas): Toda la lógica de torneos, divisiones, partidos, perfiles, booking, etc. está en un solo archivo. El refactor (#1 del roadmap) es incremental — un componente a la vez.
+- **Sin React Router**: No hay routing library. Agregar una requeriría un refactor significativo (#7 del roadmap).
 - **RLS activo**: Supabase tiene Row Level Security en todas las tablas. La anon key solo lee datos públicos.
 - **Storage bucket `avatars`**: Fotos de perfil de jugadores.
 - **Carrusel de fotos**: La home tiene un carrusel con fotos de ediciones anteriores del PPC.
 - **Onboarding**: Flujo de registro con pasos (nombre, avatar, disponibilidad, torneo, división).
 - **Booking venues**: Highbury Fields (11 canchas) y Rosemary Gardens (2 canchas) están hardcodeados en App.tsx.
+- **Garmin app**: Código en `garmin-scoreboard/`, compila con SDK 9.1.0 + Java 21. Ver steering `garmin-scoreboard.md` para detalles.
