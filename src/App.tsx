@@ -3895,20 +3895,43 @@ const App = () => {
       {
         const actorId = session?.user.id;
         const matchObj = { home_player_id: player1Id, away_player_id: player2Id } as any;
-        const recipientId = determineRecipient(matchObj, actorId);
-        if (recipientId) {
-          const rivalName = profiles.find(p => p.id === actorId)?.name || 'Rival';
-          const setsData = newMatch.sets
-            .filter(s => s.score1 !== '' && s.score2 !== '')
-            .map((s, i) => ({ id: '', match_id: matchId, set_number: i + 1, p1_games: parseInt(s.score1, 10), p2_games: parseInt(s.score2, 10) }));
-          const winnerId = p1SetsWon > p2SetsWon ? player1Id : player2Id;
-          const resultPayload = buildResultLoadedPayload(
+        const isActorPlayer = actorId === player1Id || actorId === player2Id;
+        const setsData = newMatch.sets
+          .filter(s => s.score1 !== '' && s.score2 !== '')
+          .map((s, i) => ({ id: '', match_id: matchId, set_number: i + 1, p1_games: parseInt(s.score1, 10), p2_games: parseInt(s.score2, 10) }));
+        const winnerId = p1SetsWon > p2SetsWon ? player1Id : player2Id;
+
+        if (isActorPlayer) {
+          // Player submitted result → notify the other player only
+          const recipientId = determineRecipient(matchObj, actorId!);
+          if (recipientId) {
+            const rivalName = profiles.find(p => p.id === actorId)?.name || 'Rival';
+            const resultPayload = buildResultLoadedPayload(
+              { ...matchObj, player1_sets_won: p1SetsWon, player2_sets_won: p2SetsWon } as any,
+              setsData,
+              rivalName,
+              winnerId
+            );
+            sendPushNotification(recipientId, resultPayload.title, resultPayload.body, resultPayload.url);
+          }
+        } else {
+          // Admin submitted result → notify BOTH players
+          const p1Name = profiles.find(p => p.id === player1Id)?.name || 'Rival';
+          const p2Name = profiles.find(p => p.id === player2Id)?.name || 'Rival';
+          const payloadForP1 = buildResultLoadedPayload(
             { ...matchObj, player1_sets_won: p1SetsWon, player2_sets_won: p2SetsWon } as any,
             setsData,
-            rivalName,
+            p2Name,
             winnerId
           );
-          sendPushNotification(recipientId, resultPayload.title, resultPayload.body, resultPayload.url);
+          const payloadForP2 = buildResultLoadedPayload(
+            { ...matchObj, player1_sets_won: p1SetsWon, player2_sets_won: p2SetsWon } as any,
+            setsData,
+            p1Name,
+            winnerId
+          );
+          sendPushNotification(player1Id, payloadForP1.title, payloadForP1.body, payloadForP1.url);
+          sendPushNotification(player2Id, payloadForP2.title, payloadForP2.body, payloadForP2.url);
         }
       }
     } catch (err: any) {
@@ -3964,19 +3987,41 @@ const App = () => {
 
       // Fire-and-forget push notification when match is scheduled with both players
       if (status === 'scheduled' && newMatch.player2) {
-        const recipientId = determineRecipient(
-          { home_player_id: newMatch.player1, away_player_id: newMatch.player2 } as any,
-          session?.user.id
-        );
-        if (recipientId) {
-          const rivalName = profiles.find(p => p.id === session?.user.id)?.name || 'Rival';
-          const locationName = locations.find(l => l.name === newMatch.location)?.name;
-          const payload = buildMatchScheduledPayload(
+        const actorId = session?.user.id;
+        const isActorPlayer = actorId === newMatch.player1 || actorId === newMatch.player2;
+        const rivalForP1 = profiles.find(p => p.id === newMatch.player2)?.name || 'Rival';
+        const rivalForP2 = profiles.find(p => p.id === newMatch.player1)?.name || 'Rival';
+        const locationName = locations.find(l => l.name === newMatch.location)?.name;
+
+        if (isActorPlayer) {
+          // Player scheduled → notify the other player only
+          const recipientId = determineRecipient(
+            { home_player_id: newMatch.player1, away_player_id: newMatch.player2 } as any,
+            actorId!
+          );
+          if (recipientId) {
+            const rivalName = profiles.find(p => p.id === actorId)?.name || 'Rival';
+            const payload = buildMatchScheduledPayload(
+              { date: newMatch.date, time: newMatch.time } as any,
+              rivalName,
+              locationName
+            );
+            sendPushNotification(recipientId, payload.title, payload.body, payload.url, payload.actions);
+          }
+        } else {
+          // Admin scheduled → notify BOTH players
+          const payloadForP1 = buildMatchScheduledPayload(
             { date: newMatch.date, time: newMatch.time } as any,
-            rivalName,
+            rivalForP1,
             locationName
           );
-          sendPushNotification(recipientId, payload.title, payload.body, payload.url, payload.actions);
+          const payloadForP2 = buildMatchScheduledPayload(
+            { date: newMatch.date, time: newMatch.time } as any,
+            rivalForP2,
+            locationName
+          );
+          sendPushNotification(newMatch.player1, payloadForP1.title, payloadForP1.body, payloadForP1.url, payloadForP1.actions);
+          sendPushNotification(newMatch.player2, payloadForP2.title, payloadForP2.body, payloadForP2.url, payloadForP2.actions);
         }
       }
       

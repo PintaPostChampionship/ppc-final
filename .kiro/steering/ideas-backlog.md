@@ -11,17 +11,22 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 ## 🔴 Prioridad alta (próximo a implementar)
 
 ### 1. Descomponer App.tsx
-- **Estado**: 🚧 En progreso (spec creándose)
-- Extraer componentes: DivisionTable, PlayerProfile, MatchResultForm, BookingPanel, BracketView, NavMenu, etc.
-- Sin cambiar funcionalidad visible — solo reorganizar código
-- Base necesaria para todo lo demás
+- **Estado**: ✅ Completado
+- Extraídos: tipos, 7 módulos de utilidades, constantes, 4 componentes
+- App.tsx reducido en ~2000 líneas
+- 12 archivos nuevos, 32 tests, build pasa
 
 ### 2. Notificaciones push
-- **Estado**: 📋 Pendiente
-- Ya hay base: Supabase Realtime + service worker registrado
-- Falta: push del navegador (Web Push API) + UI de preferencias
-- Notificar: partido nuevo programado, resultado cargado, partido en vivo, fecha límite cercana
-- El usuario intentó implementarlo antes pero no funcionó bien — revisar código existente
+- **Estado**: ✅ Implementado
+- Web Push API con VAPID keys
+- 3 tipos: partido agendado, resultado cargado, recordatorio post-partido
+- Service Worker actualizado (push + notificationclick)
+- Hook `usePushNotifications` + banner de opt-in + toggle en menú
+- Vercel Functions: `/api/push-subscribe`, `/api/send-notification`, `/api/cron/daily-reminders`
+- Cron diario a las 10:00 UTC para recordatorios
+- Tabla `push_subscriptions` en Supabase + columna `reminder_sent` en matches
+- Cada jugador debe activar notificaciones una vez (banner en la home)
+- Futuro: partido sin rival, pagos, eventos, partido en vivo
 
 ### 3. Garmin Scoreboard — Fase 2 (sync con web)
 - **Estado**: 📋 Pendiente (Fase 1 offline ✅)

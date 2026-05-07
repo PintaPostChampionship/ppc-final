@@ -1,6 +1,21 @@
 import React from 'react';
 import type { Tournament, Division, Registration } from '../types';
 
+// Division rank for sorting (same order used throughout the app)
+function divisionRank(name?: string | null): number {
+  const n = (name || '').trim().toLowerCase();
+  if (n === 'oro') return 1;
+  if (n === 'plata') return 2;
+  if (n === 'bronce') return 3;
+  if (n === 'cobre') return 4;
+  if (n === 'hierro') return 5;
+  if (n === 'diamante') return 6;
+  if (n === 'élite' || n === 'elite') return 0;
+  if (n === 'anita lizana') return 0;
+  if (n === 'serena williams') return 0;
+  return 99;
+}
+
 interface NavTournamentsSectionProps {
   tournaments: Tournament[];
   divisions: Division[];
@@ -20,7 +35,12 @@ export function NavTournamentsSection({ tournaments, divisions, registrations, o
       {tournaments.map(t => {
         const divs = divisions.filter(d =>
           registrations.some(r => r.tournament_id === t.id && r.division_id === d.id)
-        ).sort((a, b) => a.name.localeCompare(b.name));
+        ).sort((a, b) => {
+          const ra = divisionRank(a.name);
+          const rb = divisionRank(b.name);
+          if (ra !== rb) return ra - rb;
+          return a.name.localeCompare(b.name, 'es');
+        });
 
         const isOpen = expanded === t.id;
 

@@ -6,8 +6,11 @@ import webpush from 'web-push';
  * Used by Vercel Functions that need full DB access.
  */
 export function getServiceSupabase() {
-  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tzmbznenarrpjayntyjt.supabase.co';
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!key) {
+    console.error('[pushUtils] SUPABASE_SERVICE_ROLE_KEY not found');
+  }
   return createClient(url, key);
 }
 

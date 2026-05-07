@@ -205,6 +205,8 @@ npm run preview      # Preview del build de producción
 |---------|--------|---------|
 | Live Scoreboard | 🚧 En progreso | `.kiro/specs/live-scoreboard/` |
 | Fee Payment Tracking | 🚧 En progreso | `.kiro/specs/fee-payment-tracking/` |
+| App Decomposition | ✅ Completado | `.kiro/specs/app-decomposition/` |
+| Push Notifications | ✅ Completado | `.kiro/specs/push-notifications/` |
 | Garmin Scoreboard | ✅ Fase 1 (offline) | `garmin-scoreboard/` |
 
 ---
