@@ -103,6 +103,8 @@ const App = () => {
   });
   const [showNavMenu, setShowNavMenu] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [scrollToScheduleForm, setScrollToScheduleForm] = useState(false);
+  const scheduleFormRef = useRef<HTMLDivElement>(null);
   const [cameFromHistoric, setCameFromHistoric] = useState(false);
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -175,6 +177,7 @@ const App = () => {
   const [showBookingPanel, setShowBookingPanel] = useState(false);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [accountCredits, setAccountCredits] = useState<Record<string, { credits: number; updatedAt: string }>>({});
 
   const [bookingHistoryLimit, setBookingHistoryLimit] = useState<'5' | '10' | '20' | 'all'>('10');
   const [bookingHistoryStatusFilter, setBookingHistoryStatusFilter] = useState<'all' | 'BOOKED' | 'CANCELLED' | 'EXPIRED' | 'CLOSED' | 'FAILED'>('all');
@@ -1137,6 +1140,112 @@ const App = () => {
     fetchData(session?.user.id);
   }, [session]); 
 
+  // EFECTO 3.5: Persistir estado de navegación en sessionStorage (expira a los 10 min)
+  const NAV_STATE_KEY = 'ppc_nav_state';
+  const NAV_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
+  // Guardar estado de navegación cuando cambia
+  useEffect(() => {
+    // Solo guardar si hay algo seleccionado
+    if (!selectedTournament && !selectedDivision && !selectedPlayer && !showBookingPanel && !showBuscarClases && !showMap) {
+      try { sessionStorage.removeItem(NAV_STATE_KEY); } catch {}
+      return;
+    }
+
+    const navState = {
+      tournamentId: selectedTournament?.id ?? null,
+      divisionId: selectedDivision?.id ?? null,
+      playerId: selectedPlayer?.id ?? null,
+      showBookingPanel,
+      showBuscarClases,
+      showMap,
+      timestamp: Date.now(),
+    };
+
+    try { sessionStorage.setItem(NAV_STATE_KEY, JSON.stringify(navState)); } catch {}
+  }, [selectedTournament?.id, selectedDivision?.id, selectedPlayer?.id, showBookingPanel, showBuscarClases, showMap]);
+
+  // Restaurar estado de navegación al cargar datos
+  const navRestoredRef = useRef(false);
+  useEffect(() => {
+    // Solo restaurar una vez, cuando los datos estén disponibles
+    if (navRestoredRef.current) return;
+    if (tournaments.length === 0 || divisions.length === 0) return;
+
+    try {
+      const raw = sessionStorage.getItem(NAV_STATE_KEY);
+      if (!raw) return;
+
+      const navState = JSON.parse(raw);
+      const elapsed = Date.now() - (navState.timestamp ?? 0);
+
+      // Expirar si pasaron más de 10 minutos
+      if (elapsed > NAV_STATE_TTL_MS) {
+        sessionStorage.removeItem(NAV_STATE_KEY);
+        return;
+      }
+
+      navRestoredRef.current = true;
+
+      // Restaurar torneo
+      if (navState.tournamentId) {
+        const t = tournaments.find(t => t.id === navState.tournamentId);
+        if (t) setSelectedTournament(t);
+      }
+
+      // Restaurar división
+      if (navState.divisionId) {
+        const d = divisions.find(d => d.id === navState.divisionId);
+        if (d) setSelectedDivision(d);
+      }
+
+      // Restaurar jugador
+      if (navState.playerId && profiles.length > 0) {
+        const p = profiles.find(p => p.id === navState.playerId);
+        if (p) setSelectedPlayer(p);
+      }
+
+      // Restaurar vistas especiales
+      if (navState.showBookingPanel) setShowBookingPanel(true);
+      if (navState.showBuscarClases) setShowBuscarClases(true);
+      if (navState.showMap) setShowMap(true);
+
+      // Restaurar scroll position después de que React renderice
+      const savedScroll = navState.scrollY;
+      if (typeof savedScroll === 'number' && savedScroll > 0) {
+        // Esperar a que el DOM se actualice con el estado restaurado
+        setTimeout(() => window.scrollTo(0, savedScroll), 200);
+      }
+    } catch {}
+  }, [tournaments, divisions, profiles]);
+
+  // Guardar scroll position al ocultar pestaña o cerrar
+  useEffect(() => {
+    const saveScroll = () => {
+      try {
+        const raw = sessionStorage.getItem(NAV_STATE_KEY);
+        if (raw) {
+          const navState = JSON.parse(raw);
+          navState.scrollY = window.scrollY;
+          navState.timestamp = Date.now();
+          sessionStorage.setItem(NAV_STATE_KEY, JSON.stringify(navState));
+        }
+      } catch {}
+    };
+
+    const handleVisHide = () => {
+      if (document.visibilityState === 'hidden') saveScroll();
+    };
+
+    document.addEventListener('visibilitychange', handleVisHide);
+    window.addEventListener('beforeunload', saveScroll);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisHide);
+      window.removeEventListener('beforeunload', saveScroll);
+    };
+  }, []);
+
   // EFECTO HASH ROUTING: Detecta navegación a /#live/match/:id
   useEffect(() => {
     function handleHashChange() {
@@ -1254,6 +1363,28 @@ const App = () => {
     };
 
     loadBookingData();
+
+    // Cargar créditos de cuentas Better
+    const loadCredits = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('booking_account_credits')
+          .select('account_label, credits_available, updated_at');
+        if (error) throw error;
+        const map: Record<string, { credits: number; updatedAt: string }> = {};
+        (data || []).forEach((row: any) => {
+          map[row.account_label] = {
+            credits: row.credits_available,
+            updatedAt: row.updated_at,
+          };
+        });
+        setAccountCredits(map);
+      } catch (err) {
+        console.error('loadCredits error:', err);
+      }
+    };
+    loadCredits();
+
   console.log('admins:', bookingAdmins?.length, bookingAdmins?.slice?.(0,3));
   console.log('accounts:', bookingAccounts?.length, bookingAccounts?.slice?.(0,3));
   console.log('requests:', courtRequests?.length, courtRequests?.slice?.(0,3));
@@ -1632,6 +1763,16 @@ const App = () => {
     setPlayerCardSaveMessage('');
     window.scrollTo({ top: 0, behavior: 'smooth' }); //cambiar a window.scrollTo(0, 0); para quitar animación
   }, [selectedPlayer?.id]);
+
+  // Scroll al formulario "Programar un Partido" cuando se viene desde el perfil
+  useEffect(() => {
+    if (scrollToScheduleForm && !selectedPlayer && scheduleFormRef.current) {
+      setTimeout(() => {
+        scheduleFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setScrollToScheduleForm(false);
+      }, 150);
+    }
+  }, [scrollToScheduleForm, selectedPlayer]);
 
   useEffect(() => {
     if (!selectedPlayer) {
@@ -2491,6 +2632,7 @@ const App = () => {
     setShowBuscarClases(false);
     setSelectedTournament(null);
     setEditProfile(false);
+    try { sessionStorage.removeItem(NAV_STATE_KEY); } catch {}
   };
 
   const openEditProfile = async () => {
@@ -3991,7 +4133,7 @@ const App = () => {
         const isActorPlayer = actorId === newMatch.player1 || actorId === newMatch.player2;
         const rivalForP1 = profiles.find(p => p.id === newMatch.player2)?.name || 'Rival';
         const rivalForP2 = profiles.find(p => p.id === newMatch.player1)?.name || 'Rival';
-        const locationName = locations.find(l => l.name === newMatch.location)?.name;
+        const locationName = locations.find(l => l.name === newMatch.location)?.name || newMatch.location_details || undefined;
 
         if (isActorPlayer) {
           // Player scheduled → notify the other player only
@@ -5556,6 +5698,39 @@ const App = () => {
                         </option>
                       ))}
                     </select>
+
+                    {/* Mostrar créditos de la cuenta seleccionada */}
+                    {(() => {
+                      if (!newBooking.better_account_id) return null;
+                      const selectedAcc = visibleBookingAccounts.find(a => a.id === newBooking.better_account_id);
+                      const label = selectedAcc?.label?.trim() || selectedAcc?.env_username_key?.trim() || '';
+                      const creditInfo = accountCredits[label];
+                      if (!creditInfo) return (
+                        <p className="mt-1.5 text-xs text-gray-400">Sin datos de créditos aún</p>
+                      );
+                      const costPence = 770; // £7.70 por hora en Better (Highbury/Rosemary)
+                      const creditsNeeded = costPence;
+                      const hasEnough = creditInfo.credits >= creditsNeeded;
+                      const updatedAgo = (() => {
+                        const diff = Date.now() - new Date(creditInfo.updatedAt).getTime();
+                        const mins = Math.floor(diff / 60000);
+                        if (mins < 60) return `hace ${mins} min`;
+                        const hrs = Math.floor(mins / 60);
+                        if (hrs < 24) return `hace ${hrs}h`;
+                        return `hace ${Math.floor(hrs / 24)}d`;
+                      })();
+                      return (
+                        <div className={`mt-1.5 px-3 py-2 rounded-lg text-sm ${hasEnough ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
+                          <span className="font-medium">💳 Créditos: £{(creditInfo.credits / 100).toFixed(2)}</span>
+                          <span className="ml-2 text-xs opacity-70">({updatedAgo})</span>
+                          {hasEnough ? (
+                            <span className="ml-2 text-xs">✅ Suficiente para 1 reserva (£{(costPence / 100).toFixed(2)})</span>
+                          ) : (
+                            <span className="ml-2 text-xs font-medium">⚠️ Necesitas £{(costPence / 100).toFixed(2)} — recarga créditos</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Sede / Venue / Actividad */}
@@ -8451,6 +8626,7 @@ const App = () => {
                                         date: '',
                                         time: '',
                                       }));
+                                      setScrollToScheduleForm(true);
                                       setSelectedPlayer(null);
                                     }}
                                   >
@@ -9846,7 +10022,7 @@ const App = () => {
             </div>
 
             {/* Schedule Match */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
+            <div ref={scheduleFormRef} id="schedule-match-form" className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Programar un Partido</h3>
               <form onSubmit={handleScheduleMatch} className="space-y-4">
                 <div>
