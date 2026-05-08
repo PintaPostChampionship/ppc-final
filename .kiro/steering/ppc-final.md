@@ -23,37 +23,60 @@ URL: **ppctennis.vercel.app**
 ```
 ppc-final/
 ├── src/
-│   ├── App.tsx                          # Componente principal (~5000+ líneas, toda la app)
+│   ├── App.tsx                          # Componente principal (orquestador, ~10000 líneas)
 │   ├── lib/
 │   │   ├── supabaseClient.ts            # Cliente Supabase (VITE_SUPABASE_URL + ANON_KEY)
-│   │   └── paymentUtils.ts              # Funciones puras: parseo Google Sheets, mapa de pagos
+│   │   ├── paymentUtils.ts              # Funciones puras: parseo Google Sheets, mapa de pagos
+│   │   ├── notificationUtils.ts         # Funciones puras: builders de payload, filtros, calendar URL
+│   │   ├── dateUtils.ts                 # Funciones de fecha (formatISOToDDMMYYYY, parseYMDLocal, etc.)
+│   │   ├── playerUtils.ts              # Estadísticas de jugadores (getPlayerStatsSummaryAll, etc.)
+│   │   ├── displayUtils.ts             # Helpers de display (toTitleCase, uiName, divisionColors, etc.)
+│   │   ├── imageUtils.ts               # Helpers de imagen (avatarSrc, resizeImage, etc.)
+│   │   ├── onboardingUtils.ts          # Helpers de onboarding (savePending, loadPending, etc.)
+│   │   ├── tournamentUtils.ts          # Clasificación de torneos (isCalibration, isOfficial)
+│   │   └── constants.ts                # Constantes (BOOKING_VENUES, highlightPhotos, etc.)
 │   ├── hooks/
-│   │   └── usePaymentStatus.ts          # Hook de estado de pagos (fetch gviz + reportPayment)
+│   │   ├── usePaymentStatus.ts          # Hook de estado de pagos (fetch gviz + reportPayment)
+│   │   └── usePushNotifications.ts      # Hook de notificaciones push (subscribe/unsubscribe)
 │   ├── types/
+│   │   ├── index.ts                     # Todos los tipos compartidos (Profile, Match, Tournament, etc.)
 │   │   └── payment.ts                   # PaymentStatus, PaymentStatusMap, PagosWebRow
 │   ├── components/
 │   │   ├── BuscarClases.tsx             # Buscador de clases de tenis (weekly board)
 │   │   ├── FindTennisCourt.tsx          # Guía para encontrar canchas + apps recomendadas
 │   │   ├── PaymentModal.tsx             # Modal de confirmación de pago de cuota
 │   │   ├── PaymentStatusIcon.tsx        # Ícono 💰/✅ según estado de pago
+│   │   ├── PlayerShowcaseCard.tsx       # Ficha de jugador estilo carta de tenista
+│   │   ├── BracketView.tsx             # Vista de bracket knockout (R16→QF→SF→F)
+│   │   ├── NavPlayerSearch.tsx          # Buscador de jugadores en el menú
+│   │   ├── NavTournamentsSection.tsx    # Sección de torneos en el menú
 │   │   └── LiveScoreboard/
 │   │       ├── LiveScoreboard.tsx       # Componente principal del marcador en vivo
 │   │       ├── LiveScoreDisplay.tsx     # Display visual del marcador (estilo PPC)
 │   │       ├── LiveMatchBanner.tsx      # Banner de partidos en vivo en la home
 │   │       ├── useLiveScore.ts          # Hook: estado + Realtime + persistencia
 │   │       └── liveScoreUtils.ts        # Lógica pura de puntuación (sin React)
-│   └── __tests__/                       # Tests de utilidades
+│   └── __tests__/                       # Tests (property-based + unit)
 ├── api/
-│   ├── sheets-update.ts                 # POST: registra pago en Google Sheets (JWT)
+│   ├── push-subscribe.ts               # POST/DELETE: gestionar suscripciones push
+│   ├── send-notification.ts            # POST: enviar notificación push a un jugador
+│   ├── sheets-update.ts                # POST: registra pago en Google Sheets (JWT)
 │   ├── telegram.ts                      # Webhook: bot Telegram → dispatch GitHub Actions
+│   ├── cron/
+│   │   └── daily-reminders.ts          # Cron diario: recordatorios post-partido
 │   └── lib/
-│       └── sheetsLogic.ts               # Funciones puras de validación de pagos
+│       ├── sheetsLogic.ts               # Funciones puras de validación de pagos
+│       └── pushUtils.ts                 # Utilidades compartidas: Supabase service + web-push config
 ├── public/
+│   ├── sw.js                            # Service Worker (push + notificationclick + fetch)
+│   ├── site.webmanifest                 # PWA manifest
 │   ├── fotos-anteriores/                # Fotos de ediciones pasadas del PPC
 │   └── images/                          # Logos de divisiones, assets estáticos
 ├── .kiro/
 │   ├── steering/                        # Archivos de contexto (este archivo, supabase, etc.)
-│   └── specs/                           # Specs de features (live-scoreboard, fee-payment)
+│   └── specs/                           # Specs de features
+├── garmin-scoreboard/                   # App Garmin (Monkey C) — Fase 1 offline
+├── vercel.json                          # Configuración de cron jobs
 ├── index.html
 ├── vite.config.ts
 ├── tailwind.config.js
@@ -215,12 +238,44 @@ npm run preview      # Preview del build de producción
 
 La web ya está configurada como PWA instalable:
 - **Manifest**: `public/site.webmanifest` (nombre, íconos, display standalone)
-- **Service Worker**: `public/sw.js` (registrado en `src/main.tsx`, pass-through básico)
+- **Service Worker**: `public/sw.js` (push notifications + notificationclick + pass-through fetch)
 - **Íconos**: `android-chrome-192x192.png`, `android-chrome-512x512.png` + versiones maskable
 - **Apple Touch Icon**: `apple-touch-icon.png`
 - **Meta tags**: `apple-mobile-web-app-capable`, `theme-color` en `index.html`
 
 Para instalar: abrir ppctennis.vercel.app en Chrome → menú ⋮ → "Instalar app" o "Agregar a pantalla de inicio".
+
+---
+
+## Push Notifications
+
+Sistema de notificaciones push implementado con Web Push API (VAPID):
+
+### Tipos de notificación activos
+1. **Partido agendado** → avisa al rival (o ambos si lo agenda el admin) con fecha, hora, lugar + link calendario
+2. **Resultado cargado** → avisa al rival (o ambos si lo carga el admin) con marcador set por set
+3. **Recordatorio post-partido** → cron diario (10:00 UTC), al día siguiente si no se cargó resultado
+
+### Arquitectura
+- **Frontend**: hook `usePushNotifications` + banner opt-in + toggle en menú
+- **Service Worker**: `public/sw.js` maneja `push` y `notificationclick`
+- **APIs**: `/api/push-subscribe`, `/api/send-notification`, `/api/cron/daily-reminders`
+- **DB**: tabla `push_subscriptions` + columna `reminder_sent` en matches
+- **Cron**: `vercel.json` con schedule `0 10 * * *`
+
+### Variables de entorno (Vercel)
+- `VAPID_PUBLIC_KEY` — clave pública VAPID
+- `VAPID_PRIVATE_KEY` — clave privada VAPID
+- `VAPID_SUBJECT` — `mailto:pintapostchampionship@gmail.com`
+- `VITE_VAPID_PUBLIC_KEY` — misma public key para el frontend
+- `CRON_SECRET` — protege el endpoint del cron
+- `SUPABASE_URL` — URL de Supabase (sin prefijo VITE_, para server-side)
+
+### Notas
+- Cada jugador debe activar notificaciones una vez (banner en la home)
+- Si la suscripción no se guardó, desactivar y reactivar desde el menú
+- El `mailto:` en VAPID_SUBJECT NO envía correos — es solo identificación del protocolo
+- Las notificaciones funcionan en Chrome Android y Safari iOS 16.4+ (PWA instalada)
 
 ---
 

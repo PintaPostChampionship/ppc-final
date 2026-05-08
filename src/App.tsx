@@ -1214,7 +1214,7 @@ const App = () => {
       const savedScroll = navState.scrollY;
       if (typeof savedScroll === 'number' && savedScroll > 0) {
         // Esperar a que el DOM se actualice con el estado restaurado
-        setTimeout(() => window.scrollTo(0, savedScroll), 200);
+        setTimeout(() => window.scrollTo(0, savedScroll), 400);
       }
     } catch {}
   }, [tournaments, divisions, profiles]);
@@ -1233,15 +1233,29 @@ const App = () => {
       } catch {}
     };
 
-    const handleVisHide = () => {
-      if (document.visibilityState === 'hidden') saveScroll();
+    const handleVisChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveScroll();
+      } else if (document.visibilityState === 'visible') {
+        // Restaurar scroll al volver a la pestaña
+        try {
+          const raw = sessionStorage.getItem(NAV_STATE_KEY);
+          if (raw) {
+            const navState = JSON.parse(raw);
+            const savedScroll = navState.scrollY;
+            if (typeof savedScroll === 'number' && savedScroll > 0) {
+              setTimeout(() => window.scrollTo(0, savedScroll), 100);
+            }
+          }
+        } catch {}
+      }
     };
 
-    document.addEventListener('visibilitychange', handleVisHide);
+    document.addEventListener('visibilitychange', handleVisChange);
     window.addEventListener('beforeunload', saveScroll);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisHide);
+      document.removeEventListener('visibilitychange', handleVisChange);
       window.removeEventListener('beforeunload', saveScroll);
     };
   }, []);
@@ -6398,7 +6412,7 @@ const App = () => {
             <div className="bg-white/90 backdrop-blur rounded-xl shadow-md p-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <span className="text-2xl shrink-0">🔔</span>
-                <p className="text-sm text-gray-700 truncate">Recibe alertas cuando te agendan un partido o cargan un resultado.</p>
+                <p className="text-sm text-gray-700">Recibe alertas cuando te agendan un partido o cargan un resultado.</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
