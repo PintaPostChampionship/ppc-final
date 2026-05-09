@@ -17,16 +17,19 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - 12 archivos nuevos, 32 tests, build pasa
 
 ### 2. Notificaciones push
-- **Estado**: ✅ Implementado
-- Web Push API con VAPID keys
-- 3 tipos: partido agendado, resultado cargado, recordatorio post-partido
-- Service Worker actualizado (push + notificationclick)
-- Hook `usePushNotifications` + banner de opt-in + toggle en menú
-- Vercel Functions: `/api/push-subscribe`, `/api/send-notification`, `/api/cron/daily-reminders`
-- Cron diario a las 10:00 UTC para recordatorios
-- Tabla `push_subscriptions` en Supabase + columna `reminder_sent` en matches
-- Cada jugador debe activar notificaciones una vez (banner en la home)
-- Futuro: partido sin rival, pagos, eventos, partido en vivo
+- **Estado**: ✅ Completado
+- ✅ Web Push API con VAPID keys
+- ✅ Service Worker (push + notificationclick con hash routing)
+- ✅ Hook `usePushNotifications` + banner opt-in + toggle en menú
+- ✅ Vercel Functions: `/api/push-subscribe`, `/api/send-notification`, `/api/cron/daily-reminders`
+- ✅ Cron diario 10:00 UTC para recordatorios post-partido
+- ✅ Tabla `push_subscriptions` en Supabase
+- ✅ Utilidades puras: `notificationUtils.ts` (payloads, calendar URL, validación)
+- ✅ Frontend trigger: `handleScheduleMatch` → notifica al rival (o ambos si admin)
+- ✅ Frontend trigger: `handleAddMatch` → notifica al rival (o ambos si admin)
+- ✅ Hash routing `/#division/:id` — notificación abre la división del partido
+- ✅ Botón "📅 Agregar al calendario" con 3 opciones (Google, Outlook, Apple .ics)
+- ⬜ **Pendiente**: Notificaciones de partido sin rival, pagos, eventos, partido en vivo
 
 ### 3. Garmin Scoreboard — Fase 2 (sync con web)
 - **Estado**: 📋 Pendiente (Fase 1 offline ✅)
@@ -36,61 +39,85 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - Selección de partido activo desde el reloj
 - Auth via token (UUID del jugador)
 
+### 4. Buscador de canchas v2 (CourtFinder)
+- **Estado**: 🟡 Funcional, mejoras pendientes
+- ✅ Componente `CourtFinder.tsx` con mapa Leaflet + venue cards
+- ✅ Scraper `court_monitor/` con 21 venues (Better, ClubSpark, Flow)
+- ✅ GitHub Action cada 6h genera `court_availability.json`
+- ✅ Sistema de alertas: `court_watchlist` en Supabase + push notifications
+- ✅ Diff engine detecta slots liberados y notifica al usuario
+- ✅ Al apretar notificación → abre link directo de booking
+- ⬜ **Pendiente**: Reestructurar vista "Buscar Cancha" — pestaña principal (monitor) + pestaña "Tips"
+- ⬜ **Pendiente**: Sacar buscador iframe y apps recomendadas de la vista actual
+- ⬜ **Pendiente**: Agregar más venues (Waterlow Park/Camden, otros)
+
+### 5. Booking automático — ClubSpark
+- **Estado**: 📋 Pendiente
+- Cliente ClubSpark funcional (login SSO + generar link checkout)
+- Flujo semi-automático: bot detecta slot → genera link → notifica → usuario paga en 15 seg
+- Pestaña separada en panel de booking (Better = automático, ClubSpark = semi-automático)
+- Agregar columna `platform` a `booking_accounts` (Better | ClubSpark)
+- Guardar credenciales ClubSpark en GitHub Secrets + yml
+
 ---
 
 ## 🟡 Prioridad media (futuro cercano)
 
-### 4. Dark mode
+### 6. Dark mode
 - **Estado**: 📋 Pendiente
 - Tailwind `dark:` prefix — el Live Scoreboard ya usa fondo oscuro
 - Resto de la app necesita colores invertidos
 - Se activa según preferencia del sistema operativo
 
-### 5. Buscador de canchas mejorado (tipo Spin App)
-- **Estado**: 💡 Idea en exploración
-- Combinar "Buscar Cancha" + "Buscar Clases" en una sola vista
-- Scraper de disponibilidad de canchas (Better ya resuelto, ClubSpark/Flow por investigar)
-- Mapa con canchas cercanas por ubicación
-- Alertas cuando se libera una hora (watchlist ya existe para clases)
-- Segundo JSON: `court_availability.json` generado cada 1-2h
-- Potencial para ser producto independiente
-
-### 6. Calendario de partidos
+### 7. Calendario de partidos
 - **Estado**: 📋 Pendiente
 - Vista calendario semanal/mensual con partidos programados
 - Cada jugador ve los suyos destacados
 - Compartir a WhatsApp
 - Cuidado: muchos espacios vacíos al principio de temporada
 
+### 8. Fee Payment Tracking (cuotas)
+- **Estado**: ✅ Implementado
+- Lee estado de pagos desde Google Sheets (endpoint gviz público)
+- Tres estados: pendiente (💰), pagado_sin_validar (✅), pagado (✅)
+- Botón "Ya pagué" → Vercel Function actualiza Google Sheets
+- Integrado en tabla de divisiones con íconos de estado
+
 ---
 
 ## 🟢 Prioridad baja (futuro)
 
-### 7. React Router
+### 9. React Router
 - **Estado**: 📋 Pendiente
 - URLs compartibles: `/#/tournament/abc`, `/#/player/xyz`
 - Botón atrás del navegador funcional
 - Deep linking
 - Requiere refactor significativo de la navegación
+- Nota: ya se usa hash routing parcial (`/#live/match/:id`, `/#division/:id`)
 
-### 8. Estadísticas avanzadas
+### 10. Estadísticas avanzadas
 - **Estado**: 📋 Pendiente
 - Rachas (🔥 3 victorias seguidas) — visible en home
 - Jugador del mes (automático, basado en resultados)
 - Evolución de ranking por temporada (cuando haya más historial)
 - Head-to-head ya existe en perfiles — no duplicar
 
-### 9. ELO Rating / predicciones
-- **Estado**: 📋 Pendiente (prioridad muy baja, fue rechazado antes)
+### 11. ELO Rating / predicciones
+- **Estado**: 📋 Pendiente (prioridad muy baja)
 - Ranking numérico global basado en historial
 - Predicción pre-partido (% probabilidad)
-- Podría revivir en el futuro si hay interés
+
+### 12. Monitor de clases — mejoras
+- **Estado**: 📋 Pendiente
+- Agregar Islington Tennis Centre (clases Better) al scraper `tennis_dashboard/`
+- Posible unificación con CourtFinder en una sola vista
+- Más adelante
 
 ---
 
 ## 🔵 Ideas de producto / expansión
 
-### 10. Multi-tenancy (Liga como servicio)
+### 13. Multi-tenancy (Liga como servicio)
 - **Estado**: 💡 Idea
 - Tabla `organizations` en Supabase
 - Cada liga tiene sus propios torneos, divisiones, jugadores
@@ -98,49 +125,46 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - Onboarding de admin: crear liga, invitar jugadores, configurar torneos
 - Camino más claro a un producto vendible (SaaS)
 
-### 11. Landing page pública
+### 14. Landing page pública
 - **Estado**: 💡 Idea
 - Página que explique qué es PPC Tennis, con screenshots, pricing
 - Botón "Crear mi liga"
-- Ahora ppctennis.vercel.app va directo al login
 
-### 12. Dominio propio
+### 15. Dominio propio
 - **Estado**: 💡 Idea
 - `ppctennis.app` o similar en vez de `.vercel.app`
-- Más profesional para vender/compartir
 
-### 13. Stripe para pagos
+### 16. Stripe para pagos
 - **Estado**: 💡 Idea
 - Reemplazar Google Sheets por pagos reales con Stripe
 - Jugadores pagan cuota directamente desde la web
-- Dashboard de admin para ver estado de pagos
 
-### 14. Plataforma para profesores de tenis
+### 17. Plataforma para profesores de tenis
 - **Estado**: 💡 Idea
 - Dashboard donde el profesor sube horarios, precios, niveles
 - Alumnos buscan por ubicación/nivel/precio y reservan
-- Notificaciones de nuevas reservas
-- Historial de alumnos, pagos, asistencia
 - No requiere scraping — datos ingresados directamente
 
-### 15. API pública del PPC
+### 18. API pública del PPC
 - **Estado**: 💡 Idea
 - Vercel Function que exponga datos públicos como JSON
 - Standings, resultados, próximos partidos
-- Otros pueden construir bots, widgets, integraciones
 
-### 16. Garmin — Fase 3 (mejoras)
+### 19. Garmin — Fase 3 (mejoras)
 - **Estado**: 💡 Idea
 - Companion app Android/iOS para sync Realtime
 - Nombres de jugadores en pantalla del reloj
-- Estadísticas post-partido
 - Publicación en Connect IQ Store
 
-### 17. Apple Watch / Wear OS
+### 20. Apple Watch / Wear OS
 - **Estado**: 💡 Idea
 - Misma lógica de puntuación, diferente lenguaje (Swift / Kotlin)
 - Apple Watch tiene WebSocket nativo (mejor sync)
-- Requiere Mac para desarrollo de Apple Watch
+
+### 21. Alertas por Telegram / WhatsApp
+- **Estado**: 💡 Idea (más adelante)
+- Alternativa a push notifications para alertas de canchas
+- Telegram más fácil (bot API), WhatsApp requiere Business API
 
 ---
 
@@ -158,3 +182,4 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - Activar con `#ideas-backlog` en el chat de Kiro
 - Las specs formales se crean en `.kiro/specs/` cuando una idea pasa a implementación
 - El roadmap resumido también está en `ppc-final.md` (steering principal)
+- Última actualización: 9 mayo 2026

@@ -4,6 +4,7 @@ import { supabase } from './lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
 import FindTennisCourt from './components/FindTennisCourt';
 import BuscarClases from './components/BuscarClases';
+import CourtFinder from './components/CourtFinder';
 import LiveScoreboard from './components/LiveScoreboard/LiveScoreboard';
 import LiveMatchBanner from './components/LiveScoreboard/LiveMatchBanner';
 import { isEditor } from './components/LiveScoreboard/liveScoreUtils';
@@ -95,6 +96,7 @@ const App = () => {
   });
   const [showMap, setShowMap] = useState(false);
   const [showBuscarClases, setShowBuscarClases] = useState(false);
+  const [showCourtFinder, setShowCourtFinder] = useState(false);
   const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
     // Inicializar desde el hash actual al cargar la página
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -105,6 +107,8 @@ const App = () => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [scrollToScheduleForm, setScrollToScheduleForm] = useState(false);
   const scheduleFormRef = useRef<HTMLDivElement>(null);
+  const [inlineScheduleOpponent, setInlineScheduleOpponent] = useState<string | null>(null);
+  const [inlineScheduleData, setInlineScheduleData] = useState({ date: '', time: '', location: '', location_details: '' });
   const [cameFromHistoric, setCameFromHistoric] = useState(false);
   const [embedLoaded, setEmbedLoaded] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -177,7 +181,7 @@ const App = () => {
   const [showBookingPanel, setShowBookingPanel] = useState(false);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [accountCredits, setAccountCredits] = useState<Record<string, { credits: number; updatedAt: string }>>({});
+  const [accountCredits, setAccountCredits] = useState<Record<string, { credits: number; updatedAt: string; costHighbury: number | null; costRosemary: number | null }>>({});
 
   const [bookingHistoryLimit, setBookingHistoryLimit] = useState<'5' | '10' | '20' | 'all'>('10');
   const [bookingHistoryStatusFilter, setBookingHistoryStatusFilter] = useState<'all' | 'BOOKED' | 'CANCELLED' | 'EXPIRED' | 'CLOSED' | 'FAILED'>('all');
@@ -1260,25 +1264,44 @@ const App = () => {
     };
   }, []);
 
-  // EFECTO HASH ROUTING: Detecta navegación a /#live/match/:id
+  // EFECTO HASH ROUTING: Detecta navegación a /#live/match/:id o /#division/:id
   useEffect(() => {
     function handleHashChange() {
       const hash = window.location.hash.replace(/^#\/?/, '');
-      const m = hash.match(/^live\/match\/([a-f0-9-]+)$/i);
-      if (m) {
-        // Si no hay sesión, guardar el hash y mostrar login
+
+      // Live match route
+      const liveMatch = hash.match(/^live\/match\/([a-f0-9-]+)$/i);
+      if (liveMatch) {
         if (!session) {
           try { sessionStorage.setItem('pending_hash', window.location.hash); } catch {}
         }
-        setLiveMatchId(m[1]);
-      } else {
-        setLiveMatchId(null);
+        setLiveMatchId(liveMatch[1]);
+        return;
       }
+
+      // Division route (from push notifications)
+      const divRoute = hash.match(/^division\/([a-f0-9-]+)$/i);
+      if (divRoute) {
+        const divId = divRoute[1];
+        const div = divisions.find(d => d.id === divId);
+        if (div) {
+          const tournament = tournaments.find(t => t.id === div.tournament_id);
+          if (tournament) setSelectedTournament(tournament);
+          setSelectedDivision(div);
+          // Clear the hash so it doesn't persist on refresh
+          window.location.hash = '';
+        }
+        return;
+      }
+
+      setLiveMatchId(null);
     }
 
     window.addEventListener('hashchange', handleHashChange);
+    // Also handle on mount (e.g., opened from notification)
+    handleHashChange();
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [session]);
+  }, [session, divisions, tournaments]);
 
   useEffect(() => {
     if (!selectedDivision || !selectedTournament) return;
@@ -1383,13 +1406,15 @@ const App = () => {
       try {
         const { data, error } = await supabase
           .from('booking_account_credits')
-          .select('account_label, credits_available, updated_at');
+          .select('account_label, credits_available, updated_at, booking_cost_highbury, booking_cost_rosemary');
         if (error) throw error;
-        const map: Record<string, { credits: number; updatedAt: string }> = {};
+        const map: Record<string, { credits: number; updatedAt: string; costHighbury: number | null; costRosemary: number | null }> = {};
         (data || []).forEach((row: any) => {
           map[row.account_label] = {
             credits: row.credits_available,
             updatedAt: row.updated_at,
+            costHighbury: row.booking_cost_highbury ?? null,
+            costRosemary: row.booking_cost_rosemary ?? null,
           };
         });
         setAccountCredits(map);
@@ -2644,6 +2669,7 @@ const App = () => {
     setSelectedPlayer(null);
     setShowMap(false);
     setShowBuscarClases(false);
+    setShowCourtFinder(false);
     setSelectedTournament(null);
     setEditProfile(false);
     try { sessionStorage.removeItem(NAV_STATE_KEY); } catch {}
@@ -2780,6 +2806,7 @@ const App = () => {
       setShowHistoricTournaments(false);
       setShowMap(false);
       setShowBuscarClases(false);
+      setShowCourtFinder(false);
       setShowBookingPanel(false);
       setCameFromHistoric(false);
       setShowNavMenu(false);
@@ -2934,6 +2961,12 @@ const App = () => {
               <span className="text-base">🎾</span>,
               'Buscar Clases',
               () => { resetNav(); setShowBuscarClases(true); }
+            )}
+
+            {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
+              <span className="text-base">📍</span>,
+              'Buscar Canchas',
+              () => { resetNav(); setShowCourtFinder(true); }
             )}
 
             {(isBookingAdmin || visibleBookingAccounts.length > 0) && menuItem(
@@ -4050,7 +4083,7 @@ const App = () => {
       // Fire-and-forget push notification for result loaded
       {
         const actorId = session?.user.id;
-        const matchObj = { home_player_id: player1Id, away_player_id: player2Id } as any;
+        const matchObj = { home_player_id: player1Id, away_player_id: player2Id, division_id: divisionId } as any;
         const isActorPlayer = actorId === player1Id || actorId === player2Id;
         const setsData = newMatch.sets
           .filter(s => s.score1 !== '' && s.score2 !== '')
@@ -5722,9 +5755,11 @@ const App = () => {
                       if (!creditInfo) return (
                         <p className="mt-1.5 text-xs text-gray-400">Sin datos de créditos aún</p>
                       );
-                      const costPence = 770; // £7.70 por hora en Better (Highbury/Rosemary)
-                      const creditsNeeded = costPence;
-                      const hasEnough = creditInfo.credits >= creditsNeeded;
+                      // Precio según venue seleccionado
+                      const isRosemary = newBooking.activity_slug === BOOKING_VENUES.rosemary.activity_slug;
+                      const costPence = (isRosemary ? creditInfo.costRosemary : creditInfo.costHighbury) ?? 1285;
+                      const hasEnough = creditInfo.credits >= costPence;
+                      const numReservas = costPence > 0 ? Math.floor(creditInfo.credits / costPence) : 0;
                       const updatedAgo = (() => {
                         const diff = Date.now() - new Date(creditInfo.updatedAt).getTime();
                         const mins = Math.floor(diff / 60000);
@@ -5735,13 +5770,17 @@ const App = () => {
                       })();
                       return (
                         <div className={`mt-1.5 px-3 py-2 rounded-lg text-sm ${hasEnough ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
-                          <span className="font-medium">💳 Créditos: £{(creditInfo.credits / 100).toFixed(2)}</span>
-                          <span className="ml-2 text-xs opacity-70">({updatedAgo})</span>
-                          {hasEnough ? (
-                            <span className="ml-2 text-xs">✅ Suficiente para 1 reserva (£{(costPence / 100).toFixed(2)})</span>
-                          ) : (
-                            <span className="ml-2 text-xs font-medium">⚠️ Necesitas £{(costPence / 100).toFixed(2)} — recarga créditos</span>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">💳 £{(creditInfo.credits / 100).toFixed(2)}</span>
+                            <span className="text-xs opacity-70">({updatedAgo})</span>
+                          </div>
+                          <div className="mt-0.5 text-xs">
+                            {hasEnough ? (
+                              <span>✅ Alcanza para {numReservas} reserva{numReservas > 1 ? 's' : ''} (£{(costPence / 100).toFixed(2)} c/u)</span>
+                            ) : (
+                              <span className="font-medium">⚠️ No alcanza — necesitas £{(costPence / 100).toFixed(2)} por reserva</span>
+                            )}
+                          </div>
                         </div>
                       );
                     })()}
@@ -6115,6 +6154,14 @@ const App = () => {
     return (
       <div className="p-4 sm:p-6">
         <BuscarClases onBack={() => setShowBuscarClases(false)} currentUserId={currentUser?.id ?? null} />
+      </div>
+    );
+  }
+
+  if (showCourtFinder && currentUser?.id === BUSCAR_CLASES_ALLOWED_ID) {
+    return (
+      <div className="p-4 sm:p-6">
+        <CourtFinder onBack={() => setShowCourtFinder(false)} currentUserId={currentUser?.id ?? null} />
       </div>
     );
   }
@@ -8588,6 +8635,9 @@ const App = () => {
                           ? 'bg-blue-100 text-blue-800'
                           : 'bg-green-100 text-green-800';
 
+                        const awayId = selectedIsHome ? opponent.id : selectedPlayer.id;
+                        const isInlineScheduleOpen = inlineScheduleOpponent === opponent.id;
+
                         return (
                           <div key={index} className="border rounded-lg p-4">
                             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -8629,26 +8679,162 @@ const App = () => {
                                   <button
                                     className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"
                                     onClick={() => {
-                                      const awayId = selectedIsHome ? opponent.id : selectedPlayer.id;
-
-                                      setNewMatch(prev => ({
-                                        ...prev,
-                                        player1: homeId,
-                                        player2: awayId,
-                                        location: '',
-                                        location_details: '',
-                                        date: '',
-                                        time: '',
-                                      }));
-                                      setScrollToScheduleForm(true);
-                                      setSelectedPlayer(null);
+                                      setInlineScheduleOpponent(isInlineScheduleOpen ? null : opponent.id);
+                                      setInlineScheduleData({ date: '', time: '', location: '', location_details: '' });
                                     }}
                                   >
-                                    Agendar Partido
+                                    {isInlineScheduleOpen ? 'Cancelar' : 'Agendar Partido'}
                                   </button>
                                 );
                               })()}
                             </div>
+
+                            {/* Inline schedule form */}
+                            {isInlineScheduleOpen && (
+                              <div className="mt-4 pt-4 border-t border-gray-200">
+                                <div className="flex items-center gap-2 mb-3 text-sm text-gray-600">
+                                  <span className="font-medium">{uiName(selectedPlayer.name)}</span>
+                                  <span className="text-gray-400">vs</span>
+                                  <span className="font-medium">{uiName(opponent.name)}</span>
+                                </div>
+                                <form
+                                  onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    if (!inlineScheduleData.date) {
+                                      return alert('Selecciona una fecha.');
+                                    }
+                                    try {
+                                      setLoading(true);
+                                      const locationId = locations.find(l => l.name === inlineScheduleData.location)?.id || null;
+                                      const hour = inlineScheduleData.time ? parseInt(inlineScheduleData.time.split(':')[0], 10) : NaN;
+                                      let timeBlock = null;
+                                      if (!isNaN(hour)) {
+                                        if (hour >= 7 && hour < 12) timeBlock = 'Morning';
+                                        else if (hour >= 12 && hour < 18) timeBlock = 'Afternoon';
+                                        else if (hour >= 18 && hour < 23) timeBlock = 'Evening';
+                                      }
+
+                                      const { error } = await supabase.from('matches').insert({
+                                        tournament_id: selectedTournament!.id,
+                                        division_id: selectedDivision!.id,
+                                        date: inlineScheduleData.date,
+                                        time: inlineScheduleData.time || null,
+                                        time_block: timeBlock,
+                                        location_id: locationId || null,
+                                        location_details: inlineScheduleData.location_details || null,
+                                        status: 'scheduled',
+                                        home_player_id: homeId,
+                                        away_player_id: awayId,
+                                        created_by: session?.user.id,
+                                      });
+                                      if (error) throw error;
+
+                                      await fetchData(session?.user.id);
+                                      setInlineScheduleOpponent(null);
+                                      alert('¡Partido agendado!');
+
+                                      // Push notification (fire-and-forget)
+                                      const actorId = session?.user.id;
+                                      const isActorPlayer = actorId === homeId || actorId === awayId;
+                                      const locationName = locations.find(l => l.name === inlineScheduleData.location)?.name || inlineScheduleData.location_details || undefined;
+
+                                      if (isActorPlayer) {
+                                        const recipientId = actorId === homeId ? awayId : homeId;
+                                        const rivalName = profiles.find(p => p.id === actorId)?.name || 'Rival';
+                                        const payload = buildMatchScheduledPayload(
+                                          { date: inlineScheduleData.date, time: inlineScheduleData.time, division_id: selectedDivision!.id } as any,
+                                          rivalName,
+                                          locationName
+                                        );
+                                        sendPushNotification(recipientId, payload.title, payload.body, payload.url, payload.actions);
+                                      } else {
+                                        const rivalForHome = profiles.find(p => p.id === awayId)?.name || 'Rival';
+                                        const rivalForAway = profiles.find(p => p.id === homeId)?.name || 'Rival';
+                                        const payloadHome = buildMatchScheduledPayload(
+                                          { date: inlineScheduleData.date, time: inlineScheduleData.time, division_id: selectedDivision!.id } as any,
+                                          rivalForHome,
+                                          locationName
+                                        );
+                                        const payloadAway = buildMatchScheduledPayload(
+                                          { date: inlineScheduleData.date, time: inlineScheduleData.time, division_id: selectedDivision!.id } as any,
+                                          rivalForAway,
+                                          locationName
+                                        );
+                                        sendPushNotification(homeId, payloadHome.title, payloadHome.body, payloadHome.url, payloadHome.actions);
+                                        sendPushNotification(awayId, payloadAway.title, payloadAway.body, payloadAway.url, payloadAway.actions);
+                                      }
+                                    } catch (err: any) {
+                                      alert(`Error: ${err.message}`);
+                                    } finally {
+                                      setLoading(false);
+                                    }
+                                  }}
+                                  className="space-y-3"
+                                >
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Fecha *</label>
+                                      <input
+                                        type="date"
+                                        required
+                                        min={minDate}
+                                        value={inlineScheduleData.date}
+                                        onChange={(e) => setInlineScheduleData(prev => ({ ...prev, date: e.target.value }))}
+                                        className="w-full text-sm rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Hora</label>
+                                      <select
+                                        value={inlineScheduleData.time}
+                                        onChange={(e) => setInlineScheduleData(prev => ({ ...prev, time: e.target.value }))}
+                                        className="w-full text-sm rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                      >
+                                        <option value="">—</option>
+                                        {Array.from({ length: 30 }, (_, i) => {
+                                          const h = 7 + Math.floor(i / 2);
+                                          const m = (i % 2) * 30;
+                                          const val = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                                          return <option key={val} value={val}>{val}</option>;
+                                        })}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Lugar (Opcional)</label>
+                                      <select
+                                        value={inlineScheduleData.location}
+                                        onChange={(e) => setInlineScheduleData(prev => ({ ...prev, location: e.target.value }))}
+                                        className="w-full text-sm rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                      >
+                                        <option value="">— Seleccionar —</option>
+                                        {locations.map(l => (
+                                          <option key={l.id} value={l.name}>{l.name}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-600 mb-1">Detalle (Opcional)</label>
+                                      <input
+                                        type="text"
+                                        placeholder="Ej: Highbury, Court 5"
+                                        value={inlineScheduleData.location_details}
+                                        onChange={(e) => setInlineScheduleData(prev => ({ ...prev, location_details: e.target.value }))}
+                                        className="w-full text-sm rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                                      />
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="submit"
+                                    disabled={loading || !inlineScheduleData.date}
+                                    className="w-full bg-emerald-600 text-white py-2.5 rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 transition text-sm"
+                                  >
+                                    {loading ? 'Agendando...' : '✅ Confirmar partido'}
+                                  </button>
+                                </form>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

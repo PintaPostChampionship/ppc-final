@@ -38,6 +38,12 @@ export function shouldNotifyMatchScheduled(
 
 /**
  * Builds the notification payload for a scheduled match.
+ *
+ * The URL uses a hash route /#division/:divisionId so the app can open
+ * directly to the division table where the match is visible.
+ * The calendar action opens Google Calendar (best cross-platform support).
+ * Full calendar options (Google/Apple/Outlook) are available in the web UI
+ * via the AddToCalendarButton component next to each scheduled match.
  */
 export function buildMatchScheduledPayload(
   match: Match,
@@ -58,17 +64,20 @@ export function buildMatchScheduledPayload(
     body += `\n📍 ${locationName}`;
   }
 
+  // URL: open the app at the division view (hash route)
+  const url = match.division_id ? `/#division/${match.division_id}` : '/';
+
   const payload: NotificationPayload = {
     title: '🎾 Nuevo partido agendado',
     body,
-    url: '/',
+    url,
   };
 
-  // Add calendar action if time is defined
+  // Add calendar action if date+time are defined
   if (match.date && match.time) {
     const calUrl = buildCalendarUrl(rivalName, match.date, match.time, locationName);
     payload.actions = [
-      { action: 'calendar', title: '📅 Agregar al calendario', url: calUrl },
+      { action: 'calendar', title: '📅 Agendar', url: calUrl },
     ];
   }
 
@@ -77,6 +86,9 @@ export function buildMatchScheduledPayload(
 
 /**
  * Builds the notification payload for a result loaded.
+ * 
+ * The URL opens the division view so the recipient can see and edit the result.
+ * Body shows the score line and who won.
  */
 export function buildResultLoadedPayload(
   match: Match,
@@ -91,12 +103,17 @@ export function buildResultLoadedPayload(
   const setsWon = winnerIsHome ? match.player1_sets_won : match.player2_sets_won;
   const setsLost = winnerIsHome ? match.player2_sets_won : match.player1_sets_won;
 
-  const body = `Resultado: ${scoreLine}\n${rivalName} ${winnerId === match.home_player_id ? 'ganó' : 'perdió'} ${setsWon}-${setsLost}\n\nRevisa si el resultado está correcto.`;
+  // From the recipient's perspective: rivalName is who submitted the result
+  const winnerName = winnerId === match.home_player_id ? 'Local' : 'Visita';
+  const body = `${scoreLine}\n🏆 Ganador: ${winnerName} (${setsWon}-${setsLost} sets)\n\nRevisa si el resultado está correcto.`;
+
+  // URL: open the division view
+  const url = match.division_id ? `/#division/${match.division_id}` : '/';
 
   return {
     title: '📊 Resultado cargado',
     body,
-    url: '/',
+    url,
   };
 }
 
@@ -107,10 +124,11 @@ export function buildReminderPayload(
   match: Match,
   rivalName: string
 ): NotificationPayload {
+  const url = match.division_id ? `/#division/${match.division_id}` : '/';
   return {
     title: '⏰ ¿Se jugó el partido?',
     body: `Partido vs ${rivalName}\nRecuerda agregar el resultado o reagendarlo.`,
-    url: '/',
+    url,
   };
 }
 

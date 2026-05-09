@@ -2,193 +2,189 @@
 inclusion: manual
 ---
 
-# Garmin Connect IQ — Marcador PPC para reloj
+# Garmin Connect IQ — Marcador PPC Tennis
 
-## Idea
+## Qué es
 
-Crear una app para relojes Garmin que funcione como marcador de tenis del PPC, sincronizada con el Live Scoreboard de la web. El jugador lleva el marcador desde la muñeca durante el partido, y los espectadores lo siguen en tiempo real en ppctennis.vercel.app.
+App para relojes Garmin que funciona como marcador de tenis del PPC. El jugador lleva el marcador desde la muñeca durante el partido. Fase 1 (actual) es offline. Fase 2 (futuro) sincroniza con el Live Scoreboard de la web via HTTP.
 
----
-
-## Plataforma: Garmin Connect IQ
-
-- **Lenguaje**: Monkey C (similar a Java/C, tipado, orientado a objetos)
-- **IDE**: VS Code con extensión oficial Monkey C
-- **SDK**: Connect IQ SDK 8.2.3 (última versión estable)
-- **Simulador**: Incluido en el SDK, emula distintos modelos de reloj
-- **Distribución**: Connect IQ Store (gratuito para publicar)
-- **Docs**: https://developer.garmin.com/connect-iq/sdk
-
-### Capacidades relevantes
-
-| Feature | API | Notas |
-|---------|-----|-------|
-| HTTP requests | `Toybox.Communications.makeWebRequest` | GET/POST a endpoints externos |
-| Botones físicos | `Toybox.WatchUi.InputDelegate` | UP/DOWN/SELECT/BACK/MENU |
-| Pantalla táctil | `Toybox.WatchUi.View.onUpdate` | Solo en modelos con touch |
-| Almacenamiento local | `Toybox.Application.Storage` | Persistir estado entre sesiones |
-| Vibración | `Toybox.Attention.vibrate` | Feedback háptico al registrar punto |
-| Timer | `Toybox.Timer` | Para polling o countdown |
-| Bluetooth | Via teléfono companion | Las web requests pasan por el teléfono |
-
-### Limitaciones importantes
-
-- **Sin WebSocket/Realtime**: No hay soporte nativo para WebSocket. La comunicación es via HTTP polling (cada N segundos) o push desde companion app.
-- **Memoria limitada**: ~128KB en la mayoría de modelos. La app debe ser ligera.
-- **Pantalla pequeña**: ~240x240 px en modelos redondos, ~260x260 en cuadrados.
-- **Requests via teléfono**: Las llamadas HTTP pasan por el teléfono conectado via Bluetooth. Sin teléfono cerca, no hay conectividad.
-- **Rate limiting**: Garmin recomienda no hacer más de 1 request cada 5 segundos.
+**Código fuente**: `ppc-final/garmin-scoreboard/`
+**Documentación completa**: `ppc-final/garmin-scoreboard/README.md`
 
 ---
 
-## Arquitectura propuesta
+## Estado actual
 
-```
-┌─────────────┐     HTTP POST      ┌──────────────────┐
-│  Garmin      │ ──────────────────→│  Vercel Function  │
-│  Watch App   │     (cada punto)   │  /api/live-score  │
-│  (Monkey C)  │ ←──────────────────│                   │
-│              │     HTTP GET       └────────┬──────────┘
-│  Botones:    │     (polling 5s)            │
-│  UP = P1     │                             │ Supabase
-│  DOWN = P2   │                             │ UPDATE
-│  BACK = Undo │                             ↓
-└─────────────┘                    ┌──────────────────┐
-                                   │  live_score_state │
-                                   │  (Supabase)       │
-                                   └──────────────────┘
-                                            ↑
-                                   Realtime subscription
-                                            │
-                                   ┌──────────────────┐
-                                   │  ppctennis.vercel │
-                                   │  (web viewers)    │
-                                   └──────────────────┘
-```
+### ✅ Funcionando (Fase 1 — offline)
+- App compila y corre en el simulador de Garmin (Instinct 2)
+- 3 formatos: Standard (Bo3, 6 games), SuperTiebreak (2 sets + STB a 10), NextGen (Bo3, 4 games, punto de oro)
+- Tiebreak automático en 6-6 (Standard) o 4-4 (NextGen)
+- Super Tiebreak a 10 puntos con diferencia de 2
+- Undo punto por punto (replay del historial completo)
+- Vibración háptica diferenciada (punto / game / set / match)
+- Indicador de saque con alternancia automática
+- Heart rate + reloj en pantalla
+- Activity recording (graba como actividad Tennis/Padel en Garmin Connect)
+- Soporte touch + botones físicos
+- Menú: Undo, Swap Server, Change Format, Start Recording, Reset, Quit
+- Branding "PPC TENNIS" en pantalla
+- Formato + número de set visible (ej: "STD S2")
+- Sets ganados en la barra de estado
 
-### Flujo
-
-1. El jugador abre la app en el Garmin y selecciona un partido activo
-2. La app muestra el marcador actual (fetch inicial via HTTP GET)
-3. El jugador presiona UP (punto P1) o DOWN (punto P2)
-4. La app calcula el nuevo estado localmente (misma lógica de `liveScoreUtils.ts` portada a Monkey C)
-5. La app envía el nuevo estado via HTTP POST a una Vercel Function
-6. La Vercel Function actualiza `live_score_state` en Supabase
-7. Los viewers en la web reciben el update via Supabase Realtime
-8. La app hace polling cada 5s para sincronizar (por si otro editor también está actualizando)
-
-### Alternativa: Companion App
-
-En vez de HTTP directo desde el reloj, se podría crear una companion app (Android/iOS) que:
-- Recibe los puntos del reloj via Bluetooth
-- Se conecta a Supabase Realtime directamente
-- Sincroniza en ambas direcciones
-
-Esto es más complejo pero elimina el polling y reduce latencia.
-
----
-
-## Vercel Function necesaria: `/api/live-score`
-
-Endpoint nuevo que actúa como proxy entre el reloj y Supabase:
-
-```
-POST /api/live-score
-Body: { match_id, action: "add_point", player: 1|2, auth_token }
-→ Calcula nuevo estado, actualiza live_score_state
-
-GET /api/live-score?match_id=xxx
-→ Devuelve estado actual del partido
-
-POST /api/live-score
-Body: { match_id, action: "undo", auth_token }
-→ Revierte al estado anterior
-```
-
-El `auth_token` sería un token simple (UUID del jugador) para validar que quien envía el punto es un editor autorizado.
-
----
-
-## Repos de referencia (open source)
-
-| Repo | Descripción |
-|------|-------------|
-| [grimpy/connect-iq-score-keeper](https://github.com/grimpy/connect-iq-score-keeper) | Score keeper de tenis para Garmin Instinct 2 (MIT license). Código base para la lógica de UI y botones. |
-| [garmin/connectiq-apps](https://github.com/garmin/connectiq-apps) | Colección oficial de apps de ejemplo de Garmin. |
-| [douglasr/connectiq-samples](https://github.com/douglasr/connectiq-samples) | Samples de Connect IQ incluyendo HTTP requests. |
-| [Darthpwner/Tennis-Score-Keeper-WatchOS](https://github.com/Darthpwner/Tennis-Score-Keeper-WatchOS) | Tennis score keeper para Apple Watch (Swift). Referencia de UX. |
-
-### MCP Server para desarrollo
-
-Existe un [MCP server de documentación Garmin](https://github.com/ztuskes/garmin-documentation-mcp-server) que da acceso offline a toda la documentación del SDK 8.2.3. Se puede instalar en Kiro para tener asistencia completa al desarrollar:
-
-```json
-{
-  "mcpServers": {
-    "garmin-documentation": {
-      "command": "node",
-      "args": ["/path/to/garmin-documentation-mcp-server/dist/index.js"]
-    }
-  }
-}
-```
-
----
-
-## Apps existentes en Connect IQ Store
-
-| App | Descripción | Limitación vs PPC |
-|-----|-------------|-------------------|
-| Tennis Tracker | Score + stats (serve %, etc.) | Sin sincronización web |
-| Paddle Scoreboard | Tennis/padel, configurable | Sin sincronización web |
-| Sports+ | Multi-deporte con score | Genérico, sin tenis específico |
-
-Ninguna app existente se sincroniza con un backend externo. La app PPC sería única en ese aspecto.
-
----
-
-## Alternativas a Garmin
-
-| Plataforma | Lenguaje | Pros | Contras |
-|------------|----------|------|---------|
-| **Garmin Connect IQ** | Monkey C | Botones físicos ideales para tenis, batería larga, muchos modelos | Sin WebSocket, memoria limitada, lenguaje nicho |
-| **Apple Watch (watchOS)** | Swift/SwiftUI | WebSocket nativo, pantalla grande, ecosystem Apple | Solo usuarios Apple, batería corta, requiere Mac para desarrollo |
-| **Wear OS (Google)** | Kotlin | WebSocket, pantalla táctil, ecosystem Android | Batería corta, fragmentación de dispositivos |
-| **Web App (PWA)** | TypeScript | Sin desarrollo nativo, funciona en cualquier dispositivo | Necesita teléfono en la cancha, no tan cómodo como reloj |
-
-### Recomendación
-
-**Empezar con Garmin** si los jugadores del PPC usan Garmin (que es común en gente deportista en Londres). La ventaja de los botones físicos es enorme para tenis: puedes registrar un punto sin mirar la pantalla, solo presionando UP o DOWN.
-
-Si no todos tienen Garmin, la **PWA en el teléfono** es el fallback universal — ya la tienes con el Live Scoreboard actual.
-
----
-
-## Fases de implementación
-
-### Fase 1: App offline (sin sync)
-- Marcador local en el reloj
-- Lógica de puntuación portada de `liveScoreUtils.ts` a Monkey C
-- Botones: UP=P1, DOWN=P2, BACK=Undo, MENU=Config
-- Formatos: Standard, SuperTiebreak
-- Vibración al ganar game/set/match
-
-### Fase 2: Sync con PPC
-- Vercel Function `/api/live-score` como proxy
+### 🔲 Pendiente (Fase 2 — sync con web)
+- Vercel Function `/api/live-score` como proxy Garmin → Supabase
 - HTTP POST al registrar cada punto
 - HTTP GET polling cada 5s para sincronizar
 - Selección de partido activo desde el reloj
+- Auth via token (UUID del jugador)
 
-### Fase 3: Companion app (opcional)
-- App Android/iOS que actúa como bridge
-- Conexión Supabase Realtime directa
-- Sincronización bidireccional sin polling
+### 🔲 Pendiente (Fase 3 — mejoras)
+- Companion app Android/iOS
+- Nombres de jugadores en pantalla
+- Estadísticas post-partido
+- Publicación en Connect IQ Store
 
 ---
 
-## Requisitos para empezar
+## Stack
 
-1. **Garmin Connect IQ SDK** instalado (VS Code + extensión Monkey C)
-2. **Cuenta de desarrollador Garmin** (gratuita): https://developer.garmin.com
-3. **Reloj Garmin compatible** para testing real (o usar el simulador)
-4. **Vercel Function** nueva para el endpoint `/api/live-score`
+| Capa | Tecnología |
+|------|-----------|
+| Lenguaje | Monkey C |
+| SDK | Garmin Connect IQ SDK 9.1.0 |
+| IDE | Kiro (edición) + terminal (compilación) |
+| Java | Temurin JDK 21 (requerido por el compilador) |
+| Target | Instinct 2/3, Fenix 7, Venu 2/3, FR 265/965, Vivoactive 5 |
+
+---
+
+## Estructura
+
+```
+garmin-scoreboard/
+├── manifest.xml                    # Dispositivos, permisos, idiomas
+├── monkey.jungle                   # Build config
+├── README.md                       # Documentación completa
+├── .gitignore                      # Excluye bin/, .prg, .der
+├── resources/
+│   ├── drawables/
+│   │   ├── drawables.xml           # Referencia al launcher icon
+│   │   ├── launcher_icon.png       # Ícono 40x40 (placeholder verde)
+│   │   └── README.md               # Instrucciones para crear ícono real
+│   ├── layouts/layout.xml          # Layout de pantalla con PPC branding
+│   ├── menus/menu.xml              # Menús (main, format, activity)
+│   └── strings/strings.xml         # Textos
+└── source/
+    ├── PPCScoreApp.mc              # Entry point
+    ├── PPCScoreboard.mc            # ⭐ Lógica de puntuación (port de liveScoreUtils.ts)
+    ├── PPCScoreView.mc             # Vista (UI con PPC branding)
+    ├── PPCScoreDelegate.mc         # Input (botones + touch + vibración)
+    ├── PPCMenuDelegate.mc          # Menú principal
+    ├── PPCActivityMenuDelegate.mc  # Picker Tennis/Padel
+    ├── PPCFormatMenuDelegate.mc    # Picker Standard/STB/NextGen
+    └── RecordingManager.mc         # Activity recording
+```
+
+---
+
+## Compilación desde terminal
+
+La extensión Monkey C de Garmin NO está disponible en Kiro (usa Open VSX, no el marketplace de Microsoft). La compilación se hace desde terminal:
+
+```powershell
+# Configurar Java y SDK
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+$sdkBin = "$env:APPDATA\Garmin\ConnectIQ\Sdks\connectiq-sdk-win-9.1.0-2026-03-09-6a872a80b\bin"
+$keyPath = "$env:APPDATA\Garmin\ConnectIQ\developer_key.der"
+
+# Compilar para Instinct 2
+cmd /c "`"$sdkBin\monkeyc.bat`" -d instinct2 -f garmin-scoreboard\monkey.jungle -o garmin-scoreboard\bin\PPCTennis.prg -y `"$keyPath`""
+
+# Abrir simulador (en background)
+& "$sdkBin\simulator.exe"
+
+# Cargar app en simulador (esperar 3s después de abrir simulador)
+cmd /c "`"$sdkBin\monkeydo.bat`" garmin-scoreboard\bin\PPCTennis.prg instinct2"
+```
+
+### Requisitos instalados
+- ✅ Java: Temurin JDK 21 en `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot`
+- ✅ SDK: Connect IQ SDK 9.1.0 en `%APPDATA%\Garmin\ConnectIQ\Sdks\`
+- ✅ Developer Key: `%APPDATA%\Garmin\ConnectIQ\developer_key.der`
+- ✅ Devices: Todos descargados en `%APPDATA%\Garmin\ConnectIQ\Devices\`
+
+---
+
+## Controles
+
+### Botones físicos (Instinct, Fenix, Forerunner)
+| Botón | Acción |
+|-------|--------|
+| ENTER / GPS (arriba-derecha) | Punto P1 |
+| BACK / ABC (abajo-derecha) | Punto P2 |
+| UP (arriba-izquierda) | Menú |
+| DOWN (abajo-izquierda) | Undo último punto |
+
+### Touch (Venu, Vivoactive)
+| Gesto | Acción |
+|-------|--------|
+| Tap mitad superior | Punto P1 |
+| Tap mitad inferior | Punto P2 |
+| Swipe izquierda | Undo |
+| Long press | Menú |
+
+---
+
+## Relación con liveScoreUtils.ts
+
+La lógica de `PPCScoreboard.mc` es un port directo de `src/components/LiveScoreboard/liveScoreUtils.ts`:
+
+| Concepto | TypeScript | Monkey C |
+|----------|-----------|----------|
+| Formatos | `MatchFormat` type | `FORMAT_STANDARD/SUPERTIEBREAK/NEXTGEN` enum |
+| Punto | `addPoint(state, player)` → nuevo estado | `addPoint(player)` → muta estado, retorna 0/1/2/3 |
+| Undo | `previous_state` snapshot inmutable | `history` array + replay completo |
+| Tiebreak | `in_tiebreak` / `in_super_tiebreak` | `inTiebreak` / `inSuperTiebreak` |
+| Saque | `getServeAfterTiebreakPoint()` | `updateTiebreakServer()` |
+| Display | `formatPointScore()` | `getScore()` / `getGames()` / `getStatusText()` |
+
+---
+
+## Vibración
+
+| Evento | Intensidad | Duración |
+|--------|-----------|----------|
+| Punto normal | 25% | 50ms |
+| Game ganado | 50% | 150ms |
+| Set ganado | 80% | 200ms × 2 |
+| Match ganado | 100% | 300ms × 2 |
+| Undo | 30% | 50ms × 2 |
+
+---
+
+## Alternativas futuras
+
+| Plataforma | Lenguaje | Ventaja | Desventaja |
+|------------|----------|---------|------------|
+| **Garmin** (actual) | Monkey C | Botones físicos, batería larga | Sin WebSocket, memoria limitada |
+| **Apple Watch** | Swift/SwiftUI | WebSocket nativo, pantalla grande | Solo Apple, requiere Mac |
+| **Wear OS** | Kotlin | WebSocket, ecosystem Android | Batería corta, fragmentación |
+| **PWA** | TypeScript | Ya existe (Live Scoreboard) | Necesita teléfono en cancha |
+
+La lógica de puntuación es la misma para todas — solo cambia el lenguaje y la capa de UI/input.
+
+---
+
+## Instalar en reloj real
+
+### Opción 1: Sideload (desarrollo)
+1. Conectar reloj al PC via USB
+2. Copiar `garmin-scoreboard/bin/PPCTennis.prg` a `GARMIN/APPS/` en el reloj
+3. Desconectar → la app aparece en el menú de actividades
+
+### Opción 2: Connect IQ Store (publicación)
+1. Exportar: `monkeyc` con flag `-e` para generar `.iq`
+2. Subir a https://apps-developer.garmin.com
+3. Garmin revisa (1-5 días) → se publica gratis
+4. Los jugadores la instalan desde la app Connect IQ en su teléfono
