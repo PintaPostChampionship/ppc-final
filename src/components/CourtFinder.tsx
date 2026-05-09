@@ -113,14 +113,18 @@ function HourBlock({ time, courts, bookingLink }: { time: string; courts: CourtS
 
 // ─── Watch Panel ──────────────────────────────────────────────────────────────
 
-function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave }: {
+function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, initialDate, initialTimeBlock }: {
   venue: VenueSummary;
   allDates: string[];
   availableHoursByDate: Map<string, Set<number>>; // date → set of available hours
   watchlist: Set<string>;
   onSave: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[]) => void;
+  initialDate?: string;
+  initialTimeBlock?: string;
 }) {
-  const [watchDate, setWatchDate] = React.useState(allDates[0] || "");
+  const [watchDate, setWatchDate] = React.useState(
+    (initialDate && initialDate !== "all" && allDates.includes(initialDate)) ? initialDate : (allDates[0] || "")
+  );
   const [selectedHours, setSelectedHours] = React.useState<Set<string>>(new Set());
 
   // Pre-populate with existing watches for this venue+date
@@ -149,7 +153,9 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave }
   };
 
   // Determine which hours to show based on a quick block filter
-  const [blockFilter, setBlockFilter] = React.useState("all");
+  const [blockFilter, setBlockFilter] = React.useState(
+    (initialTimeBlock && initialTimeBlock !== "all") ? initialTimeBlock : "all"
+  );
   const visibleHours = blockFilter === "all"
     ? ALL_HOURS
     : (TIME_BLOCKS.find(t => t.value === blockFilter)?.hours || ALL_HOURS);
@@ -306,6 +312,8 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
             availableHoursByDate={availableHoursByDate}
             watchlist={watchlist}
             onSave={onSaveWatch}
+            initialDate={filterDate}
+            initialTimeBlock={filterTimeBlock}
           />
         )}
       </div>
