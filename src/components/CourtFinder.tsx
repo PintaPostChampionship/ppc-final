@@ -143,7 +143,7 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
   allDates: string[];
   availableHoursByDate: Map<string, Set<number>>; // date → set of available hours
   watchlist: Set<string>;
-  onSave: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[]) => void;
+  onSave: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[], notifyBy: string) => void;
   initialDate?: string;
   initialTimeBlock?: string;
 }) {
@@ -151,6 +151,7 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
     (initialDate && initialDate !== "all" && allDates.includes(initialDate)) ? initialDate : (allDates[0] || "")
   );
   const [selectedHours, setSelectedHours] = React.useState<Set<string>>(new Set());
+  const [notifyBy, setNotifyBy] = React.useState<"app" | "email" | "both">("app");
 
   // Pre-populate with existing watches for this venue+date
   React.useEffect(() => {
@@ -174,7 +175,7 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
 
   const handleSave = () => {
     const alerts = Array.from(selectedHours).map(h => ({ date: watchDate, hour: h }));
-    onSave(venue.slug, venue.name, venue.platform, alerts);
+    onSave(venue.slug, venue.name, venue.platform, alerts, notifyBy);
   };
 
   // Determine which hours to show based on a quick block filter
@@ -190,10 +191,10 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
       <div className="text-xs font-semibold text-amber-800 mb-2">🔔 Avísame cuando se libere una cancha:</div>
 
       {/* Date selector */}
-      <div className="flex gap-1.5 overflow-x-auto pb-2 mb-2">
+      <div className="flex gap-2 overflow-x-auto pb-2 mb-2">
         {allDates.map(d => (
           <button key={d} onClick={() => setWatchDate(d)}
-            className={`text-xs px-2.5 py-1 rounded-full border whitespace-nowrap transition ${
+            className={`text-sm px-3 py-1.5 rounded-full border whitespace-nowrap transition font-medium ${
               watchDate === d ? "bg-amber-600 text-white border-amber-600" : "bg-white text-gray-600 border-gray-300 hover:border-amber-400"
             }`}>
             {formatDateShort(d)}
@@ -236,16 +237,32 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
       </div>
 
       {/* Save button */}
-      <div className="flex items-center gap-2">
-        <button onClick={handleSave} disabled={selectedHours.size === 0}
-          className="text-xs font-semibold px-4 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition">
-          🔔 Guardar alertas ({selectedHours.size})
-        </button>
-        {selectedHours.size > 0 && (
-          <button onClick={() => setSelectedHours(new Set())} className="text-xs text-gray-500 hover:text-red-600">
-            Limpiar
+      <div className="flex flex-col gap-2">
+        {/* Notify method toggle */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-600">Avisar por:</span>
+          <div className="flex gap-1">
+            {([["app", "📱 App"], ["email", "📧 Email"], ["both", "Ambos"]] as const).map(([val, label]) => (
+              <button key={val} onClick={() => setNotifyBy(val)}
+                className={`text-xs px-2.5 py-1 rounded-md border transition ${
+                  notifyBy === val ? "bg-amber-600 text-white border-amber-600" : "bg-white text-gray-500 border-gray-200 hover:border-amber-400"
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSave} disabled={selectedHours.size === 0}
+            className="text-xs font-semibold px-4 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition">
+            🔔 Guardar alertas ({selectedHours.size})
           </button>
-        )}
+          {selectedHours.size > 0 && (
+            <button onClick={() => setSelectedHours(new Set())} className="text-xs text-gray-500 hover:text-red-600">
+              Limpiar
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -259,7 +276,7 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
   filterTimeBlock: string;
   allDates: string[];
   watchlist: Set<string>;
-  onSaveWatch: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[]) => void;
+  onSaveWatch: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[], notifyBy: string) => void;
 }) {
   const [expanded, setExpanded] = React.useState(true);
   const [showWatch, setShowWatch] = React.useState(false);
@@ -431,8 +448,8 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
         const center: [number, number] = userLat && userLng ? [userLat, userLng] : [51.50, -0.12];
         const map = L.map(mapRef.current).setView(center, 13);
         mapInstanceRef.current = map;
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>', maxZoom: 18,
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>', maxZoom: 19,
         }).addTo(map);
         if (userLat && userLng) {
           L.circleMarker([userLat, userLng], { radius: 8, fillColor: "#3b82f6", fillOpacity: 0.8, color: "white", weight: 2 }).addTo(map).bindPopup("Tu ubicación");
@@ -485,9 +502,9 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
   }, [venues, selectedVenue, userLat, userLng, reportVisible]);
 
   if (!userLat || !userLng) {
-    return <div className="w-full h-56 sm:h-72 rounded-xl border border-gray-200 shadow-sm bg-gray-50 flex items-center justify-center text-sm text-gray-400">Cargando mapa...</div>;
+    return <div className="w-full h-64 sm:h-80 rounded-xl border border-gray-200 shadow-sm bg-gray-50 flex items-center justify-center text-sm text-gray-400">Cargando mapa...</div>;
   }
-  return <div ref={mapRef} className="w-full h-56 sm:h-72 rounded-xl border border-gray-200 shadow-sm z-0" />;
+  return <div ref={mapRef} className="w-full h-64 sm:h-80 rounded-xl border border-gray-200 shadow-sm z-0" />;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -560,7 +577,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   }, [currentUserId]);
 
   // Save watches (batch)
-  const saveWatches = async (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[]) => {
+  const saveWatches = async (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[], notifyBy: string = "app") => {
     if (!currentUserId) return;
 
     // Deactivate existing watches for this venue
@@ -582,6 +599,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
         target_date: a.date,
         time_block: a.hour,
         platform,
+        notify_by: notifyBy,
       }));
       await supabase.from("court_watchlist").insert(rows);
     }
@@ -673,7 +691,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
         <div className="flex items-center justify-between py-4">
           <button onClick={onBack} className="text-sm text-gray-600 hover:text-emerald-700 transition">← Volver</button>
           {data && <span className="text-xs text-gray-400">
-            {new Date(data.generated_at).toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
+            Actualizado: {new Date(data.generated_at).toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
           </span>}
         </div>
 
@@ -684,31 +702,31 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
         {data && !loading && (<>
           {/* Date pills */}
-          <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3">
+          <div className="flex gap-2 overflow-x-auto pb-3 mb-4">
             <button onClick={() => setFilterDate("all")}
-              className={`text-xs px-3 py-1.5 rounded-full border whitespace-nowrap transition ${filterDate === "all" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+              className={`text-sm px-4 py-2 rounded-full border whitespace-nowrap transition font-medium ${filterDate === "all" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
               Todos
             </button>
             {availableDates.map(d => (
               <button key={d} onClick={() => setFilterDate(d)}
-                className={`text-xs px-3 py-1.5 rounded-full border whitespace-nowrap transition ${filterDate === d ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                className={`text-sm px-4 py-2 rounded-full border whitespace-nowrap transition font-medium ${filterDate === d ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 {formatDateShort(d)}
               </button>
             ))}
           </div>
 
           {/* Time block pills */}
-          <div className="flex gap-1.5 mb-3">
+          <div className="flex gap-2 mb-5">
             {TIME_BLOCKS.map(tb => (
               <button key={tb.value} onClick={() => setFilterTimeBlock(tb.value)}
-                className={`text-xs px-3 py-1.5 rounded-full border transition ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                className={`text-sm px-4 py-2 rounded-full border transition font-medium ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 {tb.label}
               </button>
             ))}
           </div>
 
           {/* Venue + Platform filters */}
-          <div className="mb-4">
+          <div className="mb-5">
             {/* Search — autocomplete for venue names */}
             <div className="relative mb-2">
               <input
