@@ -54,13 +54,38 @@ const DAY_LABELS: Record<number, string> = { 0: "Dom", 1: "Lun", 2: "Mar", 3: "M
 
 const TIME_BLOCKS = [
   { label: "Todo", value: "all", hours: [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21] },
-  { label: "Mañana", value: "morning", hours: [7,8,9,10,11] },
-  { label: "Tarde", value: "afternoon", hours: [12,13,14,15,16,17] },
-  { label: "Noche", value: "evening", hours: [18,19,20,21] },
+  { label: "Mañana (07:00-12:00)", value: "morning", hours: [7,8,9,10,11] },
+  { label: "Tarde (12:00-18:00)", value: "afternoon", hours: [12,13,14,15,16,17] },
+  { label: "Noche (18:00-22:00)", value: "evening", hours: [18,19,20,21] },
 ];
 
 const ALL_HOURS = [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
 const NON_TENNIS_KEYWORDS = ["cricket", "netball", "football", "muga", "astro", "pitch"];
+
+// All configured venues (always shown even with 0 availability)
+const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; postcode: string; lat: number; lng: number }> = [
+  { name: "Highbury Fields", slug: "islington-tennis-centre", platform: "better", postcode: "N5 1AR", lat: 51.552, lng: -0.098 },
+  { name: "Islington Tennis Centre (Outdoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113 },
+  { name: "Islington Tennis Centre (Indoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113 },
+  { name: "Tufnell Park", slug: "islington-tennis-centre", platform: "better", postcode: "N7 0PG", lat: 51.553, lng: -0.134 },
+  { name: "Rosemary Gardens", slug: "islington-tennis-centre", platform: "better", postcode: "N1 2DT", lat: 51.540, lng: -0.095 },
+  { name: "Kennington Park", slug: "kenningtonpark", platform: "clubspark", postcode: "SE11 4BE", lat: 51.480, lng: -0.106 },
+  { name: "Archbishops Park", slug: "archbishopsparklambethnorth", platform: "clubspark", postcode: "SE1 7LE", lat: 51.498, lng: -0.115 },
+  { name: "Burgess Park", slug: "BurgessParkSouthwark", platform: "clubspark", postcode: "SE5 0RJ", lat: 51.483, lng: -0.082 },
+  { name: "Vauxhall Park", slug: "VauxhallPark", platform: "clubspark", postcode: "SW8 1LA", lat: 51.478, lng: -0.123 },
+  { name: "Larkhall Park", slug: "LarkhallPark", platform: "clubspark", postcode: "SW8 1QQ", lat: 51.474, lng: -0.127 },
+  { name: "Battersea Park", slug: "BatterseaParkTennisCourts", platform: "clubspark", postcode: "SW11 4NJ", lat: 51.478, lng: -0.157 },
+  { name: "Clapham Common", slug: "ClaphamCommon", platform: "clubspark", postcode: "SW4 9DE", lat: 51.457, lng: -0.148 },
+  { name: "Parliament Hill", slug: "ParliamentHillFieldsTennisCourts", platform: "clubspark", postcode: "NW5 1QR", lat: 51.556, lng: -0.150 },
+  { name: "Finsbury Park", slug: "FinsburyPark", platform: "clubspark", postcode: "N4 2NQ", lat: 51.566, lng: -0.103 },
+  { name: "Queens Park", slug: "QueensParkTennisCourts", platform: "clubspark", postcode: "NW6 6SG", lat: 51.534, lng: -0.204 },
+  { name: "Clissold Park", slug: "ClissoldParkHackney", platform: "clubspark", postcode: "N16 9HJ", lat: 51.561, lng: -0.080 },
+  { name: "Hackney Downs", slug: "HackneyDowns", platform: "clubspark", postcode: "E5 8ND", lat: 51.553, lng: -0.057 },
+  { name: "Abbotts Park", slug: "abbotts_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 5PJ", lat: 51.583, lng: -0.020 },
+  { name: "Lloyd & Aveling Park", slug: "lloyd_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 4PP", lat: 51.585, lng: -0.028 },
+  { name: "Hyde Park", slug: "hyde-park-courts", platform: "parks", postcode: "W2 2UH", lat: 51.507, lng: -0.170 },
+  { name: "Regent's Park", slug: "the-regents-park-courts", platform: "parks", postcode: "NW1 4NR", lat: 51.527, lng: -0.153 },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -318,23 +343,42 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
         )}
       </div>
 
-      {/* Slots */}
+      {/* Slots — grouped by date, hours shown as compact pills */}
       {expanded && filteredSlots.length > 0 && (
         <div className="px-4 py-3 space-y-3">
-          {Array.from(byDate.entries()).map(([date, hourMap]) => (
-            <div key={date}>
-              <div className="text-xs font-semibold text-gray-500 uppercase mb-1.5">{formatDate(date)}</div>
-              <div className="space-y-0.5">
-                {Array.from(hourMap.entries()).sort(([a],[b]) => a.localeCompare(b)).map(([time, courts]) => (
-                  <HourBlock key={time} time={time} courts={courts} bookingLink={courts[0].booking_link} />
-                ))}
+          {Array.from(byDate.entries()).map(([date, hourMap]) => {
+            const sortedHours = Array.from(hourMap.entries()).sort(([a],[b]) => a.localeCompare(b));
+            const totalCourts = sortedHours.reduce((sum, [, courts]) => sum + courts.length, 0);
+            const firstSlot = sortedHours[0]?.[1]?.[0];
+
+            return (
+              <div key={date}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase">{formatDate(date)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">{totalCourts} cancha{totalCourts !== 1 ? "s" : ""}</span>
+                    {firstSlot && (
+                      <a href={firstSlot.booking_link} target="_blank" rel="noopener noreferrer"
+                        className="text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition">
+                        Reservar
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {sortedHours.map(([time, courts]) => (
+                    <span key={time} className="text-xs font-mono px-2 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      {time} <span className="text-emerald-600 font-semibold">({courts.length})</span>
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {expanded && filteredSlots.length === 0 && (
-        <div className="px-4 py-3 text-xs text-gray-400 italic">Sin disponibilidad en este horario</div>
+        <div className="px-4 py-3 text-xs text-gray-400 italic">Sin disponibilidad — crea una alerta para que te avisemos</div>
       )}
     </div>
   );
@@ -555,21 +599,38 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
     const tennisSlots = data.slots.filter(s => isTennisCourt(s.court_name));
     const byVenue = new Map<string, CourtSlot[]>();
     for (const slot of tennisSlots) {
-      if (!byVenue.has(slot.venue_slug)) byVenue.set(slot.venue_slug, []);
-      byVenue.get(slot.venue_slug)!.push(slot);
+      if (!byVenue.has(slot.venue_name)) byVenue.set(slot.venue_name, []);
+      byVenue.get(slot.venue_name)!.push(slot);
     }
 
     const summaries: VenueSummary[] = [];
-    for (const [slug, slots] of byVenue) {
-      const first = slots[0];
-      const distance = (userLat && userLng) ? haversineKm(userLat, userLng, first.venue_lat, first.venue_lng) : undefined;
+
+    // Include ALL known venues (even those with 0 slots)
+    for (const sv of ALL_VENUES_STATIC) {
+      const slots = byVenue.get(sv.name) || [];
+      const distance = (userLat && userLng) ? haversineKm(userLat, userLng, sv.lat, sv.lng) : undefined;
       const filtered = slots.filter(s => {
         if (filterDate !== "all" && s.date !== filterDate) return false;
         if (filterTimeBlock !== "all" && !timeInBlock(s.start_time, filterTimeBlock)) return false;
         return true;
       });
-      summaries.push({ name: first.venue_name, slug, platform: first.platform, postcode: first.venue_postcode,
-        lat: first.venue_lat, lng: first.venue_lng, totalSlots: filtered.length, slots, distance });
+      summaries.push({ name: sv.name, slug: sv.slug, platform: sv.platform, postcode: sv.postcode,
+        lat: sv.lat, lng: sv.lng, totalSlots: filtered.length, slots, distance });
+    }
+
+    // Also add any venues from the JSON that aren't in the static list
+    for (const [name, slots] of byVenue) {
+      if (!ALL_VENUES_STATIC.some(sv => sv.name === name)) {
+        const first = slots[0];
+        const distance = (userLat && userLng) ? haversineKm(userLat, userLng, first.venue_lat, first.venue_lng) : undefined;
+        const filtered = slots.filter(s => {
+          if (filterDate !== "all" && s.date !== filterDate) return false;
+          if (filterTimeBlock !== "all" && !timeInBlock(s.start_time, filterTimeBlock)) return false;
+          return true;
+        });
+        summaries.push({ name: first.venue_name, slug: first.venue_slug, platform: first.platform, postcode: first.venue_postcode,
+          lat: first.venue_lat, lng: first.venue_lng, totalSlots: filtered.length, slots, distance });
+      }
     }
 
     summaries.sort((a, b) => {
