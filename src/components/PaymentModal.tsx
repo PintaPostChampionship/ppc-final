@@ -1,3 +1,5 @@
+import * as React from "react";
+
 interface PaymentModalProps {
   isOpen: boolean;
   onConfirm: () => void;
@@ -15,6 +17,26 @@ export function PaymentModal({
 }: PaymentModalProps): JSX.Element | null {
   if (!isOpen) return null;
 
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopyData = () => {
+    const text = `Daniel Sepulveda\nAccount: 71906880\nSort code: 23-08-01\nMonto: £45`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center"
@@ -31,7 +53,7 @@ export function PaymentModal({
           ¿Estás seguro que pagaste a la cuenta de{' '}
           <span className="font-semibold">Daniel Sepulveda</span>?
         </p>
-        <div className="bg-gray-50 rounded-xl p-4 mb-5 text-sm space-y-1">
+        <div className="bg-gray-50 rounded-xl p-4 mb-3 text-sm space-y-1">
           <div className="flex justify-between">
             <span className="text-gray-500">Monto</span>
             <span className="font-mono font-semibold text-gray-900">£45</span>
@@ -45,6 +67,17 @@ export function PaymentModal({
             <span className="font-mono font-semibold text-gray-900">23-08-01</span>
           </div>
         </div>
+
+        <button
+          onClick={handleCopyData}
+          className="w-full mb-5 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
+        >
+          {copied ? (
+            <><span>✓</span><span className="text-emerald-600 font-medium">Copiado</span></>
+          ) : (
+            <><span>📋</span><span>Copiar datos para transferencia</span></>
+          )}
+        </button>
 
         {error && (
           <p className="text-red-600 text-sm mb-4 bg-red-50 rounded-lg px-3 py-2">{error}</p>

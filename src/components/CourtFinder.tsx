@@ -716,10 +716,10 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
           </div>
 
           {/* Time block pills */}
-          <div className="flex gap-2 mb-5">
+          <div className="flex gap-2 overflow-x-auto mb-5">
             {TIME_BLOCKS.map(tb => (
               <button key={tb.value} onClick={() => setFilterTimeBlock(tb.value)}
-                className={`text-sm px-4 py-2 rounded-full border transition font-medium ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                className={`text-sm px-4 py-2 rounded-full border whitespace-nowrap transition font-medium ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 {tb.label}
               </button>
             ))}
