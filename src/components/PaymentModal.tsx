@@ -17,24 +17,27 @@ export function PaymentModal({
 }: PaymentModalProps): JSX.Element | null {
   if (!isOpen) return null;
 
-  const [copied, setCopied] = React.useState(false);
+  const [copiedField, setCopiedField] = React.useState<string | null>(null);
 
-  const handleCopyData = () => {
-    const text = `Daniel Sepulveda\nAccount: 71906880\nSort code: 23-08-01\nMonto: £45`;
+  const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
     }).catch(() => {
-      // Fallback for older browsers
       const ta = document.createElement('textarea');
       ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand('copy');
       document.body.removeChild(ta);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
     });
+  };
+
+  const copyAll = () => {
+    const text = `Daniel Sepulveda\nAccount: 71906880\nSort code: 23-08-01\nMonto: £45`;
+    copyToClipboard(text, 'all');
   };
 
   return (
@@ -50,33 +53,40 @@ export function PaymentModal({
           Confirmar pago
         </h3>
         <p className="text-gray-700 mb-4 text-sm leading-relaxed">
-          ¿Estás seguro que pagaste a la cuenta de{' '}
-          <span className="font-semibold">Daniel Sepulveda</span>?
+          ¿Estás seguro que pagaste a la cuenta correcta?
         </p>
-        <div className="bg-gray-50 rounded-xl p-4 mb-3 text-sm space-y-1">
-          <div className="flex justify-between">
-            <span className="text-gray-500">Monto</span>
-            <span className="font-mono font-semibold text-gray-900">£45</span>
+        <div className="bg-gray-50 rounded-xl p-4 mb-2 text-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <div><span className="text-gray-500">Nombre: </span><span className="font-semibold text-gray-900">Daniel Sepulveda</span></div>
+            <button onClick={() => copyToClipboard('Daniel Sepulveda', 'nombre')} className="text-xs text-gray-400 hover:text-emerald-600 transition px-1.5 py-0.5 rounded hover:bg-emerald-50">
+              {copiedField === 'nombre' ? '✓' : '📋'}
+            </button>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-500">Account number</span>
-            <span className="font-mono font-semibold text-gray-900">71906880</span>
+          <div className="flex items-center justify-between">
+            <div><span className="text-gray-500">Account: </span><span className="font-mono font-semibold text-gray-900">71906880</span></div>
+            <button onClick={() => copyToClipboard('71906880', 'account')} className="text-xs text-gray-400 hover:text-emerald-600 transition px-1.5 py-0.5 rounded hover:bg-emerald-50">
+              {copiedField === 'account' ? '✓' : '📋'}
+            </button>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-500">Sort code</span>
-            <span className="font-mono font-semibold text-gray-900">23-08-01</span>
+          <div className="flex items-center justify-between">
+            <div><span className="text-gray-500">Sort code: </span><span className="font-mono font-semibold text-gray-900">23-08-01</span></div>
+            <button onClick={() => copyToClipboard('230801', 'sort')} className="text-xs text-gray-400 hover:text-emerald-600 transition px-1.5 py-0.5 rounded hover:bg-emerald-50">
+              {copiedField === 'sort' ? '✓' : '📋'}
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div><span className="text-gray-500">Monto: </span><span className="font-mono font-semibold text-gray-900">£45</span></div>
+            <button onClick={() => copyToClipboard('45', 'monto')} className="text-xs text-gray-400 hover:text-emerald-600 transition px-1.5 py-0.5 rounded hover:bg-emerald-50">
+              {copiedField === 'monto' ? '✓' : '📋'}
+            </button>
           </div>
         </div>
 
         <button
-          onClick={handleCopyData}
-          className="w-full mb-5 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center justify-center gap-2"
+          onClick={copyAll}
+          className="w-full mb-5 px-3 py-1.5 text-xs text-gray-500 hover:text-emerald-600 transition flex items-center justify-center gap-1"
         >
-          {copied ? (
-            <><span>✓</span><span className="text-emerald-600 font-medium">Copiado</span></>
-          ) : (
-            <><span>📋</span><span>Copiar datos para transferencia</span></>
-          )}
+          {copiedField === 'all' ? '✓ Copiado' : '📋 Copiar todos'}
         </button>
 
         {error && (
