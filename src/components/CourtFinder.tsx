@@ -527,6 +527,15 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   // Watchlist
   const [watchlist, setWatchlist] = React.useState<Set<string>>(new Set());
 
+  // Toast notification
+  const [toast, setToast] = React.useState<string | null>(null);
+  const toastTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
+    toastTimeout.current = setTimeout(() => setToast(null), 5000);
+  };
+
   // Map viewport — venues visible in current map bounds
   const [visibleInMap, setVisibleInMap] = React.useState<string[]>([]);
 
@@ -609,6 +618,15 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
     for (const k of existingKeys) newSet.delete(k);
     for (const a of alerts) newSet.add(`${venueSlug}|${a.date}|${a.hour}`);
     setWatchlist(newSet);
+
+    // Show confirmation toast
+    if (alerts.length > 0) {
+      const hours = alerts.map(a => a.hour).sort().join(", ");
+      const dateStr = formatDate(alerts[0].date);
+      showToast(`🔔 Te avisaremos cuando se libere · ${venueName} · ${dateStr} · ${hours}`);
+    } else {
+      showToast(`Alertas eliminadas para ${venueName}`);
+    }
   };
 
   // Build venue summaries
@@ -686,6 +704,15 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="w-full min-h-screen bg-gradient-to-br from-emerald-50 via-white to-gray-100 pb-10">
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+          <div className="bg-emerald-800 text-white text-sm px-5 py-3 rounded-xl shadow-lg flex items-center gap-2 max-w-sm animate-bounce" style={{ animationIterationCount: 1, animationDuration: "0.4s" }}>
+            <span>{toast}</span>
+            <button onClick={() => setToast(null)} className="ml-2 text-emerald-200 hover:text-white text-lg leading-none">&times;</button>
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-4xl mx-auto px-4">
         {/* Header */}
         <div className="flex items-center justify-between py-4">
