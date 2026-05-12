@@ -276,6 +276,9 @@ Sistema de notificaciones push implementado con Web Push API (VAPID):
 - Si la suscripción no se guardó, desactivar y reactivar desde el menú
 - El `mailto:` en VAPID_SUBJECT NO envía correos — es solo identificación del protocolo
 - Las notificaciones funcionan en Chrome Android y Safari iOS 16.4+ (PWA instalada)
+- **Urgency: high** — todas las push se envían con `urgency: 'high'` para que lleguen incluso con Power Saving activado en Samsung/Android
+- **Samsung Power Saving**: requiere Chrome en "Never auto sleeping apps" + "Allow background data usage" + "Unrestricted" battery. Con `urgency: high` las notificaciones llegan inmediatamente.
+- **Alertas de canchas**: usan `notify_by: "both"` (push + email) como fallback. El email siempre llega al instante vía SMTP (Gmail).
 
 ---
 

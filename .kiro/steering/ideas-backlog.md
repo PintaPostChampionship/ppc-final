@@ -43,10 +43,13 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - **Estado**: 🟡 Funcional, mejoras pendientes
 - ✅ Componente `CourtFinder.tsx` con mapa Leaflet + venue cards
 - ✅ Scraper `court_monitor/` con 21 venues (Better, ClubSpark, Flow)
-- ✅ GitHub Action cada 6h genera `court_availability.json`
-- ✅ Sistema de alertas: `court_watchlist` en Supabase + push notifications
+- ✅ GitHub Action cada 2h genera `court_availability.json` (10 días ahead)
+- ✅ Sistema de alertas: `court_watchlist` en Supabase + push + email
 - ✅ Diff engine detecta slots liberados y notifica al usuario
 - ✅ Al apretar notificación → abre link directo de booking
+- ✅ Push con `urgency: high` — funciona con Power Saving en Samsung
+- ✅ Notificación dual: push (inmediata) + email (siempre llega)
+- ✅ Toast de confirmación al crear alerta con fecha y hora
 - ⬜ **Pendiente**: Reestructurar vista "Buscar Cancha" — pestaña principal (monitor) + pestaña "Tips"
 - ⬜ **Pendiente**: Sacar buscador iframe y apps recomendadas de la vista actual
 - ⬜ **Pendiente**: Agregar más venues (Waterlow Park/Camden, otros)
