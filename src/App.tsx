@@ -3856,7 +3856,7 @@ const App = () => {
     if (allScheduled.length === 0) return alert('No hay partidos programados para copiar');
 
     // FORMATO SIMPLIFICADO IGUAL A WHATSAPP
-    let message = `*Pinta Post Championship - Partidos Programados*\n\n`;
+    let message = `*${selectedTournament.name} - Partidos Programados*\n\n`;
 
     const grouped = allScheduled.reduce((acc, match) => {
       const key = dateKey(match.date);
@@ -3871,8 +3871,8 @@ const App = () => {
         const p2 = displayNameForShare(m.away_player_id!);
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
-        // MENSAJE SIMPLIFICADO
-        message += `• ${p1} vs ${p2} ${icon}\n`;
+        const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
+        message += `• ${p1} vs ${p2} (${w}-${l}) ${icon}\n`;
       });
       message += '\n';
     });
