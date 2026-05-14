@@ -103,7 +103,7 @@ const App = () => {
     const m = hash.match(/^live\/match\/([a-f0-9-]+)$/i);
     return m ? m[1] : null;
   });
-  const [showNavMenu, setShowNavMenu] = useState(false);
+  const [showNavMenu, setShowNavMenu] = useState(() => window.innerWidth >= 1024);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [scrollToScheduleForm, setScrollToScheduleForm] = useState(false);
   const scheduleFormRef = useRef<HTMLDivElement>(null);
@@ -2837,15 +2837,15 @@ const App = () => {
 
     return (
       <>
-        {/* Backdrop */}
+        {/* Backdrop — only on mobile */}
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
           onClick={() => setShowNavMenu(false)}
           aria-hidden="true"
         />
 
-        {/* Drawer panel */}
-        <div className="fixed top-0 right-0 z-50 h-full w-72 max-w-[85vw] flex flex-col bg-gradient-to-b from-green-800 via-emerald-800 to-green-900 shadow-2xl">
+        {/* Drawer panel — fixed on mobile, static sidebar on desktop */}
+        <div className="fixed top-0 left-0 z-50 h-full w-72 max-w-[85vw] flex flex-col bg-gradient-to-b from-green-800 via-emerald-800 to-green-900 shadow-2xl">
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
@@ -3412,11 +3412,21 @@ const App = () => {
 
         {/* ── Header ── */}
         <header className="bg-white shadow-lg sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                >
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
+                </button>
                 <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
-                <div>
+                <div className="ml-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -3429,45 +3439,32 @@ const App = () => {
                   >
                     ← Volver al menú principal
                   </button>
-                  <h1 className="text-4xl font-bold text-gray-800">🏆 Salón de la Fama</h1>
-                  <p className="text-gray-600">Pinta Post Championship</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">🏆 Salón de la Fama</h1>
                 </div>
               </div>
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">{currentUserLatestTournamentName}</p>
                   </button>
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-                      aria-label="Ir a mi perfil"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 shrink-0"
+                    aria-label="Ir a mi perfil"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
             </div>
@@ -5612,39 +5609,47 @@ const App = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                  title="Menú"
+                >
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
+                </button>
                 <img
                   src="/ppc-logo.png"
                   alt="PPC Logo"
                   className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain"
                 />
-                <div>
+                <div className="ml-2">
                   <button
                     onClick={() => {
-                      setShowBookingPanel(false); //ACA QUIERO VOLVER
+                      setShowBookingPanel(false);
                       setSelectedTournament(null);
                       setSelectedDivision(null);
                       setSelectedPlayer(null);
                     }}
-                    className="text-green-600 hover:text-green-800 font-semibold mb-2"
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
                   >
                     ← Volver a torneos
                   </button>
-                  <h1 className="text-4xl font-bold text-gray-800">
-                    Pinta Post Championship
-                  </h1>
-                  <p className="text-gray-600">Reservas automáticas Better</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Reservas automáticas</h1>
                 </div>
               </div>
                       
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                   >
                     <p className="truncate font-semibold text-gray-800">
                       {uiName(currentUser.name)}
@@ -5654,34 +5659,20 @@ const App = () => {
                     </p>
                   </button>
 
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                      aria-label="Ir a mi perfil de jugador"
-                      title="Ir a mi perfil de jugador"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                      title="Menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                    aria-label="Ir a mi perfil de jugador"
+                    title="Ir a mi perfil de jugador"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
 
@@ -6170,11 +6161,21 @@ const App = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                >
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
+                </button>
                 <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
-                <div>
+                <div className="ml-2">
                   <button
                     type="button"
                     onClick={() => setShowMap(false)}
@@ -6182,45 +6183,32 @@ const App = () => {
                   >
                     ← Volver al menú principal
                   </button>
-                  <h1 className="text-4xl font-bold text-gray-800">Encontrar Cancha</h1>
-                  <p className="text-gray-600">Pinta Post Championship</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Encontrar Cancha</h1>
                 </div>
               </div>
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">{currentUserLatestTournamentName}</p>
                   </button>
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                      aria-label="Ir a mi perfil"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                    aria-label="Ir a mi perfil"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
             </div>
@@ -6237,11 +6225,21 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         {/* ── Sticky header ── */}
         <header className="bg-white shadow-lg sticky top-0 z-10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                >
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
+                </button>
                 <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
-                <div>
+                <div className="ml-2">
                   <button
                     type="button"
                     onClick={() => setShowHistoricTournaments(false)}
@@ -6249,45 +6247,32 @@ const App = () => {
                   >
                     ← Volver al menú principal
                   </button>
-                  <h1 className="text-4xl font-bold text-gray-800">Torneos Históricos</h1>
-                  <p className="text-gray-600">Pinta Post Championship</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Torneos Históricos</h1>
                 </div>
               </div>
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">{currentUserLatestTournamentName}</p>
                   </button>
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                      aria-label="Ir a mi perfil"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                    aria-label="Ir a mi perfil"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
             </div>
@@ -6394,21 +6379,29 @@ const App = () => {
         {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
         <LiveMatchBanner currentProfile={currentUser} />
         <header className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div className="flex items-center gap-3">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {/* Hamburger — opens nav drawer */}
+                <button
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                  title="Menú"
+                >
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
+                </button>
                 <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
-                <div>
-                  <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                  <p className="text-gray-600">Tennis League</p>
-                </div>
               </div>
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition"
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
@@ -6416,38 +6409,22 @@ const App = () => {
                     </p>
                   </button>
 
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                      aria-label="Ir a mi perfil de jugador"
-                      title="Ir a mi perfil de jugador"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-
-                    {/* Hamburger — opens nav drawer */}
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                      title="Menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                    aria-label="Ir a mi perfil de jugador"
+                    title="Ir a mi perfil de jugador"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
-
             </div>
           </div>
         </header>
@@ -6936,38 +6913,46 @@ const App = () => {
         {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
         <LiveMatchBanner currentProfile={currentUser} />
         <header className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    if (cameFromHistoric) {
-                      setSelectedTournament(null);
-                      setShowHistoricTournaments(true);
-                      setCameFromHistoric(false);
-                    } else {
-                      setSelectedTournament(null);
-                    }
-                  }}
-                  className="text-green-600 hover:text-green-800 font-semibold mb-2"
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                  title="Menú"
                 >
-                  {cameFromHistoric ? '← Volver a Torneos Históricos' : '← Volver a torneos'}
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
                 </button>
-                <div className="flex items-center gap-3 mt-1">
-                  <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
-                  <div>
-                    <h1 className="text-4xl font-bold text-gray-800">{selectedTournament.name}</h1>
-                    <p className="text-gray-600">Detalles de divisiones y jugadores</p>
-                  </div>
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div className="ml-2">
+                  <button
+                    onClick={() => {
+                      if (cameFromHistoric) {
+                        setSelectedTournament(null);
+                        setShowHistoricTournaments(true);
+                        setCameFromHistoric(false);
+                      } else {
+                        setSelectedTournament(null);
+                      }
+                    }}
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    {cameFromHistoric ? '← Volver a Torneos Históricos' : '← Volver a torneos'}
+                  </button>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">{selectedTournament.name}</h1>
                 </div>
               </div>
               
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
@@ -6975,34 +6960,20 @@ const App = () => {
                     </p>
                   </button>
 
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                      aria-label="Ir a mi perfil de jugador"
-                      title="Ir a mi perfil de jugador"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                      title="Menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                    aria-label="Ir a mi perfil de jugador"
+                    title="Ir a mi perfil de jugador"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
 
@@ -8156,27 +8127,40 @@ const App = () => {
       return (
         <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
           <header className="bg-white shadow-lg">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-              <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <div>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      setSelectedPlayer(null); 
-                    }}
-                    className="text-green-600 hover:text-green-800 font-semibold mb-2"
+                    type="button"
+                    onClick={() => setShowNavMenu(v => !v)}
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Abrir menú"
+                    title="Menú"
                   >
-                    ← Volver a {selectedDivision.name}
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
                   </button>
-                  <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                  <p className="text-gray-600">Detalles de la División</p>
+                  <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                  <div className="ml-2">
+                    <button
+                      onClick={() => {
+                        setSelectedPlayer(null); 
+                      }}
+                      className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                    >
+                      ← Volver a {selectedDivision.name}
+                    </button>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">{uiName(selectedPlayer.name)}</h1>
+                  </div>
                 </div>
 
                 {currentUser && (
-                  <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                  <div className="flex items-center gap-2 md:gap-4">
                     <button
                       type="button"
                       onClick={goToMyPlayerProfile}
-                      className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                      className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                     >
                       <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                       <p className="truncate text-sm text-gray-600">
@@ -8184,33 +8168,20 @@ const App = () => {
                       </p>
                     </button>
 
-                    <div className="flex flex-shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={goToMyPlayerProfile}
-                        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                        aria-label="Ir a mi perfil de jugador"
-                        title="Ir a mi perfil de jugador"
-                      >
-                        <img
-                          src={avatarSrc(currentUser)}
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                          alt="Profile"
-                          className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowNavMenu(v => !v)}
-                        className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                        aria-label="Abrir menú"
-                        title="Menú"
-                      >
-                        <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                        </svg>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={goToMyPlayerProfile}
+                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                      aria-label="Ir a mi perfil de jugador"
+                      title="Ir a mi perfil de jugador"
+                    >
+                      <img
+                        src={avatarSrc(currentUser)}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                        alt="Profile"
+                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                      />
+                    </button>
                   </div>
                 )}
 
@@ -9556,28 +9527,41 @@ const App = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-              <div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    setSelectedDivision(null);
-                    setSelectedPlayer(null); 
-                  }}
-                  className="text-green-600 hover:text-green-800 font-semibold mb-2"
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                  title="Menú"
                 >
-                  ← Volver a {selectedTournament.name}
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
                 </button>
-                <h1 className="text-4xl font-bold text-gray-800">Pinta Post Championship</h1>
-                <p className="text-gray-600">Detalles de la División</p>
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div className="ml-2">
+                  <button
+                    onClick={() => {
+                      setSelectedDivision(null);
+                      setSelectedPlayer(null); 
+                    }}
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    ← Volver a {selectedTournament.name}
+                  </button>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">División {selectedDivision.name}</h1>
+                </div>
               </div>
 
               {currentUser && (
-                <div className="flex w-full md:w-auto items-center justify-end gap-2 md:gap-4">
+                <div className="flex items-center gap-2 md:gap-4">
                   <button
                     type="button"
                     onClick={goToMyPlayerProfile}
-                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition text-left md:text-right"
+                    className="min-w-0 max-w-[58vw] md:max-w-none text-right hover:opacity-80 transition hidden sm:block"
                   >
                     <p className="truncate font-semibold text-gray-800">{uiName(currentUser.name)}</p>
                     <p className="truncate text-sm text-gray-600">
@@ -9585,33 +9569,20 @@ const App = () => {
                     </p>
                   </button>
 
-                  <div className="flex flex-shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={goToMyPlayerProfile}
-                      className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
-                      aria-label="Ir a mi perfil de jugador"
-                      title="Ir a mi perfil de jugador"
-                    >
-                      <img
-                        src={avatarSrc(currentUser)}
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowNavMenu(v => !v)}
-                      className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
-                      aria-label="Abrir menú"
-                      title="Menú"
-                    >
-                      <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={goToMyPlayerProfile}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 shrink-0"
+                    aria-label="Ir a mi perfil de jugador"
+                    title="Ir a mi perfil de jugador"
+                  >
+                    <img
+                      src={avatarSrc(currentUser)}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                      alt="Profile"
+                      className="h-10 w-10 rounded-full object-cover ring-1 ring-gray-200 hover:opacity-90 transition"
+                    />
+                  </button>
                 </div>
               )}
 
