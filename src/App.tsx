@@ -5608,7 +5608,7 @@ const App = () => {
   if (showBookingPanel && (isBookingAdmin || visibleBookingAccounts.length > 0)) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-        <header className="bg-white shadow-lg">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -6378,7 +6378,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
         <LiveMatchBanner currentProfile={currentUser} />
-        <header className="bg-white shadow-lg">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -6912,7 +6912,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
         <LiveMatchBanner currentProfile={currentUser} />
-        <header className="bg-white shadow-lg">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -8126,7 +8126,7 @@ const App = () => {
 
       return (
         <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-          <header className="bg-white shadow-lg">
+          <header className="bg-white shadow-lg sticky top-0 z-10">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -9526,7 +9526,7 @@ const App = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-        <header className="bg-white shadow-lg">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
