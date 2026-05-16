@@ -681,14 +681,29 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   }, [data, userLat, userLng, filterDate, filterTimeBlock, filterPlatform]);
 
   const displayVenues = React.useMemo(() => {
-    // If specific venues selected, show those
-    if (filterVenues.size > 0) return venues.filter(v => filterVenues.has(v.slug));
+    // If specific venues selected, show those first then the rest visible
+    if (filterVenues.size > 0) {
+      const selected = venues.filter(v => filterVenues.has(v.slug));
+      const rest = venues.filter(v => !filterVenues.has(v.slug) && visibleInMap.includes(v.slug));
+      return [...selected, ...rest];
+    }
 
     // Show all mode
     if (showAll) return venues;
 
-    // Show venues visible in the map viewport
-    if (visibleInMap.length > 0) return venues.filter(v => visibleInMap.includes(v.slug));
+    // Show venues visible in the map viewport, sorted: with slots first, then by distance
+    if (visibleInMap.length > 0) {
+      const visible = venues.filter(v => visibleInMap.includes(v.slug));
+      visible.sort((a, b) => {
+        // Venues with slots first
+        if (a.totalSlots > 0 && b.totalSlots === 0) return -1;
+        if (a.totalSlots === 0 && b.totalSlots > 0) return 1;
+        // Then by distance
+        if (a.distance != null && b.distance != null) return a.distance - b.distance;
+        return b.totalSlots - a.totalSlots;
+      });
+      return visible;
+    }
 
     // Fallback: within 5km
     return venues.filter(v => v.distance == null || v.distance <= 5).slice(0, 10);
@@ -732,24 +747,24 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
         {data && !loading && (<>
           {/* Date pills */}
-          <div className="flex gap-2 overflow-x-auto pb-3 mb-4">
+          <div className="flex gap-2 overflow-x-auto pb-3 mb-3 -mx-4 px-4 scrollbar-hide">
             <button onClick={() => setFilterDate("all")}
-              className={`text-sm px-4 py-2 rounded-full border whitespace-nowrap transition font-medium ${filterDate === "all" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+              className={`text-sm px-4 py-2.5 rounded-full border whitespace-nowrap transition font-medium ${filterDate === "all" ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
               Todos
             </button>
             {availableDates.map(d => (
               <button key={d} onClick={() => setFilterDate(d)}
-                className={`text-sm px-4 py-2 rounded-full border whitespace-nowrap transition font-medium ${filterDate === d ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                className={`text-sm px-4 py-2.5 rounded-full border whitespace-nowrap transition font-medium ${filterDate === d ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 {formatDateShort(d)}
               </button>
             ))}
           </div>
 
           {/* Time block pills */}
-          <div className="flex gap-2 overflow-x-auto mb-5">
+          <div className="flex gap-2 overflow-x-auto pb-3 mb-5 -mx-4 px-4 scrollbar-hide">
             {TIME_BLOCKS.map(tb => (
               <button key={tb.value} onClick={() => setFilterTimeBlock(tb.value)}
-                className={`text-sm px-4 py-2 rounded-full border whitespace-nowrap transition font-medium ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                className={`text-sm px-4 py-2.5 rounded-full border whitespace-nowrap transition font-medium ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 {tb.label}
               </button>
             ))}
@@ -825,14 +840,29 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
           </div>
 
           {/* Summary */}
-          <div className="text-sm text-gray-600 mb-3">
-            {totalFiltered} slot{totalFiltered !== 1 ? "s" : ""} en {displayVenues.length} venue{displayVenues.length !== 1 ? "s" : ""}
-            {filterVenues.size === 0 && <span className="text-xs text-gray-400 ml-1">(cercanos a ti)</span>}
+          <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
+            <span>
+              {totalFiltered} slot{totalFiltered !== 1 ? "s" : ""} en {displayVenues.length} cancha{displayVenues.length !== 1 ? "s" : ""}
+              {filterVenues.size === 0 && !showAll && <span className="text-xs text-gray-400 ml-1">(visibles en el mapa)</span>}
+            </span>
+            {filterVenues.size > 0 && (
+              <button onClick={() => setFilterVenues(new Set())}
+                className="text-xs text-emerald-600 hover:text-emerald-800 font-medium">
+                ✕ Limpiar selección
+              </button>
+            )}
           </div>
 
           {/* Map */}
           <div className="mb-4">
-            <CourtMap venues={venues} onVenueClick={(slug) => toggleVenueFilter(slug)}
+            <CourtMap venues={venues} onVenueClick={(slug) => {
+              const venue = venues.find(v => v.slug === slug);
+              if (venue && mapControlRef.current) {
+                mapControlRef.current.panTo(venue.lat, venue.lng);
+              }
+              setFilterVenues(new Set([slug]));
+              setShowAll(false);
+            }}
               selectedVenue={filterVenues.size === 1 ? Array.from(filterVenues)[0] : null}
               userLat={userLat} userLng={userLng}
               onBoundsChange={setVisibleInMap}
@@ -848,8 +878,8 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
           </div>
 
           {filterVenues.size === 0 && !showAll && venues.length > displayVenues.length && (
-            <div className="text-center mt-4 text-xs text-gray-400">
-              Mueve el mapa o pulsa "Todos" para ver más venues
+            <div className="text-center mt-6 py-3 text-sm text-gray-500 bg-white/60 rounded-xl border border-gray-200">
+              📍 Mueve el mapa para ver más canchas, o pulsa <button onClick={() => { setShowAll(true); setFilterVenues(new Set()); if (mapControlRef.current) mapControlRef.current.fitAll(); }} className="text-emerald-600 font-semibold hover:underline">"Todos"</button> para ver las {venues.length} canchas
             </div>
           )}
         </>)}
