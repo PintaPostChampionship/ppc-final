@@ -76,6 +76,7 @@ const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; p
   { name: "Larkhall Park", slug: "LarkhallPark", platform: "clubspark", postcode: "SW8 1QQ", lat: 51.474, lng: -0.127 },
   { name: "Battersea Park", slug: "BatterseaParkTennisCourts", platform: "clubspark", postcode: "SW11 4NJ", lat: 51.478, lng: -0.157 },
   { name: "Clapham Common", slug: "ClaphamCommon", platform: "clubspark", postcode: "SW4 9DE", lat: 51.457, lng: -0.148 },
+  { name: "Myatts Field Park", slug: "myattsfieldspark", platform: "clubspark", postcode: "SE5 9RA", lat: 51.472, lng: -0.098 },
   { name: "Parliament Hill", slug: "ParliamentHillFieldsTennisCourts", platform: "clubspark", postcode: "NW5 1QR", lat: 51.556, lng: -0.150 },
   { name: "Finsbury Park", slug: "FinsburyPark", platform: "clubspark", postcode: "N4 2NQ", lat: 51.566, lng: -0.103 },
   { name: "Queens Park", slug: "QueensParkTennisCourts", platform: "clubspark", postcode: "NW6 6SG", lat: 51.534, lng: -0.204 },
@@ -283,6 +284,8 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
 }) {
   const [expanded, setExpanded] = React.useState(true);
   const [showWatch, setShowWatch] = React.useState(false);
+  // Selected hour per date: date → time string (e.g. "18:00")
+  const [selectedHour, setSelectedHour] = React.useState<{ date: string; time: string } | null>(null);
 
   // Filter slots
   const filteredSlots = venue.slots.filter(s => {
@@ -363,13 +366,18 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
         )}
       </div>
 
-      {/* Slots — grouped by date, hours shown as compact pills */}
+      {/* Slots — grouped by date, hours shown as clickable pills */}
       {expanded && filteredSlots.length > 0 && (
         <div className="px-4 py-3 space-y-3">
           {Array.from(byDate.entries()).map(([date, hourMap]) => {
             const sortedHours = Array.from(hourMap.entries()).sort(([a],[b]) => a.localeCompare(b));
             const totalCourts = sortedHours.reduce((sum, [, courts]) => sum + courts.length, 0);
-            const firstSlot = sortedHours[0]?.[1]?.[0];
+            // Get booking link for selected hour, or first slot as fallback
+            const isSelected = selectedHour?.date === date;
+            const selectedSlot = isSelected
+              ? hourMap.get(selectedHour!.time)?.[0]
+              : null;
+            const bookingLink = selectedSlot?.booking_link || sortedHours[0]?.[1]?.[0]?.booking_link;
 
             return (
               <div key={date}>
@@ -377,20 +385,33 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
                   <span className="text-xs font-semibold text-gray-500 uppercase">{formatDate(date)}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">{totalCourts} cancha{totalCourts !== 1 ? "s" : ""}</span>
-                    {firstSlot && (
-                      <a href={firstSlot.booking_link} target="_blank" rel="noopener noreferrer"
-                        className="text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition">
-                        Reservar
+                    {bookingLink && (
+                      <a href={bookingLink} target="_blank" rel="noopener noreferrer"
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-md transition active:scale-95 ${
+                          isSelected
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                            : "bg-gray-200 text-gray-600 hover:bg-emerald-600 hover:text-white"
+                        }`}>
+                        Reservar{isSelected ? ` ${selectedHour!.time}` : ""}
                       </a>
                     )}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {sortedHours.map(([time, courts]) => (
-                    <span key={time} className="text-xs font-mono px-2 py-1 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                      {time} <span className="text-emerald-600 font-semibold">({courts.length})</span>
-                    </span>
-                  ))}
+                <div className="flex flex-wrap gap-1.5">
+                  {sortedHours.map(([time, courts]) => {
+                    const isThisSelected = selectedHour?.date === date && selectedHour?.time === time;
+                    return (
+                      <button key={time}
+                        onClick={() => setSelectedHour(isThisSelected ? null : { date, time })}
+                        className={`text-xs font-mono px-2.5 py-1.5 rounded-md border transition cursor-pointer active:scale-95 ${
+                          isThisSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white text-gray-700 border-gray-300 hover:border-emerald-400 hover:text-emerald-700"
+                        }`}>
+                        {time} <span className={isThisSelected ? "text-emerald-100" : "text-gray-400"}>({courts.length})</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );
