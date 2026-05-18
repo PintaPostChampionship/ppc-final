@@ -16,9 +16,6 @@ export interface LiveScoreDisplayProps {
   compact?: boolean;
 }
 
-// ── Colores PPC ───────────────────────────────────────────────────────────────
-// Paleta: verde esmeralda (principal), fondo oscuro verdoso, acentos amarillo-lima
-
 export default function LiveScoreDisplay({
   state,
   player1Name,
@@ -78,8 +75,8 @@ export default function LiveScoreDisplay({
       {connectionStatus !== 'connected' && (
         <div className={`mb-3 flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${
           connectionStatus === 'connecting'
-            ? 'bg-yellow-900/40 text-yellow-300'
-            : 'bg-red-900/40 text-red-300'
+            ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
+            : 'bg-red-100 text-red-800 border border-red-300'
         }`}>
           <span className="animate-pulse">●</span>
           {connectionStatus === 'connecting' ? 'Reconectando...' : 'Conexión perdida. Recarga la página.'}
@@ -89,22 +86,16 @@ export default function LiveScoreDisplay({
       {/* Badge tiebreak */}
       {isTiebreak && (
         <div className="mb-3 text-center">
-          <span className="rounded-full bg-yellow-400/20 px-4 py-1 text-xs font-bold uppercase tracking-widest text-yellow-300 ring-1 ring-yellow-400/30">
+          <span className="rounded-full bg-amber-100 px-4 py-1.5 text-xs font-bold uppercase tracking-widest text-amber-800 ring-1 ring-amber-300">
             {in_super_tiebreak ? '⚡ Super Tiebreak' : '⚡ Tiebreak'}
           </span>
         </div>
       )}
 
       {/* Tarjeta principal del marcador */}
-      <div
-        className="overflow-hidden rounded-2xl shadow-2xl"
-        style={{
-          background: 'linear-gradient(145deg, #1a3a2a 0%, #1e4a32 50%, #163320 100%)',
-          border: '1px solid rgba(52,211,153,0.15)',
-        }}
-      >
+      <div className="overflow-hidden rounded-2xl shadow-xl bg-white border border-gray-200">
         {/* Franja superior verde */}
-        <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #34d399, #10b981, #6ee7b7)' }} />
+        <div className="h-1.5 w-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-teal-400" />
 
         {/* Fila Jugador 1 */}
         <PlayerRow
@@ -117,27 +108,26 @@ export default function LiveScoreDisplay({
           setsWon={p1_sets}
           isFinished={isFinished}
           isWinner={isFinished && p1_sets > p2_sets}
-          rivalSets={p2_sets}
         />
 
         {/* Separador con puntuación del juego */}
         {!isFinished && (
-          <div
-            className="flex items-center justify-center py-3 mx-4 rounded-xl my-1"
-            style={{ background: 'rgba(0,0,0,0.25)' }}
-          >
+          <div className="flex items-center justify-center py-4 mx-4 rounded-xl my-1 bg-gray-50 border border-gray-100">
             <div className="flex items-center gap-5">
               {/* Puntos P1 */}
-              <span className={`text-4xl font-black tabular-nums leading-none ${
-                pointScore.label === 'Ad P1' ? 'text-yellow-300' : 'text-white'
-              }`}>
-                {pointScore.p1}
-              </span>
+              <div className="flex flex-col items-center">
+                <span className={`text-4xl font-black tabular-nums leading-none ${
+                  pointScore.label === 'Ad P1' ? 'text-emerald-600' : 'text-gray-900'
+                }`}>
+                  {pointScore.p1}
+                </span>
+                <span className="text-[10px] text-gray-400 mt-1 font-medium">{player1Name.split(' ')[0]}</span>
+              </div>
 
               {/* Label central (Deuce / Ad) */}
               <div className="flex flex-col items-center gap-0.5 min-w-[60px]">
                 {pointScore.label ? (
-                  <span className="rounded-full bg-white/10 px-3 py-0.5 text-[11px] font-bold uppercase tracking-widest text-emerald-300">
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-emerald-700">
                     {pointScore.label === 'Deuce'
                       ? 'Deuce'
                       : pointScore.label === 'Ad P1'
@@ -145,16 +135,19 @@ export default function LiveScoreDisplay({
                       : `Ad ${player2Name.split(' ')[0]}`}
                   </span>
                 ) : (
-                  <span className="text-gray-600 text-lg font-bold">—</span>
+                  <span className="text-gray-300 text-lg font-bold">—</span>
                 )}
               </div>
 
               {/* Puntos P2 */}
-              <span className={`text-4xl font-black tabular-nums leading-none ${
-                pointScore.label === 'Ad P2' ? 'text-yellow-300' : 'text-white'
-              }`}>
-                {pointScore.p2}
-              </span>
+              <div className="flex flex-col items-center">
+                <span className={`text-4xl font-black tabular-nums leading-none ${
+                  pointScore.label === 'Ad P2' ? 'text-emerald-600' : 'text-gray-900'
+                }`}>
+                  {pointScore.p2}
+                </span>
+                <span className="text-[10px] text-gray-400 mt-1 font-medium">{player2Name.split(' ')[0]}</span>
+              </div>
             </div>
           </div>
         )}
@@ -170,18 +163,17 @@ export default function LiveScoreDisplay({
           setsWon={p2_sets}
           isFinished={isFinished}
           isWinner={isFinished && p2_sets > p1_sets}
-          rivalSets={p1_sets}
         />
 
         {/* Franja inferior */}
-        <div className="px-4 py-2 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">
+        <div className="px-4 py-2.5 flex items-center justify-between bg-gray-50 border-t border-gray-100">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
             {format === 'standard' && 'Standard · Bo3 · 6 juegos'}
             {format === 'nextgen' && 'NextGen · Bo3 · 4 juegos'}
             {format === 'supertiebreak' && 'Super TB · Bo3'}
           </span>
           {isFinished && (
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">
               ✓ Finalizado
             </span>
           )}
@@ -203,7 +195,6 @@ interface PlayerRowProps {
   setsWon: number;
   isFinished: boolean;
   isWinner: boolean;
-  rivalSets: number;
 }
 
 function PlayerRow({
@@ -221,63 +212,62 @@ function PlayerRow({
   const lastName = name.split(' ').slice(1).join(' ');
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-3 transition-colors ${
-      isWinner ? 'bg-emerald-900/30' : ''
+    <div className={`flex items-center gap-3 px-4 py-3.5 transition-colors ${
+      isWinner ? 'bg-emerald-50' : 'bg-white'
     }`}>
-      {/* Avatar grande */}
+      {/* Serve indicator — pelota arriba del avatar */}
       <div className="relative shrink-0">
+        {/* Pelota de saque — visible y animada */}
+        {isServing && (
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10">
+            <span className="text-lg drop-shadow-md animate-bounce" style={{ animationDuration: '2s' }}>🎾</span>
+          </div>
+        )}
         {avatar ? (
           <img
             src={avatar}
             alt={name}
-            className="h-14 w-14 rounded-full object-cover"
-            style={{
-              border: isWinner
-                ? '2px solid #34d399'
+            className={`h-12 w-12 rounded-full object-cover ${
+              isWinner
+                ? 'ring-2 ring-emerald-500'
                 : isServing
-                ? '2px solid #fbbf24'
-                : '2px solid rgba(255,255,255,0.15)',
-              boxShadow: isServing ? '0 0 12px rgba(251,191,36,0.4)' : undefined,
-            }}
+                ? 'ring-2 ring-amber-400 shadow-md shadow-amber-200/50'
+                : 'ring-1 ring-gray-200'
+            }`}
           />
         ) : (
           <div
-            className="h-14 w-14 rounded-full flex items-center justify-center text-xl font-black text-white"
-            style={{
-              background: 'linear-gradient(135deg, #065f46, #047857)',
-              border: isWinner
-                ? '2px solid #34d399'
+            className={`h-12 w-12 rounded-full flex items-center justify-center text-lg font-black text-white ${
+              isWinner
+                ? 'ring-2 ring-emerald-500'
                 : isServing
-                ? '2px solid #fbbf24'
-                : '2px solid rgba(255,255,255,0.15)',
-            }}
+                ? 'ring-2 ring-amber-400 shadow-md shadow-amber-200/50'
+                : 'ring-1 ring-gray-200'
+            }`}
+            style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
           >
             {firstName.charAt(0).toUpperCase()}
           </div>
-        )}
-        {/* Indicador de saque sobre el avatar */}
-        {isServing && (
-          <span
-            className="absolute -bottom-1 -right-1 text-sm"
-            title="Saque"
-          >
-            🎾
-          </span>
         )}
       </div>
 
       {/* Nombre */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className={`text-lg font-black leading-tight ${
-            isWinner ? 'text-emerald-300' : 'text-white'
+          <span className={`text-base font-bold leading-tight ${
+            isWinner ? 'text-emerald-700' : 'text-gray-900'
           }`}>
             {firstName}
           </span>
+          {isServing && (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+              Saque
+            </span>
+          )}
           {isWinner && <span className="text-base">🏆</span>}
         </div>
         {lastName && (
-          <span className="text-xs font-medium text-gray-500 leading-tight block">
+          <span className="text-xs font-medium text-gray-400 leading-tight block">
             {lastName}
           </span>
         )}
@@ -292,31 +282,28 @@ function PlayerRow({
           return (
             <div key={i} className="flex flex-col items-center">
               <span className={`text-xl font-black tabular-nums leading-none ${
-                wonSet ? 'text-white' : 'text-gray-600'
+                wonSet ? 'text-gray-900' : 'text-gray-300'
               }`}>
                 {myGames}
               </span>
-              <span className="text-[9px] text-gray-700 uppercase tracking-wider">S{i + 1}</span>
+              <span className="text-[9px] text-gray-400 uppercase tracking-wider">S{i + 1}</span>
             </div>
           );
         })}
 
         {/* Games actuales o sets ganados */}
-        <div
-          className="flex flex-col items-center justify-center rounded-lg min-w-[2.5rem] h-10"
-          style={{
-            background: isFinished
-              ? (isWinner ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.05)')
-              : 'rgba(255,255,255,0.08)',
-          }}
-        >
+        <div className={`flex flex-col items-center justify-center rounded-lg min-w-[2.5rem] h-10 ${
+          isFinished
+            ? (isWinner ? 'bg-emerald-100' : 'bg-gray-50')
+            : 'bg-emerald-50'
+        }`}>
           <span className={`text-2xl font-black tabular-nums leading-none ${
-            isFinished && isWinner ? 'text-emerald-300' : 'text-white'
+            isFinished && isWinner ? 'text-emerald-700' : isFinished ? 'text-gray-400' : 'text-emerald-700'
           }`}>
             {isFinished ? setsWon : currentGames}
           </span>
-          <span className="text-[9px] text-gray-600 uppercase tracking-wider">
-            {isFinished ? 'sets' : 'juegos'}
+          <span className="text-[9px] text-gray-400 uppercase tracking-wider">
+            {isFinished ? 'sets' : 'games'}
           </span>
         </div>
       </div>

@@ -48,8 +48,8 @@ interface VenueSummary {
 const JSON_URL =
   "https://api.github.com/repos/jifones/booking_ppc/contents/data/court_availability.json";
 
-const PLATFORM_LABELS: Record<string, string> = { better: "Better", clubspark: "ClubSpark", parks: "Parks" };
-const PLATFORM_COLORS: Record<string, string> = { better: "bg-sky-100 text-sky-800", clubspark: "bg-amber-100 text-amber-800", parks: "bg-violet-100 text-violet-800" };
+const PLATFORM_LABELS: Record<string, string> = { better: "Better", clubspark: "ClubSpark", parks: "Parks", camden: "Camden" };
+const PLATFORM_COLORS: Record<string, string> = { better: "bg-sky-100 text-sky-800", clubspark: "bg-amber-100 text-amber-800", parks: "bg-violet-100 text-violet-800", camden: "bg-rose-100 text-rose-800" };
 const DAY_LABELS: Record<number, string> = { 0: "Dom", 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb" };
 
 const TIME_BLOCKS = [
@@ -89,6 +89,13 @@ const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; p
   { name: "Lloyd & Aveling Park", slug: "lloyd_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 4PP", lat: 51.585, lng: -0.028 },
   { name: "Hyde Park", slug: "hyde-park-courts", platform: "parks", postcode: "W2 2UH", lat: 51.507, lng: -0.170 },
   { name: "Regent's Park", slug: "the-regents-park-courts", platform: "parks", postcode: "NW1 4NR", lat: 51.527, lng: -0.153 },
+  { name: "Hackney Parks (Outdoor)", slug: "hackney-parks", platform: "better", postcode: "E9 5SF", lat: 51.543, lng: -0.046 },
+  { name: "Gunnersbury Park", slug: "gunnersbury-park-sports-hub", platform: "better", postcode: "W3 8LQ", lat: 51.492, lng: -0.283 },
+  { name: "Avondale Park", slug: "AvondalePark", platform: "clubspark", postcode: "W11 4EY", lat: 51.510, lng: -0.207 },
+  { name: "Kensington Memorial Park", slug: "KensingtonMemorialPark", platform: "clubspark", postcode: "W11 4QP", lat: 51.509, lng: -0.213 },
+  { name: "Chelmsford Square", slug: "ChelmsfordSquare", platform: "clubspark", postcode: "NW10 3AR", lat: 51.533, lng: -0.225 },
+  { name: "Ravenscourt Park", slug: "RavenscourtPark", platform: "clubspark", postcode: "W6 0UL", lat: 51.494, lng: -0.236 },
+  { name: "Kilburn Grange", slug: "kilburn-grange", platform: "camden", postcode: "NW6 2JH", lat: 51.543, lng: -0.198 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -274,10 +281,10 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
 
 // ─── Venue Card ───────────────────────────────────────────────────────────────
 
-function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, onSaveWatch }: {
+function VenueCard({ venue, filterDate, filterTimeRange, allDates, watchlist, onSaveWatch }: {
   venue: VenueSummary;
   filterDate: string;
-  filterTimeBlock: string;
+  filterTimeRange: [number, number];
   allDates: string[];
   watchlist: Set<string>;
   onSaveWatch: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[], notifyBy: string) => void;
@@ -290,7 +297,8 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
   // Filter slots
   const filteredSlots = venue.slots.filter(s => {
     if (filterDate !== "all" && s.date !== filterDate) return false;
-    if (filterTimeBlock !== "all" && !timeInBlock(s.start_time, filterTimeBlock)) return false;
+    const hour = getHour(s.start_time);
+    if (hour < filterTimeRange[0] || hour >= filterTimeRange[1]) return false;
     return true;
   });
 
@@ -325,17 +333,10 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
             <span className="text-gray-400 text-xs">{expanded ? "▼" : "▶"}</span>
             <div>
               <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{venue.name}</h3>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-gray-500">{venue.postcode}</span>
-                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${PLATFORM_COLORS[venue.platform] || "bg-gray-100"}`}>
-                  {PLATFORM_LABELS[venue.platform] || venue.platform}
-                </span>
-                {venue.distance != null && <span className="text-xs text-gray-400">{venue.distance.toFixed(1)} km</span>}
-              </div>
+              {venue.distance != null && <span className="text-xs text-gray-400">{venue.distance.toFixed(1)} km</span>}
             </div>
           </div>
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-            <span className="text-sm font-semibold text-emerald-700">{filteredSlots.length > 0 ? filteredSlots.length : "—"}</span>
             <button onClick={() => setShowWatch(!showWatch)}
               className={`text-xs px-2.5 py-1 rounded-md border transition flex items-center gap-1 ${
                 activeWatchCount > 0
@@ -361,7 +362,7 @@ function VenueCard({ venue, filterDate, filterTimeBlock, allDates, watchlist, on
             watchlist={watchlist}
             onSave={onSaveWatch}
             initialDate={filterDate}
-            initialTimeBlock={filterTimeBlock}
+            initialTimeBlock="all"
           />
         )}
       </div>
@@ -526,9 +527,9 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
   }, [venues, selectedVenue, userLat, userLng, reportVisible]);
 
   if (!userLat || !userLng) {
-    return <div className="w-full h-64 sm:h-80 rounded-xl border border-gray-200 shadow-sm bg-gray-50 flex items-center justify-center text-sm text-gray-400">Cargando mapa...</div>;
+    return <div className="w-full h-80 sm:h-[420px] rounded-xl border border-gray-200 shadow-sm bg-gray-50 flex items-center justify-center text-sm text-gray-400">Cargando mapa...</div>;
   }
-  return <div ref={mapRef} className="w-full h-64 sm:h-80 rounded-xl border border-gray-200 shadow-sm z-0" />;
+  return <div ref={mapRef} className="w-full h-80 sm:h-[420px] rounded-xl border border-gray-200 shadow-sm z-0" />;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -540,7 +541,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
   // Filters
   const [filterDate, setFilterDate] = React.useState<string>("all");
-  const [filterTimeBlock, setFilterTimeBlock] = React.useState<string>("all");
+  const [filterTimeRange, setFilterTimeRange] = React.useState<[number, number]>([7, 22]); // hour range
   const [filterVenues, setFilterVenues] = React.useState<Set<string>>(new Set()); // empty = show by proximity
   const [filterPlatform, setFilterPlatform] = React.useState<string>("all");
 
@@ -671,7 +672,8 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
       const distance = (userLat && userLng) ? haversineKm(userLat, userLng, sv.lat, sv.lng) : undefined;
       const filtered = slots.filter(s => {
         if (filterDate !== "all" && s.date !== filterDate) return false;
-        if (filterTimeBlock !== "all" && !timeInBlock(s.start_time, filterTimeBlock)) return false;
+        const hour = getHour(s.start_time);
+        if (hour < filterTimeRange[0] || hour >= filterTimeRange[1]) return false;
         return true;
       });
       summaries.push({ name: sv.name, slug: sv.slug, platform: sv.platform, postcode: sv.postcode,
@@ -685,7 +687,8 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
         const distance = (userLat && userLng) ? haversineKm(userLat, userLng, first.venue_lat, first.venue_lng) : undefined;
         const filtered = slots.filter(s => {
           if (filterDate !== "all" && s.date !== filterDate) return false;
-          if (filterTimeBlock !== "all" && !timeInBlock(s.start_time, filterTimeBlock)) return false;
+          const hour = getHour(s.start_time);
+          if (hour < filterTimeRange[0] || hour >= filterTimeRange[1]) return false;
           return true;
         });
         summaries.push({ name: first.venue_name, slug: first.venue_slug, platform: first.platform, postcode: first.venue_postcode,
@@ -699,7 +702,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
     });
 
     return filterPlatform === "all" ? summaries : summaries.filter(v => v.platform === filterPlatform);
-  }, [data, userLat, userLng, filterDate, filterTimeBlock, filterPlatform]);
+  }, [data, userLat, userLng, filterDate, filterTimeRange, filterPlatform]);
 
   const displayVenues = React.useMemo(() => {
     // If specific venues selected, show those first then the rest visible
@@ -781,14 +784,59 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
             ))}
           </div>
 
-          {/* Time block pills */}
-          <div className="flex gap-2 overflow-x-auto pb-3 mb-5 -mx-4 px-4 scrollbar-hide">
-            {TIME_BLOCKS.map(tb => (
-              <button key={tb.value} onClick={() => setFilterTimeBlock(tb.value)}
-                className={`text-sm px-4 py-2.5 rounded-full border whitespace-nowrap transition font-medium ${filterTimeBlock === tb.value ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
-                {tb.label}
-              </button>
-            ))}
+          {/* Time range slider */}
+          <div className="mb-5 px-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-medium text-gray-700">Horario</span>
+            </div>
+            {/* Bubble labels above slider */}
+            <div className="relative flex justify-between mb-2 px-1">
+              <div className="bg-gray-100 rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-800 shadow-sm border border-gray-200">
+                {filterTimeRange[0]}:00
+                <div className="absolute -bottom-1 left-5 w-2 h-2 bg-gray-100 border-b border-r border-gray-200 rotate-45" />
+              </div>
+              <div className="bg-gray-100 rounded-lg px-3 py-1.5 text-sm font-semibold text-gray-800 shadow-sm border border-gray-200">
+                {filterTimeRange[1]}:00
+                <div className="absolute -bottom-1 right-5 w-2 h-2 bg-gray-100 border-b border-r border-gray-200 rotate-45" />
+              </div>
+            </div>
+            {/* Dual range sliders */}
+            <div className="relative h-6 flex items-center">
+              {/* Track background */}
+              <div className="absolute inset-x-0 h-2 rounded-full bg-gray-200" />
+              {/* Active range highlight */}
+              <div
+                className="absolute h-2 rounded-full bg-emerald-600"
+                style={{
+                  left: `${((filterTimeRange[0] - 7) / 15) * 100}%`,
+                  right: `${100 - ((filterTimeRange[1] - 7) / 15) * 100}%`,
+                }}
+              />
+              {/* From slider */}
+              <input
+                type="range"
+                min={7}
+                max={21}
+                value={filterTimeRange[0]}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setFilterTimeRange([Math.min(v, filterTimeRange[1] - 1), filterTimeRange[1]]);
+                }}
+                className="absolute inset-x-0 h-2 appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-emerald-600 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer"
+              />
+              {/* To slider */}
+              <input
+                type="range"
+                min={8}
+                max={22}
+                value={filterTimeRange[1]}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value);
+                  setFilterTimeRange([filterTimeRange[0], Math.max(v, filterTimeRange[0] + 1)]);
+                }}
+                className="absolute inset-x-0 h-2 appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-emerald-600 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer"
+              />
+            </div>
           </div>
 
           {/* Venue + Platform filters */}
@@ -856,6 +904,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
                 <option value="better">Better</option>
                 <option value="clubspark">ClubSpark</option>
                 <option value="parks">Parks</option>
+                <option value="camden">Camden</option>
               </select>
             </div>
           </div>
@@ -893,7 +942,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
           {/* Venue cards */}
           <div className="space-y-3">
             {displayVenues.map(venue => (
-              <VenueCard key={venue.slug} venue={venue} filterDate={filterDate} filterTimeBlock={filterTimeBlock}
+              <VenueCard key={venue.slug} venue={venue} filterDate={filterDate} filterTimeRange={filterTimeRange}
                 allDates={availableDates} watchlist={watchlist} onSaveWatch={saveWatches} />
             ))}
           </div>

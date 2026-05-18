@@ -237,7 +237,7 @@ export default function LiveScoreboard({
       ? state.completed_sets.map((s) => `${s.p1}-${s.p2}`).join(' ') ||
         `${state.p1_games}-${state.p2_games}`
       : '';
-    const text = `🎾 Partido en vivo PPC: ${p1Name} vs ${p2Name}${scoreText ? `, ${scoreText}` : ''}. Seguilo acá: ${liveUrl}`;
+    const text = `🎾 Partido en vivo PPC: ${p1Name} vs ${p2Name}${scoreText ? `, ${scoreText}` : ''}. Síguelo en vivo: ${liveUrl}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     setShowShareMenu(false);
   };
@@ -301,8 +301,26 @@ export default function LiveScoreboard({
 
   // ── Partido ya finalizado (solo lectura) ────────────────────────────────────
   if (isFinished && state) {
+    const winnerName = state.p1_sets > state.p2_sets ? p1Name : p2Name;
+    const loserName = state.p1_sets > state.p2_sets ? p2Name : p1Name;
+    const scoreStr = state.completed_sets.map(s => `${s.p1}-${s.p2}`).join(' · ');
+
     return (
       <ScoreboardShell onBack={onBack} p1Name={p1Name} p2Name={p2Name} liveUrl={liveUrl}>
+        {/* Victory screen */}
+        <div className="text-center mb-6">
+          <div className="text-6xl mb-3">🏆</div>
+          <h2 className="text-2xl font-black text-gray-900 mb-1">
+            ¡{winnerName.split(' ')[0]} gana!
+          </h2>
+          <p className="text-lg font-semibold text-gray-600">
+            {scoreStr}
+          </p>
+          <p className="text-sm text-gray-400 mt-1">
+            vs {loserName.split(' ')[0]}
+          </p>
+        </div>
+
         <LiveScoreDisplay
           state={state}
           player1Name={p1Name}
@@ -311,9 +329,21 @@ export default function LiveScoreboard({
           player2Avatar={avatarUrl(player2)}
           connectionStatus="connected"
         />
-        <div className="mt-6 rounded-xl bg-emerald-900/30 p-4 text-center text-sm text-emerald-300 ring-1 ring-emerald-700/40">
-          🏆 Partido finalizado · Recuerda que puedes editar el partido para agregar pintas o anécdota.
+
+        {/* Undo para corregir si se cerró por error */}
+        {canEdit && canUndo && (
+          <button
+            onClick={undo}
+            className="mt-4 w-full rounded-xl py-3 font-semibold text-amber-700 bg-amber-50 border border-amber-200 transition-all hover:bg-amber-100"
+          >
+            ↩ Deshacer último punto (cerrado por error)
+          </button>
+        )}
+
+        <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-center text-sm text-emerald-700 border border-emerald-200">
+          🍺 Recuerda editar el partido después para agregar las pintas o cambiar algo.
         </div>
+
         <ShareButton
           showMenu={showShareMenu}
           onToggle={() => setShowShareMenu((v) => !v)}
@@ -321,6 +351,13 @@ export default function LiveScoreboard({
           onWhatsApp={handleShareWhatsApp}
           copyConfirm={copyConfirm}
         />
+
+        <button
+          onClick={onBack}
+          className="mt-4 w-full rounded-xl bg-emerald-600 py-4 text-lg font-bold text-white shadow-lg transition-all hover:bg-emerald-500"
+        >
+          ← Salir
+        </button>
       </ScoreboardShell>
     );
   }
@@ -439,15 +476,13 @@ export default function LiveScoreboard({
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => addPoint(1)}
-              className="rounded-2xl py-5 text-lg font-bold text-white shadow-lg transition-all active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #065f46, #047857)' }}
+              className="rounded-2xl py-5 text-lg font-bold text-white shadow-lg transition-all active:scale-95 bg-gradient-to-br from-emerald-500 to-emerald-700"
             >
               🎾 {p1Name.split(' ')[0]}
             </button>
             <button
               onClick={() => addPoint(2)}
-              className="rounded-2xl py-5 text-lg font-bold text-white shadow-lg transition-all active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #1e3a5f, #1d4ed8)' }}
+              className="rounded-2xl py-5 text-lg font-bold text-white shadow-lg transition-all active:scale-95 bg-gradient-to-br from-blue-500 to-blue-700"
             >
               🎾 {p2Name.split(' ')[0]}
             </button>
@@ -457,8 +492,7 @@ export default function LiveScoreboard({
           <button
             onClick={undo}
             disabled={!canUndo}
-            className="w-full rounded-xl py-3 font-semibold text-gray-200 transition-all disabled:cursor-not-allowed disabled:opacity-40"
-            style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+            className="w-full rounded-xl py-3 font-semibold text-gray-600 bg-gray-100 border border-gray-200 transition-all hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             ↩ Deshacer último punto
           </button>
@@ -467,8 +501,7 @@ export default function LiveScoreboard({
           <div>
             <button
               onClick={() => setShowAddEditor((v) => !v)}
-              className="w-full rounded-xl py-2.5 text-sm font-medium text-emerald-500 transition-all"
-              style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.15)' }}
+              className="w-full rounded-xl py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 transition-all hover:bg-emerald-100"
             >
               {showAddEditor ? '✕ Cancelar' : '+ Añadir editor adicional'}
             </button>
@@ -480,19 +513,18 @@ export default function LiveScoreboard({
                   value={editorSearch}
                   onChange={(e) => setEditorSearch(e.target.value)}
                   placeholder="Buscar jugador por nombre..."
-                  className="w-full rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 outline-none focus:ring-1 focus:ring-emerald-500"
-                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  className="w-full rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 bg-white border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
                 {editorResults.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => handleAddEditor(p.id)}
                     disabled={addingEditor || (state.editor_ids ?? []).includes(p.id)}
-                    className="flex w-full items-center gap-3 rounded-xl bg-gray-800 px-4 py-2.5 text-left text-sm text-white transition-all hover:bg-gray-700 disabled:opacity-50"
+                    className="flex w-full items-center gap-3 rounded-xl bg-white border border-gray-200 px-4 py-2.5 text-left text-sm text-gray-900 transition-all hover:bg-gray-50 disabled:opacity-50"
                   >
                     <span className="font-medium">{p.name}</span>
                     {(state.editor_ids ?? []).includes(p.id) && (
-                      <span className="ml-auto text-xs text-emerald-400">✓ Ya es editor</span>
+                      <span className="ml-auto text-xs text-emerald-600">✓ Ya es editor</span>
                     )}
                   </button>
                 ))}
@@ -506,26 +538,26 @@ export default function LiveScoreboard({
             {!showResetConfirm ? (
               <button
                 onClick={() => setShowResetConfirm(true)}
-                className="rounded-xl border border-yellow-800/40 bg-transparent py-2.5 text-sm font-medium text-yellow-500 transition-all hover:bg-yellow-950/40"
+                className="rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100"
               >
                 🔄 Reiniciar a 0
               </button>
             ) : (
-              <div className="col-span-2 rounded-xl bg-yellow-950/40 p-4 ring-1 ring-yellow-800/40">
-                <p className="mb-3 text-center text-sm font-medium text-yellow-300">
+              <div className="col-span-2 rounded-xl bg-amber-50 p-4 border border-amber-200">
+                <p className="mb-3 text-center text-sm font-medium text-amber-800">
                   ¿Reiniciar el marcador a 0-0? El partido sigue en vivo pero se borra todo el score actual.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => setShowResetConfirm(false)}
-                    className="rounded-xl bg-gray-700 py-2.5 text-sm font-semibold text-white hover:bg-gray-600"
+                    className="rounded-xl bg-gray-100 border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200"
                   >
                     No, continuar
                   </button>
                   <button
                     onClick={handleResetMatch}
                     disabled={resetting}
-                    className="rounded-xl bg-yellow-700 py-2.5 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50"
+                    className="rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
                   >
                     {resetting ? 'Reiniciando...' : 'Sí, reiniciar'}
                   </button>
@@ -538,26 +570,26 @@ export default function LiveScoreboard({
               !showCancelConfirm ? (
                 <button
                   onClick={() => setShowCancelConfirm(true)}
-                  className="rounded-xl border border-red-800/40 bg-transparent py-2.5 text-sm font-medium text-red-500 transition-all hover:bg-red-950/40"
+                  className="rounded-xl border border-red-300 bg-red-50 py-2.5 text-sm font-medium text-red-700 transition-all hover:bg-red-100"
                 >
                   ✕ Cancelar partido
                 </button>
               ) : (
-                <div className="col-span-2 rounded-xl bg-red-950/40 p-4 ring-1 ring-red-800/40">
-                  <p className="mb-3 text-center text-sm font-medium text-red-300">
-                    ¿Cancelar el partido? El marcador se borra y el partido vuelve a estado pendiente. No se guarda ningún resultado.
+                <div className="col-span-2 rounded-xl bg-red-50 p-4 border border-red-200">
+                  <p className="mb-3 text-center text-sm font-medium text-red-800">
+                    ¿Cancelar el partido? El marcador se borra y el partido vuelve a estado pendiente.
                   </p>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => setShowCancelConfirm(false)}
-                      className="rounded-xl bg-gray-700 py-2.5 text-sm font-semibold text-white hover:bg-gray-600"
+                      className="rounded-xl bg-gray-100 border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200"
                     >
                       No, continuar
                     </button>
                     <button
                       onClick={handleCancelMatch}
                       disabled={cancelling}
-                      className="rounded-xl bg-red-700 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+                      className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
                     >
                       {cancelling ? 'Cancelando...' : 'Sí, cancelar'}
                     </button>
@@ -579,6 +611,9 @@ export default function LiveScoreboard({
           copyConfirm={copyConfirm}
         />
       </div>
+
+      {/* Twitch embed */}
+      <TwitchEmbed />
     </ScoreboardShell>
   );
 }
@@ -599,24 +634,18 @@ function ScoreboardShell({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="min-h-screen px-4 py-6 sm:px-6"
-      style={{ background: 'linear-gradient(160deg, #0a1f14 0%, #0d2b1a 50%, #0a1a10 100%)' }}
-    >
+    <div className="min-h-screen px-4 py-6 sm:px-6 bg-gradient-to-br from-emerald-50 via-white to-gray-100">
       <div className="mx-auto max-w-lg">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <button
             onClick={onBack}
-            className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-emerald-400 transition-all hover:bg-emerald-900/30"
-            style={{ border: '1px solid rgba(52,211,153,0.2)' }}
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-emerald-700 transition-all hover:bg-emerald-100 border border-emerald-200"
           >
             ← Volver
           </button>
 
-          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest text-red-400"
-            style={{ background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.25)' }}
-          >
+          <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest text-red-600 bg-red-50 border border-red-200">
             <span className="animate-pulse">●</span> En vivo
           </span>
 
@@ -625,8 +654,8 @@ function ScoreboardShell({
 
         {/* Logo PPC pequeño + título */}
         <div className="mb-5 flex items-center justify-center gap-3">
-          <img src="/ppc-logo.png" alt="PPC" className="h-8 w-auto object-contain opacity-80" />
-          <h1 className="text-base font-bold text-emerald-400 uppercase tracking-widest">
+          <img src="/ppc-logo.png" alt="PPC" className="h-8 w-auto object-contain" />
+          <h1 className="text-base font-bold text-emerald-700 uppercase tracking-widest">
             Live Scoreboard
           </h1>
         </div>
@@ -653,29 +682,59 @@ function ShareButton({
   copyConfirm: boolean;
 }) {
   return (
-    <div className="relative">
+    <div className="relative mt-4">
       <button
         onClick={onToggle}
-        className="w-full rounded-xl bg-gray-800 py-3 text-sm font-semibold text-gray-300 transition-all hover:bg-gray-700"
+        className="w-full rounded-xl bg-gray-100 border border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-all hover:bg-gray-200"
       >
         {copyConfirm ? '✓ ¡Enlace copiado!' : '🔗 Compartir partido'}
       </button>
 
       {showMenu && (
-        <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl bg-gray-800 shadow-2xl ring-1 ring-white/10">
+        <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl bg-white shadow-xl border border-gray-200">
           <button
             onClick={onCopy}
-            className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-gray-700"
+            className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-all hover:bg-gray-50"
           >
             <span>📋</span> Copiar enlace
           </button>
-          <div className="h-px bg-white/10" />
+          <div className="h-px bg-gray-100" />
           <button
             onClick={onWhatsApp}
-            className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-white transition-all hover:bg-gray-700"
+            className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-gray-900 transition-all hover:bg-gray-50"
           >
             <span>💬</span> Compartir por WhatsApp
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── TwitchEmbed — Embed colapsable de Twitch ──────────────────────────────────
+
+function TwitchEmbed() {
+  const [expanded, setExpanded] = React.useState(() => window.innerWidth >= 1024);
+
+  return (
+    <div className="mt-5">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold text-purple-700 bg-purple-50 border border-purple-200 transition-all hover:bg-purple-100"
+      >
+        <span>📺 Twitch — PintaPost TV</span>
+        <span className={`text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {expanded && (
+        <div className="mt-2 rounded-xl overflow-hidden border border-purple-200 shadow-sm" style={{ aspectRatio: '16/9' }}>
+          <iframe
+            src="https://player.twitch.tv/?channel=pintaposttv&parent=ppctennis.vercel.app&parent=localhost"
+            width="100%"
+            height="100%"
+            allowFullScreen
+            className="w-full h-full"
+          />
         </div>
       )}
     </div>

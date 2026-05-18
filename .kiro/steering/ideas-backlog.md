@@ -142,11 +142,21 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - Reemplazar Google Sheets por pagos reales con Stripe
 - Jugadores pagan cuota directamente desde la web
 
-### 17. Plataforma para profesores de tenis
-- **Estado**: 💡 Idea
-- Dashboard donde el profesor sube horarios, precios, niveles
-- Alumnos buscan por ubicación/nivel/precio y reservan
-- No requiere scraping — datos ingresados directamente
+### 17. Plataforma para profesores de tenis (PlayCoach)
+- **Estado**: 🚧 En diseño — spec creada
+- **Proyecto independiente**: nuevo repo, nuevo Supabase, nuevo dominio
+- **Working name**: PlayCoach
+- **Spec**: `.kiro/specs/tennis-coach-platform/` (requirements + design)
+- **Stack**: React 19 + Vite + Supabase + Vercel (mismo que PPC pero proyecto separado)
+- **Modelo**: Marketplace tipo TeachMe.To pero para UK + Chile
+- **Competencia**: Superprof (sin agenda), Playtomic Academy (solo clubs), RacketCoach.app (solo scheduling)
+- **Ventaja**: Coach independiente + marketplace + clases grupales + alertas inteligentes + multi-mercado
+- **MVP (Fase 1)**: Coach profile + calendar + booking directo via link compartido
+- **Fase 2**: Marketplace/búsqueda + reviews + notificaciones + class packs
+- **Fase 3**: Stripe (suscripciones coach + pagos alumno) + multi-país
+- **Monetización**: Suscripción mensual para coaches (free trial 30 días)
+- **Mercados objetivo**: Londres (lanzamiento) → Chile → otros
+- **Fecha inicio diseño**: Mayo 2026
 
 ### 18. API pública del PPC
 - **Estado**: 💡 Idea
@@ -185,4 +195,4 @@ Registro de ideas discutidas, priorizadas por el usuario. Activar con `#ideas-ba
 - Activar con `#ideas-backlog` en el chat de Kiro
 - Las specs formales se crean en `.kiro/specs/` cuando una idea pasa a implementación
 - El roadmap resumido también está en `ppc-final.md` (steering principal)
-- Última actualización: 9 mayo 2026
+- Última actualización: 15 mayo 2026

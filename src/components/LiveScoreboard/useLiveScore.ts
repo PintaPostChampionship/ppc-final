@@ -44,6 +44,8 @@ export function useLiveScore(
 
   // Historial de undo en memoria (no se persiste en DB — solo para la sesión actual)
   const undoHistoryRef = useRef<LiveScoreState[]>([]);
+  // Force re-render when undo history changes
+  const [undoCount, setUndoCount] = useState(0);
 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -170,13 +172,20 @@ export function useLiveScore(
         ...undoHistoryRef.current.slice(-MAX_UNDO_HISTORY + 1),
         state,
       ];
+      setUndoCount(undoHistoryRef.current.length);
 
       const newState = calcAddPoint(state, player);
+
+      // Optimistic update — actualizar UI inmediatamente
+      setState(newState);
+
       const ok = await persistState(newState);
 
       if (!ok) {
-        // Revertir historial si falló
+        // Revertir si falló
         undoHistoryRef.current = undoHistoryRef.current.slice(0, -1);
+        setUndoCount(undoHistoryRef.current.length);
+        setState(state); // revertir al estado anterior
         setError('No se pudo guardar el punto. Inténtalo de nuevo.');
         return;
       }
@@ -195,14 +204,21 @@ export function useLiveScore(
 
     const prev = undoHistoryRef.current[undoHistoryRef.current.length - 1];
     undoHistoryRef.current = undoHistoryRef.current.slice(0, -1);
+    setUndoCount(undoHistoryRef.current.length);
+
+    // Optimistic update
+    const currentState = state;
+    setState(prev);
 
     const ok = await persistState(prev);
     if (!ok) {
-      // Restaurar historial si falló
+      // Restaurar si falló
       undoHistoryRef.current = [...undoHistoryRef.current, prev];
+      setUndoCount(undoHistoryRef.current.length);
+      setState(currentState);
       setError('No se pudo deshacer el punto. Inténtalo de nuevo.');
     }
-  }, [persistState]);
+  }, [state, persistState]);
 
   // ── addEditor ──────────────────────────────────────────────────────────────
 
@@ -250,14 +266,19 @@ export function useLiveScore(
         previous_match_status: previousMatchStatus,
       };
 
-      const { error: insertErr } = await supabase
+      const { data: inserted, error: insertErr } = await supabase
         .from('live_score_state')
-        .insert(init);
+        .insert(init)
+        .select()
+        .single();
 
       if (insertErr) {
         setError('No se pudo iniciar el partido. Inténtalo de nuevo.');
         return;
       }
+
+      // Actualizar estado local inmediatamente (no esperar Realtime)
+      if (inserted) setState(inserted as LiveScoreState);
 
       const { error: updateErr } = await supabase
         .from('matches')
@@ -270,6 +291,7 @@ export function useLiveScore(
 
       // Limpiar historial de undo al iniciar
       undoHistoryRef.current = [];
+      setUndoCount(0);
     },
     [matchId]
   );
@@ -355,6 +377,7 @@ export function useLiveScore(
       .eq('id', matchId);
 
     undoHistoryRef.current = [];
+    setUndoCount(0);
     return true;
   }, [matchId]);
 
@@ -397,6 +420,7 @@ export function useLiveScore(
       .eq('id', matchId);
 
     undoHistoryRef.current = [];
+    setUndoCount(0);
     return true;
   }, [state, matchId]);
 
@@ -405,7 +429,7 @@ export function useLiveScore(
     loading,
     error,
     connectionStatus,
-    canUndo: undoHistoryRef.current.length > 0,
+    canUndo: undoCount > 0,
     addPoint,
     undo,
     addEditor,
