@@ -428,7 +428,7 @@ function VenueCard({ venue, filterDate, filterTimeRange, allDates, watchlist, on
 
 // ─── Map ──────────────────────────────────────────────────────────────────────
 
-function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBoundsChange, controlRef }: {
+function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBoundsChange, controlRef, savedMapCenter, savedMapZoom, onMapMove }: {
   venues: VenueSummary[];
   onVenueClick: (slug: string) => void;
   selectedVenue: string | null;
@@ -436,6 +436,9 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
   userLng: number | null;
   onBoundsChange: (visibleSlugs: string[]) => void;
   controlRef: React.MutableRefObject<{ fitAll: () => void; panTo: (lat: number, lng: number) => void } | null>;
+  savedMapCenter?: [number, number] | null;
+  savedMapZoom?: number | null;
+  onMapMove?: (center: [number, number], zoom: number) => void;
 }) {
   const mapRef = React.useRef<HTMLDivElement>(null);
   const mapInstanceRef = React.useRef<any>(null);
@@ -447,7 +450,7 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
   const reportVisible = React.useCallback((map: any) => {
     if (!map) return;
     const bounds = map.getBounds();
-    const visible = allVenuesRef.current.filter(v => bounds.contains([v.lat, v.lng])).map(v => v.slug);
+    const visible = allVenuesRef.current.filter(v => bounds.contains([v.lat, v.lng])).map(v => v.name);
     onBoundsChange(visible);
   }, [onBoundsChange]);
 
@@ -470,8 +473,9 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
       const L = (window as any).L;
       if (!L || !mapRef.current) return;
       if (!mapInstanceRef.current) {
-        const center: [number, number] = userLat && userLng ? [userLat, userLng] : [51.50, -0.12];
-        const map = L.map(mapRef.current).setView(center, 13);
+        const center: [number, number] = savedMapCenter || (userLat && userLng ? [userLat, userLng] : [51.50, -0.12]);
+        const zoom = savedMapZoom || 13;
+        const map = L.map(mapRef.current).setView(center, zoom);
         mapInstanceRef.current = map;
         L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
           attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>', maxZoom: 19,
@@ -488,7 +492,13 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
           return div;
         };
         locBtn.addTo(map);
-        map.on("moveend", () => reportVisible(map));
+        map.on("moveend", () => {
+          reportVisible(map);
+          if (onMapMove) {
+            const c = map.getCenter();
+            onMapMove([c.lat, c.lng], map.getZoom());
+          }
+        });
         setTimeout(() => reportVisible(map), 200);
         // Expose control methods
         controlRef.current = {
@@ -506,7 +516,7 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
       for (const m of markersRef.current) map.removeLayer(m);
       markersRef.current = [];
       for (const venue of venues) {
-        const isSelected = venue.slug === selectedVenue;
+        const isSelected = venue.name === selectedVenue;
         const hasSlots = venue.totalSlots > 0;
         const icon = L.divIcon({
           className: "custom-marker",
@@ -516,10 +526,10 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
         });
         const marker = L.marker([venue.lat, venue.lng], { icon }).addTo(map);
         marker.bindPopup('<strong>' + venue.name + '</strong><br/>' + venue.totalSlots + ' slots · ' + venue.postcode);
-        marker.on("click", () => onVenueClick(venue.slug));
+        marker.on("click", () => onVenueClick(venue.name));
         markersRef.current.push(marker);
       }
-      if (!initializedRef.current && userLat && userLng) {
+      if (!initializedRef.current && userLat && userLng && !savedMapCenter) {
         map.setView([userLat, userLng], 13);
         initializedRef.current = true;
       }
@@ -539,18 +549,58 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Restore state from sessionStorage
+  const STORAGE_KEY = 'ppc_court_finder_state';
+  const savedState = React.useMemo(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Expire after 10 minutes
+      if (Date.now() - (parsed.timestamp ?? 0) > 10 * 60 * 1000) {
+        sessionStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
+      return parsed;
+    } catch { return null; }
+  }, []);
+
   // Filters
-  const [filterDate, setFilterDate] = React.useState<string>("all");
-  const [filterTimeRange, setFilterTimeRange] = React.useState<[number, number]>([7, 22]); // hour range
-  const [filterVenues, setFilterVenues] = React.useState<Set<string>>(new Set()); // empty = show by proximity
-  const [filterPlatform, setFilterPlatform] = React.useState<string>("all");
+  const [filterDate, setFilterDate] = React.useState<string>(savedState?.filterDate ?? "all");
+  const [filterTimeRange, setFilterTimeRange] = React.useState<[number, number]>(savedState?.filterTimeRange ?? [7, 22]);
+  const [filterVenues, setFilterVenues] = React.useState<Set<string>>(new Set(savedState?.filterVenues ?? []));
+  const [filterPlatform, setFilterPlatform] = React.useState<string>(savedState?.filterPlatform ?? "all");
 
   // Location
-  const [userLat, setUserLat] = React.useState<number | null>(null);
-  const [userLng, setUserLng] = React.useState<number | null>(null);
+  const [userLat, setUserLat] = React.useState<number | null>(savedState?.userLat ?? null);
+  const [userLng, setUserLng] = React.useState<number | null>(savedState?.userLng ?? null);
 
   // Watchlist
   const [watchlist, setWatchlist] = React.useState<Set<string>>(new Set());
+
+  // Show all mode
+  const [showAll, setShowAll] = React.useState(savedState?.showAll ?? false);
+
+  // Map position
+  const [mapCenter, setMapCenter] = React.useState<[number, number] | null>(savedState?.mapCenter ?? null);
+  const [mapZoom, setMapZoom] = React.useState<number | null>(savedState?.mapZoom ?? null);
+
+  // Persist state to sessionStorage on changes
+  React.useEffect(() => {
+    const state = {
+      filterDate,
+      filterTimeRange,
+      filterVenues: Array.from(filterVenues),
+      filterPlatform,
+      userLat,
+      userLng,
+      showAll,
+      mapCenter,
+      mapZoom,
+      timestamp: Date.now(),
+    };
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+  }, [filterDate, filterTimeRange, filterVenues, filterPlatform, userLat, userLng, showAll, mapCenter, mapZoom]);
 
   // Toast notification
   const [toast, setToast] = React.useState<string | null>(null);
@@ -567,14 +617,12 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   // Search
   const [searchQuery, setSearchQuery] = React.useState("");
 
-  // Show all mode
-  const [showAll, setShowAll] = React.useState(false);
-
   // Ref to map for programmatic control
   const mapControlRef = React.useRef<{ fitAll: () => void; panTo: (lat: number, lng: number) => void } | null>(null);
 
-  // Geolocation
+  // Geolocation — only fetch if not restored from session
   React.useEffect(() => {
+    if (userLat !== null && userLng !== null) return; // Already have location (from session or previous)
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => { setUserLat(pos.coords.latitude); setUserLng(pos.coords.longitude); },
@@ -707,8 +755,8 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   const displayVenues = React.useMemo(() => {
     // If specific venues selected, show those first then the rest visible
     if (filterVenues.size > 0) {
-      const selected = venues.filter(v => filterVenues.has(v.slug));
-      const rest = venues.filter(v => !filterVenues.has(v.slug) && visibleInMap.includes(v.slug));
+      const selected = venues.filter(v => filterVenues.has(v.name));
+      const rest = venues.filter(v => !filterVenues.has(v.name) && visibleInMap.includes(v.name));
       return [...selected, ...rest];
     }
 
@@ -717,7 +765,7 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
     // Show venues visible in the map viewport, sorted: with slots first, then by distance
     if (visibleInMap.length > 0) {
-      const visible = venues.filter(v => visibleInMap.includes(v.slug));
+      const visible = venues.filter(v => visibleInMap.includes(v.name));
       visible.sort((a, b) => {
         // Venues with slots first
         if (a.totalSlots > 0 && b.totalSlots === 0) return -1;
@@ -734,14 +782,6 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   }, [venues, filterVenues, visibleInMap, showAll]);
   const availableDates = React.useMemo(() => data ? [...new Set(data.slots.map(s => s.date))].sort() : [], [data]);
   const totalFiltered = displayVenues.reduce((sum, v) => sum + v.totalSlots, 0);
-
-  const toggleVenueFilter = (slug: string) => {
-    setFilterVenues(prev => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug); else next.add(slug);
-      return next;
-    });
-  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -854,9 +894,10 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
               {searchQuery.trim().length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto">
                   {venues.filter(v => v.name.toLowerCase().includes(searchQuery.toLowerCase()) || v.postcode.toLowerCase().includes(searchQuery.toLowerCase())).map(v => (
-                    <button key={v.slug} onClick={() => {
+                    <button key={v.name} onClick={() => {
                       setSearchQuery("");
                       setShowAll(false);
+                      setFilterVenues(new Set([v.name]));
                       if (mapControlRef.current) mapControlRef.current.panTo(v.lat, v.lng);
                     }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-emerald-50 transition flex justify-between items-center">
@@ -882,20 +923,6 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
                 }`}>
                 Todos ({venues.length})
               </button>
-              {(showAll ? venues : venues.filter(v => visibleInMap.includes(v.slug))).map(v => (
-                <button key={v.slug} onClick={() => {
-                  setShowAll(false);
-                  setFilterVenues(new Set());
-                  if (mapControlRef.current) mapControlRef.current.panTo(v.lat, v.lng);
-                }}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition ${
-                    filterVenues.has(v.slug)
-                      ? "bg-emerald-600 text-white border-emerald-600"
-                      : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"
-                  }`}>
-                  {v.name} {v.totalSlots > 0 && <span className="font-semibold">({v.totalSlots})</span>}
-                </button>
-              ))}
             </div>
             <div className="flex items-center gap-2">
               <select value={filterPlatform} onChange={(e) => setFilterPlatform(e.target.value)}
@@ -925,24 +952,28 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
           {/* Map */}
           <div className="mb-4">
-            <CourtMap venues={venues} onVenueClick={(slug) => {
-              const venue = venues.find(v => v.slug === slug);
+            <CourtMap venues={venues} onVenueClick={(name) => {
+              const venue = venues.find(v => v.name === name);
               if (venue && mapControlRef.current) {
                 mapControlRef.current.panTo(venue.lat, venue.lng);
               }
-              setFilterVenues(new Set([slug]));
+              setFilterVenues(new Set([name]));
               setShowAll(false);
             }}
               selectedVenue={filterVenues.size === 1 ? Array.from(filterVenues)[0] : null}
               userLat={userLat} userLng={userLng}
               onBoundsChange={setVisibleInMap}
-              controlRef={mapControlRef} />
+              controlRef={mapControlRef}
+              savedMapCenter={mapCenter}
+              savedMapZoom={mapZoom}
+              onMapMove={(center, zoom) => { setMapCenter(center); setMapZoom(zoom); }}
+            />
           </div>
 
           {/* Venue cards */}
           <div className="space-y-3">
             {displayVenues.map(venue => (
-              <VenueCard key={venue.slug} venue={venue} filterDate={filterDate} filterTimeRange={filterTimeRange}
+              <VenueCard key={venue.name} venue={venue} filterDate={filterDate} filterTimeRange={filterTimeRange}
                 allDates={availableDates} watchlist={watchlist} onSaveWatch={saveWatches} />
             ))}
           </div>
