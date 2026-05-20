@@ -96,6 +96,8 @@ const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; p
   { name: "Chelmsford Square", slug: "ChelmsfordSquare", platform: "clubspark", postcode: "NW10 3AR", lat: 51.533, lng: -0.225 },
   { name: "Ravenscourt Park", slug: "RavenscourtPark", platform: "clubspark", postcode: "W6 0UL", lat: 51.494, lng: -0.236 },
   { name: "Kilburn Grange", slug: "kilburn-grange", platform: "camden", postcode: "NW6 2JH", lat: 51.543, lng: -0.198 },
+  { name: "Waterlow Park", slug: "waterlow-park", platform: "camden", postcode: "N6 5HG", lat: 51.569, lng: -0.147 },
+  { name: "Victoria Park", slug: "VictoriaPark11", platform: "clubspark", postcode: "E9 7DE", lat: 51.536, lng: -0.040 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
