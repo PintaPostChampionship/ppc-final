@@ -215,14 +215,8 @@ function PlayerRow({
     <div className={`flex items-center gap-3 px-4 py-3.5 transition-colors ${
       isWinner ? 'bg-emerald-50' : 'bg-white'
     }`}>
-      {/* Serve indicator — pelota arriba del avatar */}
+      {/* Serve indicator — pelota grande al lado del avatar */}
       <div className="relative shrink-0">
-        {/* Pelota de saque — visible y animada */}
-        {isServing && (
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10">
-            <span className="text-lg drop-shadow-md animate-bounce" style={{ animationDuration: '2s' }}>🎾</span>
-          </div>
-        )}
         {avatar ? (
           <img
             src={avatar}
@@ -249,6 +243,13 @@ function PlayerRow({
             {firstName.charAt(0).toUpperCase()}
           </div>
         )}
+        {/* Pelota de tenis como indicador de saque */}
+        {isServing && (
+          <div className="absolute -top-1 -right-1 z-10">
+            <div className="w-5 h-5 rounded-full bg-[#ccff00] border-2 border-[#a8d600] shadow-md" 
+                 title="Saque" />
+          </div>
+        )}
       </div>
 
       {/* Nombre */}
@@ -259,11 +260,6 @@ function PlayerRow({
           }`}>
             {firstName}
           </span>
-          {isServing && (
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-              Saque
-            </span>
-          )}
           {isWinner && <span className="text-base">🏆</span>}
         </div>
         {lastName && (
