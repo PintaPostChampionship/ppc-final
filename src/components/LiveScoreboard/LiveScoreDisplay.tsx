@@ -245,9 +245,8 @@ function PlayerRow({
         )}
         {/* Pelota de tenis como indicador de saque */}
         {isServing && (
-          <div className="absolute -top-1 -right-1 z-10">
-            <div className="w-5 h-5 rounded-full bg-[#ccff00] border-2 border-[#a8d600] shadow-md" 
-                 title="Saque" />
+          <div className="absolute -top-2.5 -right-2.5 z-10">
+            <span className="text-3xl drop-shadow-lg">🎾</span>
           </div>
         )}
       </div>
