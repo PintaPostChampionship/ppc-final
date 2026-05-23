@@ -8368,7 +8368,6 @@ const App = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PJ</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">G</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">D</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SG</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SP</th>
@@ -8401,7 +8400,6 @@ const App = () => {
                           <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{playerStats.points}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{playerStats.wins + playerStats.losses}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">{playerStats.wins}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 font-medium">0</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">{playerStats.losses}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{playerStats.sets_won}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{playerStats.sets_lost}</td>
@@ -9884,7 +9882,6 @@ const App = () => {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PJ</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">G</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">D</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SG</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SP</th>
@@ -9923,8 +9920,8 @@ const App = () => {
                                 <div className="flex flex-col items-center gap-1">
                                   <PaymentStatusIcon status={paymentMap.get(stats.profile_id)} />
                                   {paymentMap.get(stats.profile_id) === 'pendiente' && (currentUser?.id === stats.profile_id || currentUser?.role === 'admin') && (
-                                    <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap">
-                                      Ya pagué
+                                    <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap cursor-pointer hover:bg-green-200 transition">
+                                      Confirmar
                                     </span>
                                   )}
                                 </div>
@@ -9971,7 +9968,6 @@ const App = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_won}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_lost}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{stats.set_diff}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-amber-700">{stats.pints}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <span className="text-lg">🍻</span>
@@ -9983,7 +9979,7 @@ const App = () => {
                         })
                       ) : (
                         <tr>
-                          <td colSpan={12} className="px-6 py-4 text-center text-gray-500">
+                          <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
                             Aún no hay jugadores en esta división
                           </td>
                         </tr>
