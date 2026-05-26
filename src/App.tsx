@@ -2931,7 +2931,7 @@ const App = () => {
             {/* Active tournaments + divisions */}
             {activeTournaments.length > 0 && (
               <NavTournamentsSection
-                tournaments={activeTournaments}
+                tournaments={activeTournaments.filter(t => t.format !== 'knockout')}
                 divisions={divisions}
                 registrations={registrations}
                 onSelectTournament={(t: Tournament) => {
