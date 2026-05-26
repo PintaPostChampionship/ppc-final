@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Tournament, Match, Profile, HistoricPlayer, MatchSet } from '../types';
 import { uiName } from '../lib/displayUtils';
 import { supabase } from '../lib/supabaseClient';
@@ -71,16 +71,8 @@ export async function advanceWinner(match: Match, supabaseClient: any) {
 
   // 1) Si NO existe → crear el partido
   if (!existing) {
-    // Fechas por defecto según la ronda
-    let defaultDate = new Date().toISOString().split('T')[0];
-
-    if (nextRound === 'QF') {
-      defaultDate = '2026-01-31';
-    } else if (nextRound === 'SF') {
-      defaultDate = '2026-02-28';
-    } else if (nextRound === 'F') {
-      defaultDate = '2026-03-31';
-    }
+    // Fecha por defecto: hoy (los jugadores la editarán después)
+    const defaultDate = new Date().toISOString().split('T')[0];
 
     await supabaseClient.from('matches').insert({
       tournament_id: match.tournament_id,
@@ -279,8 +271,29 @@ export function BracketView({
     return null;
   };
 
-  const getProfile = (id?: string | null) =>
-    id ? profiles.find(p => p.id === id) ?? null : null;
+  // Collapsible round sections — default: first incomplete round open, rest closed
+  const [openRounds, setOpenRounds] = useState<Record<string, boolean>>(() => {
+    const rounds = ['R16', 'QF', 'SF', 'F'] as const;
+    const initial: Record<string, boolean> = {};
+    let foundIncomplete = false;
+    for (const round of rounds) {
+      const roundMatches = matches.filter(m => m.knockout_round === round);
+      const allPlayed = roundMatches.length > 0 && roundMatches.every(m => m.status === 'played');
+      if (!allPlayed && !foundIncomplete) {
+        initial[round] = true; // open the first incomplete round
+        foundIncomplete = true;
+      } else {
+        initial[round] = false;
+      }
+    }
+    // If all rounds are complete, open the Final
+    if (!foundIncomplete) initial['F'] = true;
+    return initial;
+  });
+
+  const toggleRound = (round: string) => {
+    setOpenRounds(prev => ({ ...prev, [round]: !prev[round] }));
+  };
 
   const byRound = (
     round: 'R16' | 'QF' | 'SF' | 'F',
@@ -378,25 +391,16 @@ export function BracketView({
 
           {/* QF izquierda */}
           <div className="space-y-12 mt-12">
-            {qfLeft.map((m, idx) => {
-              const hasOnlyOne = !!m?.home_player_id && !m?.away_player_id;
-              const forceSingleBottom = idx === 1;
-              const pTop = hasOnlyOne && forceSingleBottom ? null : getProfile(m?.home_player_id);
-              const pBottom = hasOnlyOne && forceSingleBottom
-                ? getProfile(m?.home_player_id)
-                : getProfile(m?.away_player_id);
-
-              return (
-                <BracketMatchCard
-                  key={`qf-L-${idx}`}
-                  match={m}
-                  player1={pTop}
-                  player2={pBottom}
-                  header={idx === 0 ? 'Cuartos de final' : undefined}
-                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-                />
-              );
-            })}
+            {qfLeft.map((m, idx) => (
+              <BracketMatchCard
+                key={`qf-L-${idx}`}
+                match={m}
+                player1={getPlayer(getMatchHomeId(m))}
+                player2={getPlayer(getMatchAwayId(m))}
+                header={idx === 0 ? 'Cuartos de final' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
           </div>
 
           {/* Centro: SF + Final */}
@@ -406,8 +410,8 @@ export function BracketView({
                 <BracketMatchCard
                   key={`sf-${idx}`}
                   match={m}
-                  player1={getProfile(getMatchHomeId(m))}
-                  player2={getProfile(getMatchAwayId(m))}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
                   header={idx === 0 ? 'Semifinales' : undefined}
                   sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
                 />
@@ -415,13 +419,13 @@ export function BracketView({
             </div>
 
             <div className="mt-10 flex flex-col items-center">
-              <div className="text-center mb-2 text-[11px] uppercase tracking-[0.2em] text-yellow-300">
+              <div className="text-center mb-2 text-[11px] uppercase tracking-[0.2em] text-emerald-600 font-semibold">
                 Final
               </div>
               <BracketMatchCard
                 match={finalMatch}
-                player1={getProfile(getMatchHomeId(finalMatch))}
-                player2={getProfile(getMatchAwayId(finalMatch))}
+                player1={getPlayer(getMatchHomeId(finalMatch))}
+                player2={getPlayer(getMatchAwayId(finalMatch))}
                 sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
               />
 
@@ -462,25 +466,16 @@ export function BracketView({
 
           {/* QF derecha */}
           <div className="space-y-12 mt-12">
-            {qfRight.map((m, idx) => {
-              const hasOnlyOne = !!m?.home_player_id && !m?.away_player_id;
-              const forceSingleBottom = idx === 0;
-              const pTop = hasOnlyOne && forceSingleBottom ? null : getProfile(m?.home_player_id);
-              const pBottom = hasOnlyOne && forceSingleBottom
-                ? getProfile(m?.home_player_id)
-                : getProfile(m?.away_player_id);
-
-              return (
-                <BracketMatchCard
-                  key={`qf-R-${idx}`}
-                  match={m}
-                  player1={pTop}
-                  player2={pBottom}
-                  header={idx === 0 ? 'Cuartos de final' : undefined}
-                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
-                />
-              );
-            })}
+            {qfRight.map((m, idx) => (
+              <BracketMatchCard
+                key={`qf-R-${idx}`}
+                match={m}
+                player1={getPlayer(getMatchHomeId(m))}
+                player2={getPlayer(getMatchAwayId(m))}
+                header={idx === 0 ? 'Cuartos de final' : undefined}
+                sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+              />
+            ))}
           </div>
 
           {/* R16 derecha */}
@@ -489,8 +484,8 @@ export function BracketView({
               <BracketMatchCard
                 key={`r16-R-${idx}`}
                 match={m}
-                player1={getProfile(getMatchHomeId(m))}
-                player2={getProfile(getMatchAwayId(m))}
+                player1={getPlayer(getMatchHomeId(m))}
+                player2={getPlayer(getMatchAwayId(m))}
                 header={idx === 0 ? 'Ronda de 16' : undefined}
                 sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
               />
@@ -501,192 +496,256 @@ export function BracketView({
         </div>
       </div>
 
-      {/* Panel inferior: lista de partidos y acciones */}
-      <div className="px-4 pb-8 mt-6">
-        <h2 className="text-sm sm:text-base font-semibold text-slate-900 mb-3">
+      {/* Panel inferior: lista de partidos separada por ronda */}
+      <div className="px-4 pb-8 mt-6 max-w-6xl mx-auto">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-6">
           Partidos y resultados
         </h2>
 
-        {/* Desktop: tabla */}
-        <div className="hidden sm:block bg-white/95 border border-slate-200 rounded-2xl overflow-hidden shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-          <table className="min-w-full text-xs sm:text-sm">
-            <thead className="bg-gradient-to-r from-emerald-50 via-cyan-50 to-sky-50 text-slate-600 uppercase text-[11px]">
-              <tr>
-                <th className="px-3 py-2 text-left">Ronda</th>
-                <th className="px-3 py-2 text-left">Partido</th>
-                <th className="px-3 py-2 text-middle">Fecha</th>
-                <th className="px-3 py-2 text-middle">Lugar</th>
-                <th className="px-3 py-2 text-middle">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {["R16", "QF", "SF", "F"].map((round) => {
-                const roundLabel =
-                  round === "R16"
-                    ? "Ronda de 16"
-                    : round === "QF"
-                    ? "Cuartos de final"
-                    : round === "SF"
-                    ? "Semifinales"
-                    : "Final";
-
-                const roundMatches = matches
-                  .filter((m) => m.knockout_round === round)
-                  .sort((a, b) => {
-                    const da = a.date || "";
-                    const db = b.date || "";
-                    if (da !== db) return da.localeCompare(db);
-                    const ta = a.time || "";
-                    const tb = b.time || "";
-                    return ta.localeCompare(tb);
-                  });
-
-                if (roundMatches.length === 0) return null;
-
-                return roundMatches.map((m) => {
-                  const p1 = profiles.find((p) => p.id === m.home_player_id) || null;
-                  const p2 = m.away_player_id
-                    ? profiles.find((p) => p.id === m.away_player_id) || null
-                    : null;
-
-                  const dateText = m.date ? m.date.slice(0, 10) : "Por definir";
-                  const timeText = m.time ? m.time.slice(0, 5) : "";
-                  const placeText = m.location_details || "Por definir";
-
-                  return (
-                    <tr key={m.id} className="hover:bg-emerald-50/50">
-                      <td className="px-3 py-2 align-top text-slate-600">
-                        {roundLabel}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                          <span>
-                            {p1?.name ?? "Por definir"}
-                            {p2 ? ` vs ${p2.name}` : " vs —"}
-                          </span>
-                          {m.status === "played" && (
-                            <span className="text-[15px] text-lime-300 font-semibold">
-                              (jugado)
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 align-top text-slate-700">
-                        {dateText}
-                        {timeText && (
-                          <span className="ml-1 text-slate-400">· {timeText}</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 align-top text-slate-700">
-                        {placeText}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <div className="flex flex-wrap gap-2 justify-end">
-                        {canEditSchedule(m) && (
-                          <button
-                            onClick={() => onEditSchedule(m)}
-                            className="px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 text-[11px] sm:text-xs"
-                          >
-                            Editar horario
-                          </button>
-                        )}
-                        {canEditSchedule(m) && (
-                          <button
-                            onClick={() => onEditResult(m)}
-                            className="px-2.5 py-1 rounded-full bg-emerald-500 text-white hover:bg-emerald-600 text-[11px] sm:text-xs"
-                          >
-                            Agregar resultados
-                          </button>
-                        )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                });
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile: tarjetas */}
-        <div className="sm:hidden space-y-3">
-          {["R16", "QF", "SF", "F"].map((round) => {
-            const roundLabel =
-              round === "R16"
-                ? "Ronda de 16"
-                : round === "QF"
-                ? "Cuartos de final"
-                : round === "SF"
-                ? "Semifinales"
-                : "Final";
+        <div className="space-y-8">
+          {(["R16", "QF", "SF", "F"] as const).map((round) => {
+            const roundConfig = {
+              R16: { label: "Ronda de 16", icon: "🎯", color: "emerald" },
+              QF: { label: "Cuartos de final", icon: "⚡", color: "sky" },
+              SF: { label: "Semifinales", icon: "🔥", color: "amber" },
+              F: { label: "Final", icon: "🏆", color: "yellow" },
+            }[round];
 
             const roundMatches = matches
               .filter((m) => m.knockout_round === round)
-              .sort((a, b) => {
-                const da = a.date || "";
-                const db = b.date || "";
-                if (da !== db) return da.localeCompare(db);
-                return (a.time || "").localeCompare(b.time || "");
-              });
+              .sort((a, b) => (a.bracket_position ?? 0) - (b.bracket_position ?? 0));
 
             if (roundMatches.length === 0) return null;
 
-            return roundMatches.map((m) => {
-              const p1 = profiles.find((p) => p.id === m.home_player_id) || null;
-              const p2 = m.away_player_id
-                ? profiles.find((p) => p.id === m.away_player_id) || null
-                : null;
+            const playedCount = roundMatches.filter(m => m.status === 'played').length;
+            const totalCount = roundMatches.length;
 
-              const dateText = m.date ? m.date.slice(0, 10) : "Por definir";
-              const timeText = m.time ? m.time.slice(0, 5) : "";
-              const placeText = m.location_details || "Por definir";
-
-              return (
-                <div
-                  key={m.id}
-                  className="bg-white/95 border border-slate-200 rounded-2xl p-4 shadow-sm"
+            return (
+              <div key={round} className="bg-white/95 border border-slate-200 rounded-2xl overflow-hidden shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+                {/* Round header — clickeable para abrir/cerrar */}
+                <button
+                  type="button"
+                  onClick={() => toggleRound(round)}
+                  className="w-full px-4 sm:px-5 py-3 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                      {roundLabel}
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">{roundConfig.icon}</span>
+                    <h3 className="text-sm sm:text-base font-bold text-slate-800">
+                      {roundConfig.label}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      {playedCount}/{totalCount} jugados
                     </span>
-                    {m.status === "played" && (
-                      <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        ✓ Jugado
+                    {playedCount === totalCount && totalCount > 0 && (
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        ✓ Completa
                       </span>
                     )}
+                    <svg
+                      className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${openRounds[round] ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
+                </button>
 
-                  <p className="text-sm font-medium text-slate-800 mb-2">
-                    {p1?.name ?? "Por definir"}
-                    <span className="text-slate-400 mx-1">vs</span>
-                    {p2?.name ?? "—"}
-                  </p>
+                {openRounds[round] && (<>
+                {/* Desktop table */}
+                <div className="hidden sm:block">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] uppercase text-slate-500 tracking-wider border-b border-slate-100">
+                        <th className="px-4 py-2.5 text-left font-medium">#</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Partido</th>
+                        <th className="px-4 py-2.5 text-center font-medium">Resultado</th>
+                        <th className="px-4 py-2.5 text-center font-medium">Fecha</th>
+                        <th className="px-4 py-2.5 text-center font-medium">Lugar</th>
+                        <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {roundMatches.map((m, idx) => {
+                        const p1 = getPlayer(m.home_player_id);
+                        const p2 = m.away_player_id ? getPlayer(m.away_player_id) : null;
 
-                  <div className="text-xs text-slate-500 space-y-0.5 mb-3">
-                    <div>📅 {dateText}{timeText && ` · ${timeText}`}</div>
-                    <div>📍 {placeText}</div>
-                  </div>
+                        const mSets = matchSets
+                          .filter(s => s.match_id === m.id)
+                          .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
+                        const scoreText = mSets.length > 0
+                          ? mSets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ')
+                          : '';
 
-                  {canEditSchedule(m) && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => onEditSchedule(m)}
-                        className="flex-1 py-2 rounded-xl bg-sky-50 text-sky-700 border border-sky-200 text-xs font-medium"
-                      >
-                        Editar horario
-                      </button>
-                      <button
-                        onClick={() => onEditResult(m)}
-                        className="flex-1 py-2 rounded-xl bg-emerald-500 text-white text-xs font-medium"
-                      >
-                        Agregar resultados
-                      </button>
-                    </div>
-                  )}
+                        const dateText = m.date ? m.date.slice(0, 10) : "—";
+                        const timeText = m.time ? m.time.slice(0, 5) : "";
+                        const placeText = m.location_details || "—";
+
+                        const isPlayed = m.status === 'played';
+
+                        return (
+                          <tr key={m.id} className={`transition-colors ${isPlayed ? 'bg-emerald-50/30' : 'hover:bg-slate-50'}`}>
+                            <td className="px-4 py-3 text-slate-400 font-mono text-xs">
+                              {round}{m.bracket_position ?? idx + 1}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  {p1?.avatar_url && (
+                                    <img src={p1.avatar_url} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-white" />
+                                  )}
+                                  <span className={`font-medium ${isPlayed && m.player1_sets_won > m.player2_sets_won ? 'text-emerald-700' : 'text-slate-800'}`}>
+                                    {p1 ? uiName(p1.name) : 'Por definir'}
+                                  </span>
+                                </div>
+                                <span className="text-slate-400 text-xs">vs</span>
+                                <div className="flex items-center gap-1.5">
+                                  {p2?.avatar_url && (
+                                    <img src={p2.avatar_url} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-white" />
+                                  )}
+                                  <span className={`font-medium ${isPlayed && m.player2_sets_won > m.player1_sets_won ? 'text-emerald-700' : 'text-slate-800'}`}>
+                                    {p2 ? uiName(p2.name) : <span className="text-slate-400 italic">Esperando rival</span>}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {isPlayed && scoreText ? (
+                                <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">
+                                  {scoreText}
+                                </span>
+                              ) : isPlayed ? (
+                                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  Jugado
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center text-xs text-slate-600">
+                              {dateText !== '—' ? dateText : <span className="text-slate-400">—</span>}
+                              {timeText && <span className="text-slate-400 ml-1">· {timeText}</span>}
+                            </td>
+                            <td className="px-4 py-3 text-center text-xs text-slate-600">
+                              {placeText !== '—' ? placeText : <span className="text-slate-400">—</span>}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-1.5 justify-end">
+                                {canEditSchedule(m) && (
+                                  <button
+                                    onClick={() => onEditSchedule(m)}
+                                    className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 text-[11px] font-medium transition-colors"
+                                  >
+                                    📅 Horario
+                                  </button>
+                                )}
+                                {canEditSchedule(m) && (
+                                  <button
+                                    onClick={() => onEditResult(m)}
+                                    className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 text-[11px] font-medium transition-colors"
+                                  >
+                                    ✏️ Resultado
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              );
-            });
+
+                {/* Mobile cards */}
+                <div className="sm:hidden divide-y divide-slate-100">
+                  {roundMatches.map((m, idx) => {
+                    const p1 = getPlayer(m.home_player_id);
+                    const p2 = m.away_player_id ? getPlayer(m.away_player_id) : null;
+
+                    const mSets = matchSets
+                      .filter(s => s.match_id === m.id)
+                      .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
+                    const scoreText = mSets.length > 0
+                      ? mSets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ')
+                      : '';
+
+                    const dateText = m.date ? m.date.slice(0, 10) : "Por definir";
+                    const timeText = m.time ? m.time.slice(0, 5) : "";
+                    const placeText = m.location_details || "Por definir";
+                    const isPlayed = m.status === 'played';
+
+                    return (
+                      <div key={m.id} className={`px-4 py-3.5 ${isPlayed ? 'bg-emerald-50/30' : ''}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-mono text-slate-400 uppercase">
+                            {round}{m.bracket_position ?? idx + 1}
+                          </span>
+                          {isPlayed && scoreText && (
+                            <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
+                              {scoreText}
+                            </span>
+                          )}
+                          {isPlayed && !scoreText && (
+                            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              ✓ Jugado
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-1.5">
+                            {p1?.avatar_url && (
+                              <img src={p1.avatar_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+                            )}
+                            <span className={`text-sm font-medium ${isPlayed && m.player1_sets_won > m.player2_sets_won ? 'text-emerald-700' : 'text-slate-800'}`}>
+                              {p1 ? uiName(p1.name) : 'TBD'}
+                            </span>
+                          </div>
+                          <span className="text-slate-400 text-xs">vs</span>
+                          <div className="flex items-center gap-1.5">
+                            {p2?.avatar_url && (
+                              <img src={p2.avatar_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+                            )}
+                            <span className={`text-sm font-medium ${isPlayed && m.player2_sets_won > m.player1_sets_won ? 'text-emerald-700' : 'text-slate-800'}`}>
+                              {p2 ? uiName(p2.name) : <span className="text-slate-400 italic text-xs">Esperando rival</span>}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div className="text-[11px] text-slate-500">
+                            {dateText !== 'Por definir' && <span>📅 {dateText}{timeText && ` · ${timeText}`}</span>}
+                            {placeText !== 'Por definir' && <span className="ml-2">📍 {placeText}</span>}
+                          </div>
+
+                          {canEditSchedule(m) && (
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => onEditSchedule(m)}
+                                className="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-medium"
+                              >
+                                📅
+                              </button>
+                              <button
+                                onClick={() => onEditResult(m)}
+                                className="px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-medium"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                </>)}
+              </div>
+            );
           })}
         </div>
       </div>

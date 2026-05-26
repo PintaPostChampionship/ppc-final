@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
 
@@ -76,9 +77,13 @@ export function usePushNotifications(profileId: string | null): UsePushNotificat
       });
 
       // Send to backend
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/push-subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({
           profile_id: profileId,
           subscription: subscription.toJSON(),
@@ -114,9 +119,13 @@ export function usePushNotifications(profileId: string | null): UsePushNotificat
         await subscription.unsubscribe();
 
         // Remove from backend
+        const { data: { session } } = await supabase.auth.getSession();
         await fetch('/api/push-subscribe', {
           method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+          },
           body: JSON.stringify({
             profile_id: profileId,
             endpoint: subscription.endpoint,

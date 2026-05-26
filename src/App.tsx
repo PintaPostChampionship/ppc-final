@@ -5,8 +5,10 @@ import type { Session, User } from '@supabase/supabase-js';
 import FindTennisCourt from './components/FindTennisCourt';
 import BuscarClases from './components/BuscarClases';
 import CourtFinder from './components/CourtFinder';
+import { AdminDashboard } from './components/AdminDashboard';
 import LiveScoreboard from './components/LiveScoreboard/LiveScoreboard';
 import LiveMatchBanner from './components/LiveScoreboard/LiveMatchBanner';
+import FriendlyMatchCreator from './components/FriendlyMatchCreator';
 import { isEditor } from './components/LiveScoreboard/liveScoreUtils';
 import { usePaymentStatus } from './hooks/usePaymentStatus';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -19,7 +21,7 @@ import { getPlayerStatsSummaryAll, getLeagueRegistrationsForPlayer, getLastLeagu
 import { toTitleCase, uiName, capitaliseFirst, divisionLogoSrc, divisionColors, divisionIcon, tournamentLogoSrc } from './lib/displayUtils';
 import { dataURItoBlob, dataURLtoFile, resizeImage, avatarSrc, hasExplicitAvatar } from './lib/imageUtils';
 import { compressAvailability, decompressAvailability, savePending, loadPending, clearPending, migrateLocalToSession, PENDING_KEY } from './lib/onboardingUtils';
-import { BUSCAR_CLASES_ALLOWED_ID, PHOTOS_BASE_PATH, highlightPhotos, BOOKING_VENUES } from './lib/constants';
+import { BUSCAR_CLASES_ALLOWED_ID, DASHBOARD_ALLOWED_IDS, PHOTOS_BASE_PATH, highlightPhotos, BOOKING_VENUES } from './lib/constants';
 import { PlayerShowcaseCard } from './components/PlayerShowcaseCard';
 import { BracketView, advanceWinner } from './components/BracketView';
 import { NavPlayerSearch } from './components/NavPlayerSearch';
@@ -97,6 +99,10 @@ const App = () => {
   const [showMap, setShowMap] = useState(false);
   const [showBuscarClases, setShowBuscarClases] = useState(false);
   const [showCourtFinder, setShowCourtFinder] = useState(false);
+  const [showMonitor, setShowMonitor] = useState(false);
+  const [showMonitorTips, setShowMonitorTips] = useState(false);
+  const [showMarcador, setShowMarcador] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
     // Inicializar desde el hash actual al cargar la página
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -2808,6 +2814,9 @@ const App = () => {
       setShowBuscarClases(false);
       setShowCourtFinder(false);
       setShowBookingPanel(false);
+      setShowMonitor(false);
+      setShowMonitorTips(false);
+      setShowMarcador(false);
       setCameFromHistoric(false);
       setShowNavMenu(false);
       window.scrollTo(0, 0);
@@ -2817,7 +2826,8 @@ const App = () => {
       icon: React.ReactNode,
       label: string,
       onClick: () => void,
-      className = ''
+      className = '',
+      beta = false
     ) => (
       <button
         type="button"
@@ -2826,6 +2836,7 @@ const App = () => {
       >
         <span className="w-6 h-6 flex items-center justify-center shrink-0 opacity-80">{icon}</span>
         <span>{label}</span>
+        {beta && <span className="ml-auto text-[9px] bg-emerald-400/20 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">Beta</span>}
       </button>
     );
 
@@ -2833,7 +2844,7 @@ const App = () => {
 
     const activeTournaments = tournaments
       .filter(t => t.status === 'active')
-      .sort((a, b) => (b.sort_order ?? 0) - (a.sort_order ?? 0));
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
     return (
       <>
@@ -2953,8 +2964,18 @@ const App = () => {
 
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>,
-              'Encontrar Cancha',
-              () => { resetNav(); setShowMap(true); }
+              'Buscador Cancha 2.0',
+              () => { resetNav(); setShowMonitor(true); },
+              '',
+              true
+            )}
+
+            {menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10l-3-3m3 3l3-3M15 7v10m0-10l-3 3m3-3l3 3"/></svg>,
+              'Marcador',
+              () => { resetNav(); setShowMarcador(true); },
+              '',
+              true
             )}
 
             {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
@@ -2963,16 +2984,16 @@ const App = () => {
               () => { resetNav(); setShowBuscarClases(true); }
             )}
 
-            {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
-              <span className="text-base">📍</span>,
-              'Buscar Canchas',
-              () => { resetNav(); setShowCourtFinder(true); }
-            )}
-
             {(isBookingAdmin || visibleBookingAccounts.length > 0) && menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><rect x="3" y="4" width="18" height="18" rx="2"/><path strokeLinecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>,
               'Reservas automáticas',
               () => { resetNav(); setShowBookingPanel(true); }
+            )}
+
+            {(currentUser?.role === 'admin' || DASHBOARD_ALLOWED_IDS.includes(currentUser?.id ?? '')) && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+              '📊 Dashboard Admin',
+              () => { resetNav(); setShowAdminDashboard(true); }
             )}
 
             {divider()}
@@ -3664,9 +3685,13 @@ const App = () => {
   /** Fire-and-forget push notification to a recipient */
   async function sendPushNotification(recipientId: string, title: string, body: string, url: string, actions?: Array<{ action: string; title: string; url?: string }>) {
     try {
+      const { data: { session: sess } } = await supabase.auth.getSession();
       await fetch('/api/send-notification', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sess?.access_token ? { 'Authorization': `Bearer ${sess.access_token}` } : {}),
+        },
         body: JSON.stringify({ recipient_profile_id: recipientId, title, body, url, actions }),
       });
     } catch (err) {
@@ -4874,6 +4899,68 @@ const App = () => {
     );
   }
 
+  // Monitor accessible without login
+  if (showMonitor) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {currentUser && (
+                  <button
+                    type="button"
+                    onClick={() => setShowNavMenu(v => !v)}
+                    className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                    aria-label="Abrir menú"
+                  >
+                    <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                  </button>
+                )}
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div className="ml-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowMonitor(false); setShowMonitorTips(false); }}
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    ← Volver
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Buscador Cancha 2.0</h1>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Beta</span>
+                  </div>
+                </div>
+              </div>
+              {/* Tips toggle button */}
+              <button
+                type="button"
+                onClick={() => setShowMonitorTips(v => !v)}
+                className={`text-sm font-semibold px-4 py-2 rounded-lg transition ${
+                  showMonitorTips
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-emerald-50 hover:text-emerald-700'
+                }`}
+              >
+                {showMonitorTips ? '← Canchas' : 'Tips'}
+              </button>
+            </div>
+          </div>
+        </header>
+        {renderNavMenu()}
+        {showMonitorTips ? (
+          <FindTennisCourt onBack={() => setShowMonitorTips(false)} />
+        ) : (
+          <div className="p-4 sm:p-6">
+            <CourtFinder onBack={() => setShowMonitor(false)} currentUserId={currentUser?.id ?? null} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (loginView) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700 flex items-center justify-center p-4">
@@ -4887,6 +4974,16 @@ const App = () => {
               alt="PPC Logo"
               className="mx-auto mt-4 h-24 w-auto md:h-32"
             />
+            {/* Monitor link for non-logged-in users */}
+            <button
+              type="button"
+              onClick={() => setShowMonitor(true)}
+              className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-emerald-700 bg-emerald-50 px-4 py-2 rounded-lg hover:bg-emerald-100 transition"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>
+              Monitor de Canchas
+              <span className="text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold uppercase">Beta</span>
+            </button>
           </div>
 
           {registrationStep === 1 ? (
@@ -6141,6 +6238,19 @@ const App = () => {
     // loginView ya se activa por el efecto de sesión; no hacemos nada extra aquí
   }
 
+  if (showAdminDashboard && (currentUser?.role === 'admin' || DASHBOARD_ALLOWED_IDS.includes(currentUser?.id ?? ''))) {
+    return (
+      <AdminDashboard
+        tournaments={tournaments}
+        divisions={divisions}
+        matches={matches}
+        registrations={registrations}
+        profiles={profiles}
+        onBack={() => setShowAdminDashboard(false)}
+      />
+    );
+  }
+
   if (showBuscarClases && currentUser?.id === BUSCAR_CLASES_ALLOWED_ID) {
     return (
       <div className="p-4 sm:p-6">
@@ -6153,6 +6263,64 @@ const App = () => {
     return (
       <div className="p-4 sm:p-6">
         <CourtFinder onBack={() => setShowCourtFinder(false)} currentUserId={currentUser?.id ?? null} />
+      </div>
+    );
+  }
+
+  if (showMarcador && currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
+        <header className="bg-white shadow-lg sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNavMenu(v => !v)}
+                  className="p-3 sm:p-2 rounded-full hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0"
+                  aria-label="Abrir menú"
+                >
+                  <svg className="w-7 h-7 sm:w-6 sm:h-6 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+                  </svg>
+                </button>
+                <img src="/ppc-logo.png" alt="PPC Logo" className="w-auto h-10 sm:h-12 md:h-14 lg:h-16 object-contain" />
+                <div className="ml-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowMarcador(false)}
+                    className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
+                  >
+                    ← Volver
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Marcador</h1>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Beta</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+        {renderNavMenu()}
+        <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+          {/* Sección: Partidos en Vivo */}
+          <div>
+            <h2 className="text-lg font-bold text-white mb-3">🔴 Partidos en Vivo</h2>
+            <LiveMatchBanner currentProfile={currentUser} />
+            <p className="mt-2 text-white/60 text-xs">Inicia un partido en vivo desde la vista de tu división, o desde un reloj Garmin.</p>
+          </div>
+
+          {/* Sección: Crear Amistoso */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
+            <h2 className="text-lg font-bold text-white mb-2">🎾 Crear Amistoso</h2>
+            <p className="text-white/70 text-sm mb-4">Lleva el marcador de un partido amistoso. No se guarda en las tablas oficiales.</p>
+            <FriendlyMatchCreator
+              profiles={profiles}
+              currentUser={currentUser}
+            />
+          </div>
+        </div>
       </div>
     );
   }

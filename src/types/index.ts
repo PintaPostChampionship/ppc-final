@@ -65,6 +65,7 @@ export interface Tournament {
   season: string;
   start_date: string;
   end_date: string;
+  league_end_date?: string | null;
   status: string;
   format?: 'league' | 'knockout';
   sort_order?: number;

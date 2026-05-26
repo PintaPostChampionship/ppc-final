@@ -3,6 +3,11 @@ import type { BookingVenueKey } from '../types';
 // Profile ID autorizado para ver "Buscar clases"
 export const BUSCAR_CLASES_ALLOWED_ID = "fb045715-86c6-48fc-88dc-c784fa5ed2bc";
 
+// Profile IDs autorizados para ver el Dashboard Admin (además de role === 'admin')
+export const DASHBOARD_ALLOWED_IDS: string[] = [
+  "63423627-6cac-4876-b6eb-6a39440a45dd", // Patrick Kohler
+];
+
 // 🔹 CARRUSEL DE FOTOS ANTERIORES (home)
 export const PHOTOS_BASE_PATH = '/fotos-anteriores';
 

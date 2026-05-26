@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { verifyAuth } from './lib/verifyAuth';
 
 /**
  * /api/live-score — Proxy para sincronizar el marcador Garmin ↔ Supabase
@@ -10,7 +11,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
  * POST /api/live-score (action: init)         → inicia un partido desde el Garmin
  * POST /api/live-score (action: undo)         → deshace el último punto
  *
- * Auth: header X-Player-Id (UUID del jugador)
+ * Auth: JWT via Authorization header, or X-Player-Id as fallback for Garmin devices
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,10 +33,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // Auth: require player ID
-  const playerId = req.headers['x-player-id'] as string;
+  // Auth: prefer JWT, fallback to X-Player-Id for Garmin devices
+  let playerId = await verifyAuth(req);
   if (!playerId) {
-    return res.status(401).json({ error: 'Missing X-Player-Id header' });
+    // Fallback for Garmin (can't do OAuth) — still requires a valid UUID
+    const headerPlayerId = req.headers['x-player-id'] as string;
+    if (headerPlayerId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(headerPlayerId)) {
+      playerId = headerPlayerId;
+    }
+  }
+
+  if (!playerId) {
+    return res.status(401).json({ error: 'Missing authentication (Authorization header or X-Player-Id)' });
   }
 
   const supabase = getSupabase();

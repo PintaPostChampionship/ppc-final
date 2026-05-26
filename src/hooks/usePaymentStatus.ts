@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { parseGvizResponse, buildPaymentMap } from '../lib/paymentUtils';
+import { supabase } from '../lib/supabaseClient';
 import type { PaymentStatusMap } from '../types/payment';
 
 const GVIZ_URL =
@@ -57,9 +58,13 @@ export function usePaymentStatus(torneoName: string | null): UsePaymentStatusRes
       setReportError(null);
 
       try {
+        const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch('/api/sheets-update', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+          },
           body: JSON.stringify({ profile_id: profileId, torneo }),
         });
 

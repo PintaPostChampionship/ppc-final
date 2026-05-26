@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { verifyAuth } from './lib/verifyAuth';
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tzmbznenarrpjayntyjt.supabase.co';
@@ -10,6 +11,12 @@ function getSupabase() {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log('[push-subscribe] Method:', req.method);
 
+  // Auth: verify JWT
+  const userId = await verifyAuth(req);
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   if (req.method === 'POST') {
     const { profile_id, subscription, user_agent } = req.body ?? {};
 
@@ -18,6 +25,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!profile_id || !subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Verify the user can only subscribe themselves
+    if (profile_id !== userId) {
+      return res.status(403).json({ error: 'Cannot subscribe for another user' });
     }
 
     try {
@@ -52,6 +64,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!profile_id || !endpoint) {
       return res.status(400).json({ error: 'Missing profile_id or endpoint' });
+    }
+
+    // Verify the user can only unsubscribe themselves
+    if (profile_id !== userId) {
+      return res.status(403).json({ error: 'Cannot unsubscribe another user' });
     }
 
     try {

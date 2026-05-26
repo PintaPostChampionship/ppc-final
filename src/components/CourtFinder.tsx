@@ -985,6 +985,35 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
               📍 Mueve el mapa para ver más canchas, o pulsa <button onClick={() => { setShowAll(true); setFilterVenues(new Set()); if (mapControlRef.current) mapControlRef.current.fitAll(); }} className="text-emerald-600 font-semibold hover:underline">"Todos"</button> para ver las {venues.length} canchas
             </div>
           )}
+
+          {/* Suggestion section */}
+          <div className="mt-8 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 p-5">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">💡</span>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-amber-900 mb-1">
+                  ¿No encuentras tu cancha?
+                </h3>
+                <p className="text-xs text-amber-800 mb-3">
+                  Si conoces una cancha que no aparece aquí, déjanos el nombre o el link y la agregaremos al monitor.
+                </p>
+                <p className="text-[11px] text-amber-700 italic mb-3">
+                  ⚠️ Recuerda que algunas canchas son privadas y no todos tienen acceso. Solo agregamos canchas públicas o con reserva abierta.
+                </p>
+                <a
+                  href="https://wa.me/56999393161?text=Hola!%20Quiero%20sugerir%20una%20cancha%20para%20el%20monitor:%20"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition active:scale-95"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M20.52 3.48A11.9 11.9 0 0012.06 0C5.67 0 .48 5.19.48 11.58c0 2.04.53 4.04 1.54 5.8L0 24l6.8-1.96a11.57 11.57 0 005.26 1.33h.01c6.39 0 11.58-5.19 11.58-11.58 0-3.09-1.2-6-3.4-8.21zM12.06 21.1h-.01a9.5 9.5 0 01-4.84-1.33l-.35-.2-4.03 1.16 1.15-3.93-.23-.4a9.55 9.55 0 01-1.45-5.08c0-5.26 4.28-9.54 9.55-9.54 2.55 0 4.95.99 6.76 2.8a9.49 9.49 0 012.79 6.75c0 5.27-4.28 9.55-9.54 9.55z"/>
+                  </svg>
+                  Sugerir cancha por WhatsApp
+                </a>
+              </div>
+            </div>
+          </div>
         </>)}
       </div>
     </div>

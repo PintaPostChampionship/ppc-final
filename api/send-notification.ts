@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { verifyAuth, isInternalCall } from './lib/verifyAuth';
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tzmbznenarrpjayntyjt.supabase.co';
@@ -10,6 +11,14 @@ function getSupabase() {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Auth: accept either a valid user JWT or an internal service call
+  const userId = await verifyAuth(req);
+  const internal = isInternalCall(req);
+
+  if (!userId && !internal) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const { recipient_profile_id, title, body, url, actions } = req.body ?? {};

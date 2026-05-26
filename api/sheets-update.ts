@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createSign } from 'node:crypto';
+import { verifyAuth } from './lib/verifyAuth';
 
 const SPREADSHEET_ID = '1DC64PmiKF7yerp59-PT0fnEGcU0xSW7Dm500PyBtJWg';
 const SHEET_NAME = 'pagos_web';
@@ -104,11 +105,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Auth: verify JWT
+  const userId = await verifyAuth(req);
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { profile_id, torneo } = (req.body ?? {}) as { profile_id?: string; torneo?: string };
   console.log('[sheets-update] Body:', { profile_id, torneo });
 
   if (!profile_id || !torneo) {
     return res.status(400).json({ error: 'Missing required fields: profile_id and torneo' });
+  }
+
+  // Verify the user can only report their own payment
+  if (profile_id !== userId) {
+    return res.status(403).json({ error: 'Cannot report payment for another user' });
   }
 
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
