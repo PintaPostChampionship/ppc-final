@@ -357,7 +357,10 @@ export default function BuscarClases({ onBack, currentUserId }: { onBack: () => 
   // ── Filter logic ──────────────────────────────────────────────────────────
   const filteredSessions = React.useMemo(() => {
     if (!data) return [];
+    const now = new Date();
     return data.sessions.filter((s) => {
+      // Hide sessions that have already started
+      if (new Date(s.start_datetime) <= now) return false;
       if (filterType !== "all" && s.session_type !== filterType) return false;
       if (filterSource !== "all" && s.source !== filterSource) return false;
       if (filterLevel !== "all" && s.level !== filterLevel) return false;

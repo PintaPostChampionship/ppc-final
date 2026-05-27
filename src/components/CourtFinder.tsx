@@ -298,6 +298,9 @@ function VenueCard({ venue, filterDate, filterTimeRange, allDates, watchlist, on
 
   // Filter slots
   const filteredSlots = venue.slots.filter(s => {
+    // Hide slots that have already started
+    const slotStart = new Date(`${s.date}T${s.start_time}:00`);
+    if (slotStart <= new Date()) return false;
     if (filterDate !== "all" && s.date !== filterDate) return false;
     const hour = getHour(s.start_time);
     if (hour < filterTimeRange[0] || hour >= filterTimeRange[1]) return false;
@@ -707,7 +710,14 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   // Build venue summaries
   const venues: VenueSummary[] = React.useMemo(() => {
     if (!data) return [];
-    const tennisSlots = data.slots.filter(s => isTennisCourt(s.court_name));
+    const now = new Date();
+    const tennisSlots = data.slots.filter(s => {
+      if (!isTennisCourt(s.court_name)) return false;
+      // Hide slots that have already started (compare in London time via date + start_time)
+      const slotStart = new Date(`${s.date}T${s.start_time}:00`);
+      if (slotStart <= now) return false;
+      return true;
+    });
     const byVenue = new Map<string, CourtSlot[]>();
     for (const slot of tennisSlots) {
       if (!byVenue.has(slot.venue_name)) byVenue.set(slot.venue_name, []);
