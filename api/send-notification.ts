@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import webpush from 'web-push';
 import { verifyAuth, isInternalCall } from './lib/verifyAuth';
+import { configureWebPush } from './lib/pushUtils';
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tzmbznenarrpjayntyjt.supabase.co';
@@ -28,17 +28,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing required fields: recipient_profile_id, title, body, url' });
   }
 
-  // Configure VAPID
-  const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || '';
-  const privateKey = process.env.VAPID_PRIVATE_KEY || '';
-  const subject = process.env.VAPID_SUBJECT || 'mailto:pintapostchampionship@gmail.com';
-
-  if (!publicKey || !privateKey) {
-    console.error('[send-notification] VAPID keys not configured');
+  // Configure VAPID via shared utility
+  let webpush: ReturnType<typeof configureWebPush>;
+  try {
+    webpush = configureWebPush();
+  } catch (e: any) {
+    console.error('[send-notification] VAPID config error:', e?.message);
     return res.status(500).json({ error: 'Server configuration error' });
   }
-
-  webpush.setVapidDetails(subject, publicKey, privateKey);
 
   // Get subscriptions
   const supabase = getSupabase();
