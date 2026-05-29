@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { verifyAuth, isInternalCall } from './lib/verifyAuth';
-import { configureWebPush } from './lib/pushUtils';
+import { verifyAuth, isInternalCall } from './lib/verifyAuth.js';
+import { configureWebPush } from './lib/pushUtils.js';
 
 function getSupabase() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tzmbznenarrpjayntyjt.supabase.co';

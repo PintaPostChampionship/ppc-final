@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createSign } from 'node:crypto';
-import { verifyAuth } from './lib/verifyAuth';
+import { verifyAuth } from './lib/verifyAuth.js';
 
 const SPREADSHEET_ID = '1DC64PmiKF7yerp59-PT0fnEGcU0xSW7Dm500PyBtJWg';
 const SHEET_NAME = 'pagos_web';

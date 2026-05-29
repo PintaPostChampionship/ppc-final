@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getServiceSupabase, configureWebPush } from '../lib/pushUtils';
+import { getServiceSupabase, configureWebPush } from '../lib/pushUtils.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Verify cron secret

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { verifyAuth } from './lib/verifyAuth';
+import { verifyAuth } from './lib/verifyAuth.js';
 
 /**
  * /api/live-score — Proxy para sincronizar el marcador Garmin ↔ Supabase
