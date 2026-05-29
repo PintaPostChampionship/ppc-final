@@ -86,7 +86,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             try {
               await wp.sendNotification(
                 { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh_key, auth: sub.auth_key } },
-                payload
+                payload,
+                { urgency: 'high' }
               );
             } catch (err: any) {
               if (err?.statusCode === 410 || err?.statusCode === 404) {

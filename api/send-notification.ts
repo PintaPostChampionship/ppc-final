@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import webpush from 'web-push';
 import { verifyAuth, isInternalCall } from './lib/verifyAuth';
 
 function getSupabase() {
@@ -25,15 +26,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!recipient_profile_id || !title || !body || !url) {
     return res.status(400).json({ error: 'Missing required fields: recipient_profile_id, title, body, url' });
-  }
-
-  // Dynamic import of web-push to avoid module resolution issues
-  let webpush: any;
-  try {
-    webpush = (await import('web-push')).default || (await import('web-push'));
-  } catch (e: any) {
-    console.error('[send-notification] Failed to import web-push:', e?.message);
-    return res.status(500).json({ error: 'Server module error' });
   }
 
   // Configure VAPID
