@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import * as webpush from 'web-push';
+import webpush from 'web-push';
 
 /**
  * Creates a Supabase client with service role key (bypasses RLS).
