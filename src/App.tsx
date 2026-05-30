@@ -4974,16 +4974,6 @@ const App = () => {
               alt="PPC Logo"
               className="mx-auto mt-4 h-24 w-auto md:h-32"
             />
-            {/* Monitor link for non-logged-in users */}
-            <button
-              type="button"
-              onClick={() => setShowMonitor(true)}
-              className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-emerald-700 bg-emerald-50 px-4 py-2 rounded-lg hover:bg-emerald-100 transition"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>
-              Monitor de Canchas
-              <span className="text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full font-bold uppercase">Beta</span>
-            </button>
           </div>
 
           {registrationStep === 1 ? (

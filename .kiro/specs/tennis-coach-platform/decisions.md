@@ -155,11 +155,13 @@
 ## Estado actual del proyecto
 
 **Fase 1 (MVP)**: ✅ Completada y deployada en https://playcoach.vercel.app
-**Fase 2 (Marketplace)**: 🚧 En progreso — Search page implementada, faltan reviews, class packs UI, email
+**Fase 2 (Marketplace + UX)**: 🚧 En progreso — Search page básica, Student Dashboard, Coach Dashboard rediseñado
 
 ### Lo que funciona hoy:
 - ✅ Registro (email + Google OAuth)
-- ✅ Coach dashboard (profile, locations, payments, calendar, classes, bookings)
+- ✅ Coach dashboard con sidebar (profile, locations, payments, calendar, classes, bookings)
+- ✅ Coach Overview: pending bookings, upcoming classes con alumnos, available slots, share link
+- ✅ Student Dashboard: quick actions, upcoming bookings, explore section
 - ✅ Availability grid (setup rápido de horarios semanales)
 - ✅ Coach page pública compartible (`/coach/slug`)
 - ✅ Student booking flow (book → payment info modal)
@@ -171,27 +173,49 @@
 - ✅ PWA instalable
 - ✅ Onboarding post-Google OAuth (selección de rol)
 - ✅ Publish/Unpublish toggle en dashboard
+- ✅ Routing por rol (student → /student, coach → /dashboard)
+- ✅ Diseño profesional (DM Sans + Fraunces, green/stone palette, animations)
 
-### Próximos pasos (por prioridad):
+### Próximos pasos — Fase 2 (por prioridad):
 
-**Polish / UX (inmediato):**
-1. Revisar flujo completo coach→student→booking en producción
-2. Mejorar responsive en mobile (probar en teléfono real)
-3. Agregar "Add coach role" para cuentas de estudiante existentes
-4. Mejorar Availability Grid (más intuitivo, preview de horas)
+**Search & Discovery (core de Fase 2):**
+1. ~~Mapa de coaches por zona (Leaflet + postcodes.io, estilo TeachMe)~~ ✅ Implementado (estilo CourtFinder)
+2. ~~Filtros en Search: precio, tipo de clase, disponibilidad, cancha/venue~~ ✅ Implementado
+3. ~~Buscador de canchas con coaches disponibles (venue → coaches ahí)~~ ✅ Implementado (`/courts`)
+4. "Consultar disponibilidad" para coaches sin horas publicadas (formulario de contacto)
+5. Búsqueda por nombre de coach directo (ya funciona en el search bar)
 
-**Fase 2 — Features pendientes:**
-5. Reviews/ratings post-clase (alumno califica después de la clase)
-6. Class packs UI (coach crea packs, alumno compra y usa créditos)
-7. Email notifications con Resend (confirmación booking, reminders)
-8. Filtros en Search (precio, tipo de clase, disponibilidad)
-9. Locations mejorado (lista de venues conocidos + mapa)
+**Social & Trust:**
+6. ~~Reviews/ratings post-clase (alumno califica coach)~~ ✅ Implementado
+7. ~~Rating de nivel del alumno (coach pone 1-5, una sola vez)~~ ✅ Implementado
+8. Perfil público del alumno (nivel, historial de clases)
 
-**Fase 3 — Monetización:**
-10. Stripe Connect (pagos escrow, payouts al coach)
-11. Suscripción para coaches (planes mensual/trimestral/anual)
-12. Multi-país (Chile: moneda CLP, timezone, idioma)
-13. Landing pages por zona (SEO)
+**Comunicación:**
+9. Chat/mensajes al agendar clase (coordinar detalles)
+10. Coaches describen dónde hacen clases (más allá de la bio)
+
+**Monetización:**
+11. Class packs UI (coach crea packs, alumno compra créditos)
+12. Email notifications con Resend
+
+**Bugs / Polish:**
+13. Google OAuth login — verificar Redirect URLs en Supabase Dashboard
+14. ~~Filtro de distancia con geolocation del browser como fallback~~ ✅
+15. Mapa de coaches — mostrar todos los known_venues (no solo los que tienen coaches)
+
+**Infraestructura:**
+16. Email notifications (Gmail SMTP) — ver sección "Email Notifications Plan"
+17. PWA install prompt mejorado (banner + instrucciones por plataforma)
+18. Push notifications — triggers en booking/inquiry/reminder (infra lista, falta conectar)
+
+### Fase 3 — Expansión:
+13. Multi-país: Chile (moneda CLP, timezone America/Santiago, idioma español)
+14. Stripe Connect (pagos escrow, payouts al coach)
+15. Suscripción para coaches (planes mensual/trimestral/anual)
+16. Matchmaking: partidos amistosos entre alumnos del mismo nivel
+17. Perfil público del alumno (nivel, historial, foto, canchas preferidas, disponibilidad para matchmaking)
+18. Class Packs — student purchases/uses credits (UI en CoachPage + booking flow)
+19. App nativa (Google Play / App Store) — evaluar React Native o PWA wrapper
 
 ### Deploy
 ```bash
@@ -211,17 +235,164 @@ npx vercel --prod
 
 ---
 
-## Known Issues / Polish pendiente (para próxima sesión)
+## Known Issues / Polish pendiente
 
 1. ~~**Register flow**: Si el usuario clickea "I'm a Coach" desde la landing, debería saltar el paso de selección de rol~~ ✅ Arreglado
-2. **Google OAuth**: No configurado aún (requiere Google Cloud Console setup)
-3. **Cron jobs**: Limitados a 1x/día en Vercel Hobby (expire-bookings a las 6am, reminders a las 8am UTC)
-4. **PWA icons**: Placeholder SVG — necesita diseño real (192x192, 512x512 PNG)
-5. ~~**Coach publish toggle**: No hay botón en la UI para publicar/despublicar~~ ✅ Arreglado
-6. **Dual role**: No hay UI para agregar rol de coach a una cuenta de estudiante existente
-7. **Availability Grid**: Funcional pero podría ser más intuitivo (drag horizontal, preview de horas)
-8. **Coach Page**: No muestra payment details después de booking (sidebar solo muestra info genérica)
-9. **Email notifications**: Resend no configurado aún (solo push por ahora)
+2. ~~**Google OAuth**: No configurado aún~~ ✅ Funcionando (ambas cuentas tienen Google vinculado)
+3. **Google OAuth login para cuentas existentes**: Verificar que en Supabase Dashboard → Auth → URL Configuration, "Redirect URLs" incluya `https://playcoach.vercel.app`. El automatic linking ya está funcionando (ambas cuentas tienen providers `["email", "google"]`). Si sigue sin funcionar, el problema es de redirect, no de linking.
+4. **Cron jobs**: Limitados a 1x/día en Vercel Hobby (expire-bookings a las 6am, reminders a las 8am UTC)
+5. **PWA icons**: Placeholder SVG — necesita diseño real (192x192, 512x512 PNG)
+6. ~~**Coach publish toggle**: No hay botón en la UI para publicar/despublicar~~ ✅ Arreglado
+7. **Dual role**: No hay UI para agregar rol de coach a una cuenta de estudiante existente
+8. **Availability Grid**: Funcional pero podría ser más intuitivo (drag horizontal, preview de horas)
+9. ~~**Coach Page**: No muestra payment details después de booking~~ (ya muestra en el modal post-booking)
+10. **Email notifications**: Estructura pendiente (ver sección "Email Notifications Plan" abajo)
+11. ~~**API routes TS errors**~~ ✅ Arreglado (agregado `.js` a imports)
+12. ~~**Search filters — distancia**~~ ✅ Arreglado (geolocation del browser como fallback)
+13. **Search filters — precio**: Funciona pero solo filtra coaches que tienen clases publicadas con precio. Coaches sin clases no se filtran.
+
+---
+
+## Email Notifications Plan (pendiente de implementar)
+
+### Decisión: Gmail SMTP para empezar, Resend cuando haya dominio custom
+
+**Opción elegida**: Gmail SMTP (mismo approach que court_monitor en book-better-bot)
+- 500 emails/día gratis
+- Sin cuenta nueva necesaria (solo App Password)
+- Migrar a Resend cuando haya dominio custom y volumen
+
+**Qué falta hacer:**
+1. Crear un Gmail dedicado (ej: `playcoach.notifications@gmail.com` o similar)
+2. Generar App Password en ese Gmail (Google Account → Security → 2FA → App Passwords)
+3. Agregar env vars en Vercel: `SMTP_USER`, `SMTP_PASSWORD`
+4. Crear `api/lib/email.ts` con función `sendEmail(to, subject, html)` usando nodemailer
+5. Instalar `nodemailer` + `@types/nodemailer`
+6. Crear templates HTML para cada tipo de email
+
+**Tipos de email a implementar:**
+
+| Trigger | Destinatario | Contenido |
+|---------|-------------|-----------|
+| Booking confirmado (auto_accept) | Alumno | Fecha, hora, coach, venue, instrucciones de pago |
+| Booking request (manual_approval) | Coach | Nombre alumno, clase, fecha, botón "Approve" |
+| Booking aprobado | Alumno | Confirmación + instrucciones de pago |
+| Booking rechazado | Alumno | Notificación + sugerencia de buscar otro horario |
+| Inquiry recibida | Coach | Mensaje del alumno, preferencias, botón "Reply" |
+| Recordatorio pre-clase (24h) | Alumno | Fecha, hora, venue, link a Google Maps |
+| Review reminder (post-clase) | Alumno | Link al perfil del coach para dejar review |
+| Coach reply to inquiry | Alumno | Respuesta del coach |
+
+**Template base (HTML):**
+- Header con logo PlayCoach
+- Contenido principal con CTA button (verde)
+- Footer con "Powered by PlayCoach" + unsubscribe link
+- Responsive (mobile-first)
+- Colores: green-700, stone neutrals (misma paleta de la web)
+
+**Integración con push:**
+- Email se envía SIEMPRE (red de seguridad)
+- Push se envía si el usuario tiene suscripción activa
+- El usuario puede desactivar email desde su perfil (notification_prefs.email)
+
+---
+
+## Sesión 30 mayo 2026 (tarde) — Fase 2 implementada
+
+### 🗺 Mapa de coaches (Leaflet CDN, estilo CourtFinder)
+- MapView reescrito: CartoDB light tiles, markers circulares con número, botón "📍 My location"
+- Leaflet cargado desde CDN (no bundled) — SearchPage chunk bajó de 175KB a 18KB
+- Viewport-aware: muestra venues visibles en el mapa actual
+- `controlRef` para fitAll/panTo programáticos
+
+### 🎾 Find a Court (`/courts`) — réplica del CourtFinder
+- Mismo JSON de `court_availability.json` (fetch con GitHub PAT)
+- Filtros: fecha (pills), rango horario (dual slider), plataforma, búsqueda
+- Mapa con todos los venues, click para seleccionar
+- Venue cards con slots agrupados por fecha → hora (pills clickeables + "Book")
+- **Coaches en cada venue**: avatares + link "X coaches here →"
+- **Formulario "Suggest a court"** (tabla `court_suggestions`) en vez de WhatsApp
+- Geolocation del usuario para ordenar por distancia
+
+### ⚙ Search con filtros
+- Sidebar de filtros: tipo de clase, nivel, precio máximo, distancia, toggle "solo con slots"
+- Filtros aplican tanto a la vista de lista como al mapa
+- Búsqueda por postcode activa mapa automáticamente + sort por distancia
+
+### ⭐ Reviews/ratings post-clase
+- ReviewSection en CoachPage: alumno con booking puede dejar review (1-5 ★ + comentario)
+- Trigger en DB auto-actualiza `rating_avg` y `rating_count`
+- Botón "Leave review" en StudentBookings para bookings pasados
+
+### 🎯 Student skill rating (coach → student)
+- StudentRating en BookingList: coach pone nivel 1-5 al alumno (una sola vez)
+- SkillLevelBadge visual (Beginner → Elite)
+- Tabla `student_ratings` con constraint UNIQUE(student, coach)
+
+### 📍 Known Venues (39 venues seeded)
+- Tabla `known_venues`: 34 públicos (court_monitor) + 5 privados (membership clubs)
+- Campo `is_public_booking` distingue booking online vs privado
+- LocationManager del coach reescrito con **autocomplete** de known_venues
+- Si el venue no está en la lista → "Add manually" con formulario libre
+
+### 🛡 Error boundary para chunks stale
+- `errorElement` en todas las rutas: detecta chunk loading failure → auto-reload
+- Evita el error feo de React Router después de un deploy
+
+### 🔧 Fixes
+- Loading infinito: dashboards muestran spinner en vez de "Please log in" durante auth init
+- Auth store: `onAuthStateChange` skipea si ya está logueado con mismo user (evita re-renders)
+- Student Dashboard: action cards con `h-full` + `line-clamp-2` para alineación uniforme
+- `VITE_GITHUB_TOKEN` agregado a PlayCoach (local + Vercel) para courts JSON
+
+---
+
+## Nota para PPC: known_venues reutilizable
+
+La tabla `known_venues` de PlayCoach (Supabase `nyskojznpmvxrsubfnsl`) contiene 39 venues con coordenadas exactas, incluyendo canchas privadas. Se puede reutilizar en ppc-final para:
+- Selector de ubicación al programar partidos (en vez de solo "South" / "North")
+- Mapa de canchas en la web PPC
+- Autocompletado al crear booking requests
+
+Para usarla desde ppc-final, hacer un fetch cross-project o duplicar la tabla en el Supabase del PPC (`tzmbznenarrpjayntyjt`). La data es estática, un seed SQL es suficiente.
+
+---
+
+## Sesión 30 mayo 2026 — Resumen de cambios
+
+### Diseño y UX (rediseño completo)
+- **Tipografía**: DM Sans (body) + Fraunces (headings, serif con personalidad)
+- **Paleta**: Verde bosque cálido (green-700/800) + neutrales cálidos (stone-*)
+- **CSS global**: Animaciones stagger, card-hover, glass effect, noise texture, gradient text, custom scrollbar
+- **Landing Page**: Hero con tipografía serif, sección "For Coaches" con gradiente oscuro, steps numerados
+- **Header**: Backdrop blur, links contextuales por rol
+
+### Student Dashboard (nuevo — `/student`)
+- Vista principal post-login para jugadores
+- 4 Quick Actions: Find a Coach, My Bookings, Find a Court (soon), Play a Match (soon)
+- Upcoming Classes con booking cards (fecha badge, coach link, status)
+- Explore section con chips de búsqueda rápida
+- Guard: si un student intenta ir a `/dashboard`, redirige a `/student`
+
+### Coach Dashboard (rediseño)
+- **Sidebar fija** en desktop (eliminó la duplicación de tabs arriba + bottom nav)
+- Mobile: hamburger menu con overlay
+- Overview mejorado:
+  - Bookings pendientes con alerta visual (nombre alumno, clase, fecha)
+  - Upcoming Classes: solo muestra clases CON alumnos (nombre del alumno visible)
+  - Available Slots: sección separada para bloques sin bookings
+  - Share link con diseño premium (gradiente oscuro, decoraciones)
+  - Checklist interactiva (cada item clickeable, navega a la sección)
+
+### Auth y routing
+- Logout robusto: limpia estado → signOut → reload (evita sesiones stale)
+- Redirect post-OAuth: `onAuthStateChange` redirige según rol después del callback
+- Guard en CoachDashboard: students no pueden acceder a `/dashboard`
+- LandingPage: coach → `/dashboard`, student → `/student`
+
+### Cuentas de prueba
+- `jifones@gmail.com` → student (id: aa9f91a9...)
+- `jifones2@gmail.com` → coach (id: 61ac012c..., slug: javier-fones, published: true)
 
 ---
 
