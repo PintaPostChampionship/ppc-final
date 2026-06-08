@@ -9,6 +9,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import LiveScoreboard from './components/LiveScoreboard/LiveScoreboard';
 import LiveMatchBanner from './components/LiveScoreboard/LiveMatchBanner';
 import FriendlyMatchCreator from './components/FriendlyMatchCreator';
+import GarminPairSection from './components/GarminPairSection';
 import { isEditor } from './components/LiveScoreboard/liveScoreUtils';
 import { usePaymentStatus } from './hooks/usePaymentStatus';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -6309,6 +6310,13 @@ const App = () => {
               profiles={profiles}
               currentUser={currentUser}
             />
+          </div>
+
+          {/* Sección: Conectar Garmin */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
+            <h2 className="text-lg font-bold text-white mb-2">⌚ Garmin Watch</h2>
+            <p className="text-white/70 text-sm mb-3">Lleva el marcador desde tu reloj Garmin. Los puntos se sincronizan en tiempo real con la web.</p>
+            <GarminPairSection currentUser={currentUser} supabase={supabase} />
           </div>
         </div>
       </div>

@@ -10,6 +10,7 @@ export interface Profile {
   avatar_url?: string;
   postal_code?: string;
   nickname?: string | null;
+  garmin_paired_at?: string | null;
 }
 
 export interface PlayerCard {
