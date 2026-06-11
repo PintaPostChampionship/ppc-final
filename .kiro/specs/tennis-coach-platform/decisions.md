@@ -178,35 +178,33 @@
 
 ### Próximos pasos — Fase 2 (por prioridad):
 
-**Search & Discovery (core de Fase 2):**
-1. ~~Mapa de coaches por zona (Leaflet + postcodes.io, estilo TeachMe)~~ ✅ Implementado (estilo CourtFinder)
-2. ~~Filtros en Search: precio, tipo de clase, disponibilidad, cancha/venue~~ ✅ Implementado
-3. ~~Buscador de canchas con coaches disponibles (venue → coaches ahí)~~ ✅ Implementado (`/courts`)
-4. "Consultar disponibilidad" para coaches sin horas publicadas (formulario de contacto)
-5. Búsqueda por nombre de coach directo (ya funciona en el search bar)
+**Search & Discovery:** ✅ COMPLETADO
+1. ~~Mapa de coaches por zona~~ ✅
+2. ~~Filtros en Search~~ ✅
+3. ~~Buscador de canchas con coaches~~ ✅
+4. ~~"Consultar disponibilidad"~~ ✅ (InquiryForm + InquiryList)
+5. ~~Búsqueda por nombre de coach~~ ✅
 
-**Social & Trust:**
-6. ~~Reviews/ratings post-clase (alumno califica coach)~~ ✅ Implementado
-7. ~~Rating de nivel del alumno (coach pone 1-5, una sola vez)~~ ✅ Implementado
-8. Perfil público del alumno (nivel, historial de clases)
+**Social & Trust:** ✅ COMPLETADO (excepto perfil alumno → Fase 3)
+6. ~~Reviews/ratings post-clase~~ ✅
+7. ~~Rating de nivel del alumno~~ ✅
+8. Perfil público del alumno → Fase 3
 
-**Comunicación:**
-9. Chat/mensajes al agendar clase (coordinar detalles)
-10. Coaches describen dónde hacen clases (más allá de la bio)
+**Monetización:** 🟡 PARCIAL
+11. ~~Class packs UI (coach crea)~~ ✅ — Falta: student purchase/use
+12. Email notifications → Pendiente (ver "Email Notifications Plan")
 
-**Monetización:**
-11. Class packs UI (coach crea packs, alumno compra créditos)
-12. Email notifications con Resend
+**Court Integration:** 🟡 PARCIAL
+13. ~~Court policy en clases~~ ✅
+14. Cron: cruzar bookings sin court_confirmed con court_monitor → push urgencia
+15. Cron: 24h antes sin alumnos → recordar cancelar cancha
+16. Link directo al booking en la push
 
-**Bugs / Polish:**
-13. Google OAuth login — verificar Redirect URLs en Supabase Dashboard
-14. ~~Filtro de distancia con geolocation del browser como fallback~~ ✅
-15. Mapa de coaches — mostrar todos los known_venues (no solo los que tienen coaches)
-
-**Infraestructura:**
-16. Email notifications (Gmail SMTP) — ver sección "Email Notifications Plan"
-17. PWA install prompt mejorado (banner + instrucciones por plataforma)
-18. Push notifications — triggers en booking/inquiry/reminder (infra lista, falta conectar)
+**Infraestructura:** ✅ COMPLETADO
+17. ~~Push notification triggers~~ ✅
+18. ~~PWA install prompt~~ ✅
+19. ~~Error boundary~~ ✅
+20. ~~Cron jobs TS fixed~~ ✅
 
 ### Fase 3 — Expansión:
 13. Multi-país: Chile (moneda CLP, timezone America/Santiago, idioma español)
@@ -513,3 +511,60 @@ Para usarla desde ppc-final, hacer un fetch cross-project o duplicar la tabla en
 - Partnerships con tiendas de tenis (descuentos en cuerdas, raquetas)
 - Publicidad segmentada en la plataforma (featured coaches)
 
+
+---
+
+## Sesión 10 junio 2026 — Fase 2 completada + Court Integration
+
+### Features implementadas:
+
+**Search & Discovery (completado):**
+- Mapa con filtrado por viewport (zoom/pan filtra la lista automáticamente)
+- Filtros: tipo de clase, nivel, precio máximo, toggle "solo con slots"
+- Filtro de distancia eliminado (redundante con el zoom del mapa)
+- Texto "📍 Move or zoom the map to filter coaches by area"
+- Click en marker → scroll al coach en la lista + highlight
+
+**Court Integration (nuevo):**
+- Campo `court_policy` en `classes`: `has_court` | `coach_books_court` | `student_books_court`
+- ClassForm: selector visual de court arrangement (3 opciones con iconos)
+- CoachPage: badges "BYO court" / "✓ Court" según policy
+- BookingList: botón "✅ Court booked" para confirmar (coach_books_court)
+- Push al alumno cuando coach confirma court
+- Push al coach con "Remember to book a court!" en booking notification
+
+**Inquiries (nuevo):**
+- InquiryForm en CoachPage sidebar (mensaje + días preferidos + bloque horario)
+- InquiryList en Coach Dashboard (pending/replied, reply form inline)
+- Push al coach cuando recibe inquiry
+
+**Class Packs (nuevo):**
+- ClassPackManager en Coach Dashboard: crear packs (nombre, clases, descuento, precio)
+- Activate/Deactivate toggle
+- Tabla existente reutilizada (`class_packs`, `class_pack_credits`)
+
+**PWA + Notifications:**
+- InstallPrompt: banner elegante con detección Android/iOS + instrucciones
+- Push triggers conectados: booking request → coach, approve/reject → student, inquiry → coach
+- Notification builders en `src/lib/notifications.ts`
+
+**Booking UX mejorado:**
+- Botón contextual: "Book" (auto_accept) vs "Request" (manual_approval)
+- Badge "⚡ Instant booking" vs "📋 Coach confirms" en CoachPage
+- Mensaje explicativo para manual_approval
+
+**Datos de prueba:**
+- 4 coaches test (Sarah, Marcus, Elena, Tom) con perfiles completos
+- 8 clases con diferentes court policies, precios £15-£50
+- ~56 occurrences para las próximas 2 semanas
+- Venues: Highbury Fields, Kennington Park, Clapham Common, Victoria Park, etc.
+- Para borrar: `DELETE FROM auth.users WHERE email LIKE '%test@playcoach.demo';`
+
+### DB Migrations aplicadas:
+- `add_student_ratings_and_review_helpers`: tabla student_ratings + trigger rating
+- `add_court_suggestions_table`: sugerencias de canchas públicas
+- `add_known_venues_table`: 39 venues seeded (34 públicos + 5 privados)
+- `add_availability_inquiries_and_class_packs_ui`: tabla availability_inquiries
+- `add_court_policy_to_classes`: court_policy + court_confirmed + court_venue_name
+
+### Última actualización: 10 junio 2026

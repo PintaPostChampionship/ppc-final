@@ -98,6 +98,8 @@ const App = () => {
     time: '' 
   });
   const [showMap, setShowMap] = useState(false);
+  const [crossDivisionMode, setCrossDivisionMode] = useState(false);
+  const [crossDivisionSearch, setCrossDivisionSearch] = useState('');
   const [showBuscarClases, setShowBuscarClases] = useState(false);
   const [showCourtFinder, setShowCourtFinder] = useState(false);
   const [showMonitor, setShowMonitor] = useState(false);
@@ -635,6 +637,13 @@ const App = () => {
     return d;
   })();
   const minDate = formatDate(todayPlus2);
+
+  // Para agendar partidos: permitir desde hoy
+  const minDateToday = (() => {
+    const d = new Date();
+    d.setHours(0,0,0,0);
+    return formatDate(d);
+  })();
 
   function hasActiveMatchWith(
     meId: string,
@@ -1801,6 +1810,9 @@ const App = () => {
     if (selectedTournament) {
       setNewMatch(prev => ({ ...prev, tournament: selectedTournament.name }));
     }
+    // Reset cross-division mode al cambiar de división/torneo
+    setCrossDivisionMode(false);
+    setCrossDivisionSearch('');
   }, [selectedDivision, selectedTournament]);
 
   useEffect(() => {
@@ -4393,6 +4405,27 @@ const App = () => {
       return getDivisionPlayers(divisionId, tournamentId).filter(p =>
         isPlayerActiveInDivision(tournamentId, divisionId, p.id)
       );
+    };
+
+    // Obtiene TODOS los jugadores de TODAS las divisiones de un torneo (para calibraciones cross-division)
+    const getAllTournamentPlayers = (tournamentId: string): Profile[] => {
+      const tournamentDivisions = divisions.filter(d => d.tournament_id === tournamentId);
+      const unique = new Map<string, Profile>();
+      tournamentDivisions.forEach(div => {
+        const players = getDivisionPlayers(div.id, tournamentId);
+        players.forEach(p => unique.set(p.id, p));
+      });
+      return Array.from(unique.values());
+    };
+
+    // Obtiene el nombre de la división de un jugador en un torneo
+    const getPlayerDivisionInTournament = (playerId: string, tournamentId: string): string | null => {
+      const reg = registrations.find(r =>
+        r.tournament_id === tournamentId &&
+        (r.profile_id === playerId || r.historic_player_id === playerId)
+      );
+      if (!reg) return null;
+      return divisions.find(d => d.id === reg.division_id)?.name ?? null;
     };
 
     const isMatchBetweenActivePlayers = (
@@ -8072,11 +8105,63 @@ const App = () => {
     const divisionAvailabilityMap = getPlayerAvailabilityMap(availabilitySlots);
 
     const PENDING_ID = '__PENDING_OPPONENT__';
-  // Oculta rivales con los que ya hubo scheduled o played
+
+  // Para calibraciones, detectar si el torneo es de calibración
+  const isCalibrationTournament = isCalibrationTournamentByName(selectedTournament.name);
+
+  // En calibraciones cross-division: jugadores de todos los torneos activos de liga (excluye knockout/cup)
+  const crossDivisionPlayers = (() => {
+    if (!isCalibrationTournament || !crossDivisionMode) return [];
+
+    // Torneos activos de liga (no knockout, no el propio torneo de calibración)
+    const activeLeagueTournaments = tournaments.filter(t =>
+      t.status === 'active' &&
+      t.format === 'league' &&
+      t.id !== selectedTournament.id &&
+      !isCalibrationTournamentByName(t.name)
+    );
+
+    const unique = new Map<string, Profile>();
+
+    // Jugadores de la otra división del mismo torneo de calibración
+    const otherCalibDivisions = divisions.filter(d =>
+      d.tournament_id === selectedTournament.id && d.id !== selectedDivision.id
+    );
+    otherCalibDivisions.forEach(div => {
+      getDivisionPlayers(div.id, selectedTournament.id).forEach(p => unique.set(p.id, p));
+    });
+
+    // Jugadores de torneos activos de liga (PPC 5, WPPC 2, etc.)
+    activeLeagueTournaments.forEach(t => {
+      const tDivisions = divisions.filter(d => d.tournament_id === t.id);
+      tDivisions.forEach(div => {
+        getDivisionPlayers(div.id, t.id).forEach(p => unique.set(p.id, p));
+      });
+    });
+
+    // Excluir los que ya están en la división actual
+    activePlayers.forEach(p => unique.delete(p.id));
+
+    return Array.from(unique.values());
+  })();
+
+  // Pool de jugadores para P2 según modo
+  const p2Pool = crossDivisionMode && isCalibrationTournament
+    ? [...activePlayers, ...crossDivisionPlayers]
+    : activePlayers;
+
+  // Filtrar por búsqueda si hay texto
+  const filteredP2Pool = crossDivisionSearch.trim().length > 0
+    ? p2Pool.filter(p => (p.name || '').toLowerCase().includes(crossDivisionSearch.trim().toLowerCase()))
+    : p2Pool;
+
+  // En calibraciones no limitamos partidos entre mismos jugadores (pueden jugar varias veces)
   const eligibleP2Options =
     !newMatch.player1
-      ? activePlayers
-      : activePlayers.filter(p =>
+      ? filteredP2Pool
+      : isCalibrationTournament
+        ? filteredP2Pool.filter(p => p.id !== newMatch.player1)
+        : activePlayers.filter(p =>
           p.id !== newMatch.player1 &&
           !hasAnyMatchBetween(
             selectedTournament.id,
@@ -8091,7 +8176,9 @@ const App = () => {
   const eligibleP1Options =
     !newMatch.player2
       ? activePlayers
-      : activePlayers.filter(p =>
+      : isCalibrationTournament
+        ? activePlayers.filter(p => p.id !== newMatch.player2)
+        : activePlayers.filter(p =>
           p.id !== newMatch.player2 &&
           !hasAnyMatchBetween(
             selectedTournament.id,
@@ -8912,7 +8999,7 @@ const App = () => {
                                       <input
                                         type="date"
                                         required
-                                        min={minDate}
+                                        min={minDateToday}
                                         value={inlineScheduleData.date}
                                         onChange={(e) => setInlineScheduleData(prev => ({ ...prev, date: e.target.value }))}
                                         className="w-full text-sm rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
@@ -10358,6 +10445,29 @@ const App = () => {
             <div ref={scheduleFormRef} id="schedule-match-form" className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Programar un Partido</h3>
               <form onSubmit={handleScheduleMatch} className="space-y-4">
+                {/* Toggle cross-division (solo visible en calibraciones) */}
+                {isCalibrationTournament && (
+                  <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={crossDivisionMode}
+                        onChange={(e) => {
+                          setCrossDivisionMode(e.target.checked);
+                          setCrossDivisionSearch('');
+                          // Reset player 2 al cambiar de modo
+                          setNewMatch(prev => ({ ...prev, player2: '' }));
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                    <span className="text-sm font-medium text-purple-800">
+                      🔀 Jugar con jugador de otra división
+                    </span>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 1</label>
                   {/* Jugador 1 */}
@@ -10376,19 +10486,159 @@ const App = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
-                  {/* Jugador 2 (Opcional) */}
-                  <select
-                    value={newMatch.player2 ?? PENDING_ID}
-                    onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    //required    -- Jugador 2 es opcional
-                    disabled={!newMatch.player1}
-                  >
-                    <option value={PENDING_ID}>— Rival pendiente (publicar aviso) —</option>
-                    {eligibleP2Options.map((player) => (
-                      <option key={player.id} value={player.id}>{uiName(player.name)}</option>
-                    ))}
-                  </select>
+                  {/* En cross-division: buscador estilo NavPlayerSearch */}
+                  {crossDivisionMode && isCalibrationTournament ? (
+                    <div className="relative">
+                      <div className="relative">
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <input
+                          type="text"
+                          placeholder="Buscar jugador por nombre..."
+                          value={crossDivisionSearch}
+                          onChange={(e) => setCrossDivisionSearch(e.target.value)}
+                          className="w-full pl-9 pr-8 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                        />
+                        {crossDivisionSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setCrossDivisionSearch('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {/* Jugador seleccionado */}
+                      {newMatch.player2 && newMatch.player2 !== PENDING_ID && (() => {
+                        const selected = p2Pool.find(p => p.id === newMatch.player2);
+                        if (!selected) return null;
+                        // Obtener división de liga activa (no cup, no calibraciones)
+                        const reg = registrations
+                          .filter(r => {
+                            if (r.profile_id !== selected.id && r.historic_player_id !== selected.id) return false;
+                            const t = tournaments.find(tt => tt.id === r.tournament_id);
+                            if (!t) return false;
+                            if (t.format === 'knockout') return false;
+                            if (isCalibrationTournamentByName(t.name)) return false;
+                            return t.status === 'active';
+                          })
+                          .sort((a, b) => {
+                            const ta = tournaments.find(tt => tt.id === a.tournament_id);
+                            const tb = tournaments.find(tt => tt.id === b.tournament_id);
+                            return (ta?.sort_order ?? 0) - (tb?.sort_order ?? 0);
+                          })[0];
+                        const divName = activePlayers.some(ap => ap.id === selected.id)
+                          ? selectedDivision.name
+                          : reg ? (divisions.find(d => d.id === reg.division_id)?.name || '') : '';
+                        return (
+                          <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg">
+                            <img
+                              src={selected.avatar_url || '/default-avatar.png'}
+                              onError={e => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                              alt=""
+                              className="w-8 h-8 rounded-full object-cover ring-1 ring-purple-200"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-gray-800 truncate">{uiName(selected.name)}</p>
+                              {divName && <p className="text-xs text-purple-600 truncate">{divName}</p>}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setNewMatch(prev => ({ ...prev, player2: '' }))}
+                              className="text-gray-400 hover:text-red-500 shrink-0"
+                            >
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                              </svg>
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      {/* Resultados de búsqueda */}
+                      {crossDivisionSearch.trim().length >= 2 && !newMatch.player2 && (() => {
+                        const q = crossDivisionSearch.trim().toLowerCase();
+                        const results = p2Pool
+                          .filter(p =>
+                            p.id !== newMatch.player1 &&
+                            (p.name?.toLowerCase().includes(q) || (p as any).nickname?.toLowerCase().includes(q))
+                          )
+                          .slice(0, 8);
+
+                        // Helper: obtener la división de liga activa más relevante de un jugador
+                        const getPlayerLeagueDivision = (playerId: string): string => {
+                          if (activePlayers.some(ap => ap.id === playerId)) return selectedDivision.name;
+                          const reg = registrations
+                            .filter(r => {
+                              if (r.profile_id !== playerId && r.historic_player_id !== playerId) return false;
+                              const t = tournaments.find(tt => tt.id === r.tournament_id);
+                              if (!t) return false;
+                              if (t.format === 'knockout') return false;
+                              if (isCalibrationTournamentByName(t.name)) return false;
+                              return t.status === 'active';
+                            })
+                            .sort((a, b) => {
+                              const ta = tournaments.find(tt => tt.id === a.tournament_id);
+                              const tb = tournaments.find(tt => tt.id === b.tournament_id);
+                              return (ta?.sort_order ?? 0) - (tb?.sort_order ?? 0);
+                            })[0];
+                          if (!reg) return '';
+                          return divisions.find(d => d.id === reg.division_id)?.name || '';
+                        };
+
+                        return (
+                          <div className="mt-1 border border-gray-200 rounded-lg bg-white shadow-lg max-h-60 overflow-y-auto">
+                            {results.length > 0 ? results.map(player => {
+                              const isFromCurrentDiv = activePlayers.some(ap => ap.id === player.id);
+                              const divName = getPlayerLeagueDivision(player.id);
+                              return (
+                                <button
+                                  key={player.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewMatch(prev => ({ ...prev, player2: player.id }));
+                                    setCrossDivisionSearch('');
+                                  }}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition text-left border-b border-gray-100 last:border-b-0"
+                                >
+                                  <img
+                                    src={player.avatar_url || '/default-avatar.png'}
+                                    onError={e => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                                    alt=""
+                                    className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-gray-200"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 truncate">{uiName(player.name)}</p>
+                                    <p className="text-xs text-gray-500 truncate">{divName}</p>
+                                  </div>
+                                  {!isFromCurrentDiv && (
+                                    <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full shrink-0">otra div.</span>
+                                  )}
+                                </button>
+                              );
+                            }) : (
+                              <p className="text-gray-400 text-sm px-3 py-3">Sin resultados para "{crossDivisionSearch.trim()}"</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <select
+                      value={newMatch.player2 ?? PENDING_ID}
+                      onChange={(e) => setNewMatch({ ...newMatch, player2: e.target.value })}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      disabled={!newMatch.player1}
+                    >
+                      <option value={PENDING_ID}>— Rival pendiente (publicar aviso) —</option>
+                      {eligibleP2Options.map((player) => (
+                        <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 {/* Lugar (opcional) */}
                 <div>

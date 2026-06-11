@@ -21,9 +21,17 @@ export function NavPlayerSearch({ profiles, registrations, tournaments, division
   }, [query, profiles]);
 
   const getPlayerContext = (player: Profile) => {
-    // Prefer active tournaments, then by sort_order descending
+    // Prefer active league tournaments (exclude knockout/cup), then by sort_order
     const regs = registrations
-      .filter(r => r.profile_id === player.id)
+      .filter(r => {
+        if (r.profile_id !== player.id) return false;
+        const t = tournaments.find(t => t.id === r.tournament_id);
+        if (!t) return false;
+        // Excluir knockout (PPC Cup) y calibraciones
+        if (t.format === 'knockout') return false;
+        if (/^Calibraciones/i.test(t.name || '')) return false;
+        return true;
+      })
       .sort((a, b) => {
         const ta = tournaments.find(t => t.id === a.tournament_id);
         const tb = tournaments.find(t => t.id === b.tournament_id);
