@@ -94,7 +94,7 @@ export default function GarminPairSection({ currentUser, supabase }: GarminPairS
         </div>
         <div className="flex gap-2">
           <a
-            href="https://apps.garmin.com/search?q=PPC+Tennis"
+            href="https://apps.garmin.com/apps/54b355b9-097a-4192-a115-48107e4269c8"
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 text-center py-2.5 rounded-xl bg-white/10 text-white/80 text-xs font-medium hover:bg-white/20 transition border border-white/10"
@@ -154,7 +154,7 @@ export default function GarminPairSection({ currentUser, supabase }: GarminPairS
           {loading ? "Generando..." : "🔗 Vincular reloj"}
         </button>
         <a
-          href="https://apps.garmin.com/search?q=PPC+Tennis"
+          href="https://apps.garmin.com/apps/54b355b9-097a-4192-a115-48107e4269c8"
           target="_blank"
           rel="noopener noreferrer"
           className="py-3 px-4 rounded-xl bg-white/10 text-white/80 text-sm font-medium hover:bg-white/20 transition border border-white/10 flex items-center"
