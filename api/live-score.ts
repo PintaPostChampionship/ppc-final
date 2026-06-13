@@ -222,7 +222,14 @@ async function handlePost(
   supabase: Supabase,
   playerId: string
 ) {
-  const { action, match_id, player, format, first_server, state } = req.body ?? {};
+  const { action, match_id, player, format, first_server, state, point_log, duration_secs, avg_hr, max_hr, calories, result } = req.body ?? {};
+
+  // ── Action: save_log — Save point-by-point analytics (no match_id required) ──
+  if (action === 'save_log') {
+    return handleSaveLog(res, supabase, playerId, {
+      match_id, format, result, point_log, duration_secs, avg_hr, max_hr, calories
+    });
+  }
 
   if (!match_id) {
     return res.status(400).json({ error: 'Missing match_id' });
@@ -501,4 +508,51 @@ async function handleUndo(
   }
 
   return res.status(200).json({ ok: true });
+}
+
+// ─── Save Log: guardar point-by-point analytics ──────────────────────────────
+// Called from Garmin on Quit (friendly) or match finish (Go Live).
+// Stores timestamps, HR, and result for future analytics.
+
+async function handleSaveLog(
+  res: VercelResponse,
+  supabase: Supabase,
+  playerId: string,
+  data: {
+    match_id?: string;
+    format?: string;
+    result?: any;
+    point_log?: any[];
+    duration_secs?: number;
+    avg_hr?: number;
+    max_hr?: number;
+    calories?: number;
+  }
+) {
+  if (!data.point_log || !Array.isArray(data.point_log) || data.point_log.length === 0) {
+    return res.status(400).json({ error: 'Missing or empty point_log' });
+  }
+
+  const logEntry = {
+    profile_id: playerId,
+    match_id: data.match_id || null,
+    format: data.format || 'standard',
+    result: data.result || null,
+    point_log: data.point_log,
+    duration_secs: data.duration_secs || null,
+    avg_hr: data.avg_hr || null,
+    max_hr: data.max_hr || null,
+    calories: data.calories || null,
+    source: 'garmin',
+  };
+
+  const { error } = await supabase
+    .from('match_point_logs')
+    .insert(logEntry as any);
+
+  if (error) {
+    return res.status(500).json({ error: 'Failed to save log', detail: error.message });
+  }
+
+  return res.status(201).json({ ok: true });
 }

@@ -218,7 +218,7 @@
 ### Deploy
 ```bash
 cd c:\Users\jifon\projects\playcoach
-npx vercel --prod
+git push   # auto-deploy via GitHub Actions
 ```
 
 ---
@@ -226,10 +226,12 @@ npx vercel --prod
 ## Deployment
 
 - **URL producción**: https://playcoach.vercel.app
-- **Deploy method**: `npx vercel --prod` desde terminal (no auto-deploy via GitHub por limitación de Vercel Hobby + org)
+- **Deploy method**: Auto-deploy via GitHub Actions (`.github/workflows/deploy.yml`) en cada push a main
+- **Deploy manual (backup)**: `npx vercel --prod` desde terminal
 - **Vercel team**: PintaPostChampionship (mismo team que PPC, proyecto separado)
 - **Repo**: `jifones/playcoach` (cuenta personal GitHub, no transferido a org)
 - **Supabase MCP**: configurado como `supabase-playcoach` en `~/.kiro/settings/mcp.json` con project_ref `nyskojznpmvxrsubfnsl`
+- **GitHub Secrets (para auto-deploy)**: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
 
 ---
 
@@ -568,3 +570,62 @@ Para usarla desde ppc-final, hacer un fetch cross-project o duplicar la tabla en
 - `add_court_policy_to_classes`: court_policy + court_confirmed + court_venue_name
 
 ### Última actualización: 10 junio 2026
+
+
+---
+
+## Sesión 12 junio 2026 — Payment flow + Court crons + UX polish
+
+### Payment Flow Simplification (implementado)
+- **RPC `book_class` actualizada**: ahora setea `payment_status` basado en `payment_timing` del coach
+  - `pre_class` → `payment_status = 'pending'` (alumno debe pagar en 48h)
+  - `post_class` → `payment_status = 'not_required'`
+  - Siempre setea `expires_at = now() + 48h`
+- **StudentBookings**: botón "✓ I've paid" con panel expandible de payment info (banco, link, instrucciones)
+- **BookingList (coach)**: badges de payment status (💰 Unpaid / ✅ Paid) — informativo, sin acción
+- **CoachPage post-booking modal**: mejorado con instrucciones claras según timing
+- **expire-bookings cron**: ahora también expira bookings `confirmed + payment_status=pending` pasados 48h
+- **Notification**: `buildPaymentMarkedNotification` — avisa al coach cuando alumno marca pagado
+- **RLS policy**: nueva `bookings_update_student_payment` para que alumno pueda updatear payment_status
+- **Flujo simplificado**: NO hay doble aprobación. El coach solo necesita Approve (si manual_approval). El pago es responsabilidad del alumno. Si no paga → expira solo.
+
+### Court Integration Crons (implementado)
+- **`/api/cron/court-booking-alerts`** (3x/día: 7am, 12pm, 6pm UTC):
+  - Busca bookings confirmados + `coach_books_court` + court no confirmada + clase en próximos 3 días
+  - Fetcha `court_availability.json` del court_monitor
+  - Match por venue name + fecha + hora → cuenta canchas disponibles
+  - Push al coach con urgencia: 🟢 (5+) / 🟡 (3-4) / 🔴 (1-2) / "No courts found" (0)
+  - Incluye link directo al booking si hay coincidencia en el JSON
+- **`/api/cron/no-students-reminder`** (diario 9am UTC):
+  - Busca clases `coach_books_court` de mañana sin ningún booking
+  - Push al coach: "No students booked for X tomorrow — cancel the court if not needed"
+
+### UX Polish (implementado)
+- **CoachPage profile header**: más espacio arriba (h-28/32 + pt-2), avatar no pegado al borde
+- **Sidebar booking info**: removido `sticky top-20` — ya no tapa contenido
+- **Header**: "Bookings" → "My Bookings"
+- **Coach Dashboard sidebar**: reordenado por prioridad (Home → Bookings → Classes → Inquiries → Profile → Locations → Payments → Packs)
+- **Pending badges**: conteo realtime en sidebar de Bookings e Inquiries
+- **ClassesTab**: botón "← Back to classes" cuando estás en AvailabilityGrid o ClassForm
+- **Time selector**: cambiado de `input[type=time]` a `<select>` con bloques de 30 min (6:00-20:30)
+
+### Color Palette Redesign
+- **Antes**: green-950/900 (forest oscuro, opresivo) + teal-600 (inconsistente)
+- **Ahora**: indigo-600 (moderno, confiable) + orange-500 (CTAs energéticos)
+- Landing: `slate-950 → indigo-950` (dark elegante, no depresivo)
+- Blobs: indigo + violet + orange (variedad)
+- 35 archivos actualizados para consistencia total
+
+### Infra — Auto-deploy
+- GitHub Action `.github/workflows/deploy.yml`: auto-deploy en cada push a main
+- `vercel.json` con `buildCommand`, `outputDirectory`, `framework: "vite"` explícitos
+- Secrets en GitHub: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+- Ya no necesita `npx vercel --prod` manual (pero sigue disponible como backup)
+- Bug resuelto: cache corrupto de Vercel servía build de ppc-final → fix con `--force`
+
+### Decisiones tomadas
+- **Class Packs student flow** → movido a Fase 3/4 (no urgente)
+- **Email notifications** → Gmail SMTP primero (`playcoachtennis@gmail.com`), Resend con dominio custom después
+- **Dominio `playcoach.app`** → comprar cuando haya tracción, usar con Resend (emails profesionales)
+
+### Última actualización: 12 junio 2026
