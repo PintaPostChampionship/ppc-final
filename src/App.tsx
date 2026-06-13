@@ -4130,11 +4130,13 @@ const App = () => {
           const recipientId = determineRecipient(matchObj, actorId!);
           if (recipientId) {
             const rivalName = profiles.find(p => p.id === actorId)?.name || 'Rival';
+            const winnerDisplayName = profiles.find(p => p.id === winnerId)?.name || 'Rival';
             const resultPayload = buildResultLoadedPayload(
               { ...matchObj, player1_sets_won: p1SetsWon, player2_sets_won: p2SetsWon } as any,
               setsData,
               rivalName,
-              winnerId
+              winnerId,
+              winnerDisplayName
             );
             sendPushNotification(recipientId, resultPayload.title, resultPayload.body, resultPayload.url);
           }
@@ -4142,17 +4144,20 @@ const App = () => {
           // Admin submitted result → notify BOTH players
           const p1Name = profiles.find(p => p.id === player1Id)?.name || 'Rival';
           const p2Name = profiles.find(p => p.id === player2Id)?.name || 'Rival';
+          const winnerDisplayName = profiles.find(p => p.id === winnerId)?.name || 'Rival';
           const payloadForP1 = buildResultLoadedPayload(
             { ...matchObj, player1_sets_won: p1SetsWon, player2_sets_won: p2SetsWon } as any,
             setsData,
             p2Name,
-            winnerId
+            winnerId,
+            winnerDisplayName
           );
           const payloadForP2 = buildResultLoadedPayload(
             { ...matchObj, player1_sets_won: p1SetsWon, player2_sets_won: p2SetsWon } as any,
             setsData,
             p1Name,
-            winnerId
+            winnerId,
+            winnerDisplayName
           );
           sendPushNotification(player1Id, payloadForP1.title, payloadForP1.body, payloadForP1.url);
           sendPushNotification(player2Id, payloadForP2.title, payloadForP2.body, payloadForP2.url);

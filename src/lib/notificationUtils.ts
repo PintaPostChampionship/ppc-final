@@ -94,7 +94,8 @@ export function buildResultLoadedPayload(
   match: Match,
   sets: MatchSet[],
   rivalName: string,
-  winnerId: string
+  winnerId: string,
+  winnerName?: string
 ): NotificationPayload {
   const sortedSets = [...sets].sort((a, b) => a.set_number - b.set_number);
   const scoreLine = sortedSets.map(s => `${s.p1_games}-${s.p2_games}`).join('  ');
@@ -103,9 +104,8 @@ export function buildResultLoadedPayload(
   const setsWon = winnerIsHome ? match.player1_sets_won : match.player2_sets_won;
   const setsLost = winnerIsHome ? match.player2_sets_won : match.player1_sets_won;
 
-  // From the recipient's perspective: rivalName is who submitted the result
-  const winnerName = winnerId === match.home_player_id ? 'Local' : 'Visita';
-  const body = `${scoreLine}\n🏆 Ganador: ${winnerName} (${setsWon}-${setsLost} sets)\n\nRevisa si el resultado está correcto.`;
+  const displayName = winnerName || (winnerIsHome ? 'Local' : 'Visita');
+  const body = `${scoreLine}\n🏆 Ganador: ${displayName} (${setsWon}-${setsLost} sets)\n\nRevisa si el resultado está correcto.`;
 
   // URL: open the division view
   const url = match.division_id ? `/#division/${match.division_id}` : '/';
