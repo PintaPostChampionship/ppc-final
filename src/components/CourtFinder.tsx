@@ -549,10 +549,11 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function CourtFinder({ onBack, currentUserId }: { onBack: () => void; currentUserId?: string | null }) {
+export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }: { onBack: () => void; currentUserId?: string | null; isAdmin?: boolean; profiles?: Array<{ id: string; name?: string | null }> }) {
   const [data, setData] = React.useState<CourtData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<'courts' | 'alerts'>('courts');
 
   // Restore state from sessionStorage
   const STORAGE_KEY = 'ppc_court_finder_state';
@@ -582,6 +583,24 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
   // Watchlist
   const [watchlist, setWatchlist] = React.useState<Set<string>>(new Set());
+
+  // My alerts (full records for the tab)
+  interface WatchAlert {
+    id: string;
+    profile_id: string;
+    venue_slug: string;
+    venue_name: string;
+    target_date: string;
+    time_block: string;
+    platform: string;
+    notify_by: string;
+    is_active: boolean;
+    notified_at: string | null;
+    created_at: string;
+  }
+  const [myAlerts, setMyAlerts] = React.useState<WatchAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = React.useState(false);
+  const [alertFilterPlayer, setAlertFilterPlayer] = React.useState<string>('all');
 
   // Show all mode
   const [showAll, setShowAll] = React.useState(savedState?.showAll ?? false);
@@ -667,13 +686,16 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
   const saveWatches = async (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[], notifyBy: string = "app") => {
     if (!currentUserId) return;
 
-    // Deactivate existing watches for this venue
-    const existingKeys = Array.from(watchlist).filter(k => k.startsWith(venueSlug + "|"));
-    if (existingKeys.length > 0) {
+    // Determine which dates are being updated
+    const datesToUpdate = new Set(alerts.map(a => a.date));
+
+    // Deactivate existing watches for this venue+date combination only
+    for (const date of datesToUpdate) {
       await supabase.from("court_watchlist")
         .update({ is_active: false })
         .eq("profile_id", currentUserId)
         .eq("venue_slug", venueSlug)
+        .eq("target_date", date)
         .eq("is_active", true);
     }
 
@@ -691,9 +713,13 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
       await supabase.from("court_watchlist").insert(rows);
     }
 
-    // Update local state
+    // Update local state — remove only the affected venue+date keys
     const newSet = new Set(watchlist);
-    for (const k of existingKeys) newSet.delete(k);
+    for (const date of datesToUpdate) {
+      for (const k of watchlist) {
+        if (k.startsWith(`${venueSlug}|${date}|`)) newSet.delete(k);
+      }
+    }
     for (const a of alerts) newSet.add(`${venueSlug}|${a.date}|${a.hour}`);
     setWatchlist(newSet);
 
@@ -704,6 +730,79 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
       showToast(`🔔 Te avisaremos cuando se libere · ${venueName} · ${dateStr} · ${hours}`);
     } else {
       showToast(`Alertas eliminadas para ${venueName}`);
+    }
+  };
+
+  // Load alerts for "Mis alertas" tab
+  const loadAlerts = React.useCallback(async () => {
+    if (!currentUserId) return;
+    setAlertsLoading(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      let query = supabase.from("court_watchlist")
+        .select("*")
+        .eq("is_active", true)
+        .gte("target_date", today)
+        .order("target_date", { ascending: true })
+        .order("time_block", { ascending: true });
+
+      // Non-admin: only own alerts
+      if (!isAdmin) {
+        query = query.eq("profile_id", currentUserId);
+      }
+
+      const { data: alertsData } = await query;
+      setMyAlerts((alertsData || []) as WatchAlert[]);
+    } catch (err) {
+      console.error("Error loading alerts:", err);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, [currentUserId, isAdmin]);
+
+  // Load alerts when tab switches
+  React.useEffect(() => {
+    if (activeTab === 'alerts') loadAlerts();
+  }, [activeTab, loadAlerts]);
+
+  // Delete a single alert
+  const deleteAlert = async (alertId: string) => {
+    const { error } = await supabase.from("court_watchlist")
+      .update({ is_active: false })
+      .eq("id", alertId);
+    if (!error) {
+      setMyAlerts(prev => prev.filter(a => a.id !== alertId));
+      showToast("Alerta eliminada");
+      // Update watchlist set
+      const deleted = myAlerts.find(a => a.id === alertId);
+      if (deleted) {
+        setWatchlist(prev => {
+          const next = new Set(prev);
+          next.delete(`${deleted.venue_slug}|${deleted.target_date}|${deleted.time_block}`);
+          return next;
+        });
+      }
+    }
+  };
+
+  // Delete all alerts for a venue+date
+  const deleteAlertsForVenueDate = async (venueSlug: string, targetDate: string) => {
+    const { error } = await supabase.from("court_watchlist")
+      .update({ is_active: false })
+      .eq("profile_id", currentUserId!)
+      .eq("venue_slug", venueSlug)
+      .eq("target_date", targetDate)
+      .eq("is_active", true);
+    if (!error) {
+      setMyAlerts(prev => prev.filter(a => !(a.venue_slug === venueSlug && a.target_date === targetDate)));
+      setWatchlist(prev => {
+        const next = new Set(prev);
+        for (const k of prev) {
+          if (k.startsWith(`${venueSlug}|${targetDate}|`)) next.delete(k);
+        }
+        return next;
+      });
+      showToast("Alertas eliminadas");
     }
   };
 
@@ -818,10 +917,117 @@ export default function CourtFinder({ onBack, currentUserId }: { onBack: () => v
 
         <h1 className="text-2xl font-bold text-emerald-800 mb-4">🎾 Canchas disponibles</h1>
 
-        {loading && <div className="text-center py-12 text-gray-500">Cargando...</div>}
-        {error && <div className="text-center py-12 text-red-600">Error: {error}</div>}
+        {/* Tabs */}
+        <div className="flex gap-1 mb-5 bg-gray-100 rounded-lg p-1">
+          <button onClick={() => setActiveTab('courts')}
+            className={`flex-1 text-sm font-medium py-2 px-4 rounded-md transition ${
+              activeTab === 'courts' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            📍 Canchas
+          </button>
+          <button onClick={() => setActiveTab('alerts')}
+            className={`flex-1 text-sm font-medium py-2 px-4 rounded-md transition flex items-center justify-center gap-1.5 ${
+              activeTab === 'alerts' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            🔔 Mis alertas
+            {watchlist.size > 0 && (
+              <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold">{watchlist.size}</span>
+            )}
+          </button>
+        </div>
 
-        {data && !loading && (<>
+        {/* Alerts Tab */}
+        {activeTab === 'alerts' && (
+          <div className="space-y-3">
+            {alertsLoading && <div className="text-center py-8 text-gray-500 text-sm">Cargando alertas...</div>}
+
+            {/* Admin filter by player */}
+            {isAdmin && !alertsLoading && myAlerts.length > 0 && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-gray-500">Filtrar por jugador:</span>
+                <select value={alertFilterPlayer} onChange={e => setAlertFilterPlayer(e.target.value)}
+                  className="text-xs rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 py-1.5">
+                  <option value="all">Todos</option>
+                  {Array.from(new Set(myAlerts.map(a => a.profile_id))).map(pid => {
+                    const name = profiles?.find(p => p.id === pid)?.name || pid.slice(0, 8);
+                    return <option key={pid} value={pid}>{name}</option>;
+                  })}
+                </select>
+              </div>
+            )}
+
+            {!alertsLoading && myAlerts.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-4xl mb-3">🔔</div>
+                <p className="text-gray-500 text-sm mb-2">No tienes alertas activas</p>
+                <p className="text-gray-400 text-xs mb-4">Crea alertas desde la vista de canchas para que te avisemos cuando se libere un horario.</p>
+                <button onClick={() => setActiveTab('courts')}
+                  className="text-sm font-medium text-emerald-600 hover:text-emerald-800 transition">
+                  ← Ir a canchas
+                </button>
+              </div>
+            )}
+
+            {!alertsLoading && myAlerts.length > 0 && (() => {
+              const filtered = alertFilterPlayer === 'all' ? myAlerts : myAlerts.filter(a => a.profile_id === alertFilterPlayer);
+              // Group by venue+date
+              const grouped = new Map<string, WatchAlert[]>();
+              for (const a of filtered) {
+                const key = `${a.venue_name}|${a.target_date}`;
+                if (!grouped.has(key)) grouped.set(key, []);
+                grouped.get(key)!.push(a);
+              }
+
+              return Array.from(grouped.entries()).map(([key, alerts]) => {
+                const first = alerts[0];
+                const hours = alerts.map(a => a.time_block).sort().join(', ');
+                const ownerName = isAdmin && profiles ? (profiles.find(p => p.id === first.profile_id)?.name || '?') : null;
+                return (
+                  <div key={key} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-gray-800 text-sm truncate">{first.venue_name}</h3>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PLATFORM_COLORS[first.platform] || 'bg-gray-100 text-gray-600'}`}>
+                            {PLATFORM_LABELS[first.platform] || first.platform}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <span>📅 {formatDate(first.target_date)}</span>
+                          <span>⏰ {hours}</span>
+                          <span>{first.notify_by === 'app' ? '📱' : first.notify_by === 'email' ? '📧' : '📱📧'} {first.notify_by === 'both' ? 'Ambos' : first.notify_by === 'app' ? 'App' : 'Email'}</span>
+                        </div>
+                        {ownerName && <p className="text-[11px] text-gray-400 mt-1">👤 {ownerName}</p>}
+                      </div>
+                      <button
+                        onClick={() => deleteAlertsForVenueDate(first.venue_slug, first.target_date)}
+                        className="shrink-0 text-xs px-2.5 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition"
+                      >
+                        🗑 Eliminar
+                      </button>
+                    </div>
+                    {/* Individual hours with delete buttons */}
+                    {alerts.length > 1 && (
+                      <div className="mt-2 pt-2 border-t border-gray-100 flex flex-wrap gap-1.5">
+                        {alerts.map(a => (
+                          <div key={a.id} className="inline-flex items-center gap-1 text-xs bg-amber-50 border border-amber-200 rounded-md px-2 py-1">
+                            <span className="font-mono text-amber-800">{a.time_block}</span>
+                            <button onClick={() => deleteAlert(a.id)} className="text-amber-400 hover:text-red-500 transition ml-0.5">×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
+
+        {loading && activeTab === 'courts' && <div className="text-center py-12 text-gray-500">Cargando...</div>}
+        {error && activeTab === 'courts' && <div className="text-center py-12 text-red-600">Error: {error}</div>}
+
+        {data && !loading && activeTab === 'courts' && (<>
           {/* Date pills */}
           <div className="flex gap-2 overflow-x-auto pb-3 mb-3 -mx-4 px-4 scrollbar-hide">
             <button onClick={() => setFilterDate("all")}

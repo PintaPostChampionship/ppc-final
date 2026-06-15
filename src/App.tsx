@@ -4993,7 +4993,7 @@ const App = () => {
           <FindTennisCourt onBack={() => setShowMonitorTips(false)} />
         ) : (
           <div className="p-4 sm:p-6">
-            <CourtFinder onBack={() => setShowMonitor(false)} currentUserId={currentUser?.id ?? null} />
+            <CourtFinder onBack={() => setShowMonitor(false)} currentUserId={currentUser?.id ?? null} isAdmin={currentUser?.role === 'admin'} profiles={profiles} />
           </div>
         )}
       </div>
@@ -6291,7 +6291,7 @@ const App = () => {
   if (showCourtFinder && currentUser?.id === BUSCAR_CLASES_ALLOWED_ID) {
     return (
       <div className="p-4 sm:p-6">
-        <CourtFinder onBack={() => setShowCourtFinder(false)} currentUserId={currentUser?.id ?? null} />
+        <CourtFinder onBack={() => setShowCourtFinder(false)} currentUserId={currentUser?.id ?? null} isAdmin={currentUser?.role === 'admin'} profiles={profiles} />
       </div>
     );
   }
