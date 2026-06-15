@@ -8,12 +8,43 @@ interface GarminPairSectionProps {
 }
 
 export default function GarminPairSection({ currentUser, supabase }: GarminPairSectionProps) {
-  const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<Date | null>(null);
+  // Restore code from sessionStorage if still valid
+  const [pairingCode, setPairingCode] = useState<string | null>(() => {
+    try {
+      const stored = sessionStorage.getItem("garmin_pair_code");
+      const storedExpires = sessionStorage.getItem("garmin_pair_expires");
+      if (stored && storedExpires && new Date(storedExpires).getTime() > Date.now()) {
+        return stored;
+      }
+    } catch {}
+    return null;
+  });
+  const [expiresAt, setExpiresAt] = useState<Date | null>(() => {
+    try {
+      const storedExpires = sessionStorage.getItem("garmin_pair_expires");
+      if (storedExpires && new Date(storedExpires).getTime() > Date.now()) {
+        return new Date(storedExpires);
+      }
+    } catch {}
+    return null;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPaired, setIsPaired] = useState(!!currentUser.garmin_paired_at);
   const [countdown, setCountdown] = useState(0);
+
+  // Persist code to sessionStorage when generated
+  useEffect(() => {
+    try {
+      if (pairingCode && expiresAt) {
+        sessionStorage.setItem("garmin_pair_code", pairingCode);
+        sessionStorage.setItem("garmin_pair_expires", expiresAt.toISOString());
+      } else {
+        sessionStorage.removeItem("garmin_pair_code");
+        sessionStorage.removeItem("garmin_pair_expires");
+      }
+    } catch {}
+  }, [pairingCode, expiresAt]);
 
   // Countdown timer
   useEffect(() => {
