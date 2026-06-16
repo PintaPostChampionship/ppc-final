@@ -54,6 +54,10 @@ export async function advanceWinner(match: Match, supabaseClient: any) {
     return; // empate no avanza
   }
 
+  // Obtener el usuario actual para created_by
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  const currentUserId = user?.id ?? null;
+
   // Calcular el partido siguiente
   const meta = getNextMatchPosition(match.knockout_round, match.bracket_position);
   if (!meta) return; // Final no tiene siguiente ronda
@@ -71,32 +75,48 @@ export async function advanceWinner(match: Match, supabaseClient: any) {
 
   // 1) Si NO existe → crear el partido
   if (!existing) {
-    // Fecha por defecto: hoy (los jugadores la editarán después)
-    const defaultDate = new Date().toISOString().split('T')[0];
+    // Fecha fija para knockout (los jugadores la editarán después)
+    const defaultDate = '2026-06-01';
+
+    // Posición impar (1,3,5,7) → home del siguiente match
+    // Posición par (2,4,6,8) → away del siguiente match
+    const isOddPosition = ((match.bracket_position ?? 1) % 2) === 1;
 
     await supabaseClient.from('matches').insert({
       tournament_id: match.tournament_id,
       division_id: match.division_id,
       knockout_round: nextRound,
       bracket_position: nextPos,
-      home_player_id: winner,
-      away_player_id: null,
-      date: defaultDate,      // 👈 aquí usamos la fecha por defecto
+      home_player_id: isOddPosition ? winner : null,
+      away_player_id: isOddPosition ? null : winner,
+      date: defaultDate,
       status: 'pending',
+      created_by: currentUserId,
     });
 
     return;
   }
 
-  // 2) Si existe → actualizamos home/away según disponibilidad
+  // 2) Si existe → colocamos en el slot que corresponde por posición
+  const isOddPosition = ((match.bracket_position ?? 1) % 2) === 1;
   const updatePayload: any = {};
 
-  if (!existing.home_player_id) {
+  if (isOddPosition) {
     updatePayload.home_player_id = winner;
-  } else if (!existing.away_player_id) {
-    updatePayload.away_player_id = winner;
   } else {
-    return; // Ya tiene ambos jugadores, no hacemos nada
+    updatePayload.away_player_id = winner;
+  }
+
+  // Si el slot ya está ocupado (raro, pero por seguridad), no sobreescribir
+  if (isOddPosition && existing.home_player_id) return;
+  if (!isOddPosition && existing.away_player_id) return;
+
+  // Si ambos jugadores están ahora completos, cambiar status a scheduled
+  const willBeComplete = isOddPosition
+    ? (existing.away_player_id != null)
+    : (existing.home_player_id != null);
+  if (willBeComplete) {
+    updatePayload.status = 'scheduled';
   }
 
   await supabaseClient
