@@ -188,6 +188,19 @@ const App = () => {
   const [courtRequests, setCourtRequests] = useState<CourtBookingRequest[]>([]);
 
   const [showBookingPanel, setShowBookingPanel] = useState(false);
+  const [bookingPanelTab, setBookingPanelTab] = useState<'crear' | 'reservas'>('reservas');
+  const [betterBookings, setBetterBookings] = useState<Array<{
+    id: string;
+    starts_at: string;
+    ends_at: string;
+    court_name: string;
+    venue_name: string;
+    status: string;
+    can_cancel: boolean;
+    cancel_cut_off: string | null;
+    booking_account_id: string;
+  }>>([]);
+  const [loadingBetterBookings, setLoadingBetterBookings] = useState(false);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [accountCredits, setAccountCredits] = useState<Record<string, { credits: number; updatedAt: string; costHighbury: number | null; costRosemary: number | null }>>({});
@@ -1410,6 +1423,18 @@ const App = () => {
         setBookingAdmins(adminsData);
         setBookingAccounts(visibleAccounts);
         setCourtRequests(requestsData);
+
+        // Fetch upcoming Better bookings
+        try {
+          const { data: bookingsData } = await supabase
+            .from('better_bookings')
+            .select('*')
+            .gte('starts_at', new Date().toISOString())
+            .order('starts_at', { ascending: true });
+          setBetterBookings(bookingsData || []);
+        } catch (e) {
+          console.error('loadBetterBookings error:', e);
+        }
       } catch (err) {
         console.error('loadBookingData error:', err);
       }
@@ -5809,6 +5834,100 @@ const App = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <section className="bg-white/90 rounded-2xl shadow-lg p-6 border border-green-100">
+            {/* Tabs */}
+            <div className="flex gap-1 mb-6 border-b border-gray-200">
+              <button
+                onClick={() => setBookingPanelTab('reservas')}
+                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition ${
+                  bookingPanelTab === 'reservas'
+                    ? 'bg-green-100 text-green-800 border-b-2 border-green-600'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                📋 Mis reservas
+              </button>
+              <button
+                onClick={() => setBookingPanelTab('crear')}
+                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition ${
+                  bookingPanelTab === 'crear'
+                    ? 'bg-green-100 text-green-800 border-b-2 border-green-600'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                ➕ Crear reserva
+              </button>
+            </div>
+
+            {/* TAB: Mis reservas */}
+            {bookingPanelTab === 'reservas' && (
+              <div>
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">Próximas reservas en Better</h2>
+                    <p className="mt-1 text-sm text-gray-500">Reservas confirmadas de todas las cuentas. Se sincroniza automáticamente 2 veces al día.</p>
+                  </div>
+                </div>
+
+                {betterBookings.length === 0 ? (
+                  <p className="text-sm text-gray-600 py-8 text-center">No hay reservas próximas.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {(() => {
+                      // Group bookings by date
+                      const grouped: Record<string, typeof betterBookings> = {};
+                      for (const b of betterBookings) {
+                        const dateKey = new Date(b.starts_at).toLocaleDateString('es-CL', {
+                          weekday: 'long',
+                          day: 'numeric',
+                          month: 'long',
+                          timeZone: 'Europe/London',
+                        });
+                        if (!grouped[dateKey]) grouped[dateKey] = [];
+                        grouped[dateKey].push(b);
+                      }
+                      return Object.entries(grouped).map(([dateLabel, dayBookings]) => (
+                        <div key={dateLabel} className="border border-gray-200 rounded-xl overflow-hidden">
+                          <div className="bg-green-50 px-4 py-2 border-b border-gray-200">
+                            <h3 className="font-semibold text-gray-800 capitalize">{dateLabel}</h3>
+                          </div>
+                          <div className="divide-y divide-gray-100">
+                            {dayBookings.map((b) => {
+                              const startLocal = new Date(b.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+                              const endLocal = new Date(b.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+                              const account = bookingAccounts.find(a => a.id === b.booking_account_id);
+                              const courtShort = b.court_name.replace('Highbury Fields Tennis ', '').replace('Highbury Fields ', '');
+                              return (
+                                <div key={b.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-center min-w-[60px]">
+                                      <div className="text-sm font-bold text-gray-800">{startLocal}</div>
+                                      <div className="text-xs text-gray-500">{endLocal}</div>
+                                    </div>
+                                    <div>
+                                      <div className="font-medium text-gray-800">{courtShort}</div>
+                                      <div className="text-xs text-gray-500">{account?.label || '—'}</div>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    {b.can_cancel && (
+                                      <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Cancelable</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB: Crear reserva (existing content) */}
+            {bookingPanelTab === 'crear' && (
+            <div>
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">
@@ -6239,6 +6358,8 @@ const App = () => {
                 </div>
               )}
             </div>
+          </div>
+          )}
           </section>
         </div>
 
