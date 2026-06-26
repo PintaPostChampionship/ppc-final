@@ -71,15 +71,18 @@ export default function GarminPairSection({ currentUser, supabase }: GarminPairS
   }, [expiresAt]);
 
   // Poll to check if pairing was completed (while code is active)
+  // Only triggers if garmin_paired_at changes AFTER the code was generated
   useEffect(() => {
     if (!pairingCode || !expiresAt) return;
+    const codeGeneratedAt = new Date().toISOString();
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from("profiles")
         .select("garmin_paired_at")
         .eq("id", currentUser.id)
         .single();
-      if (data?.garmin_paired_at) {
+      // Only consider it paired if the timestamp is AFTER we generated the code
+      if (data?.garmin_paired_at && data.garmin_paired_at > codeGeneratedAt) {
         setIsPaired(true);
         setPairingCode(null);
         setExpiresAt(null);
