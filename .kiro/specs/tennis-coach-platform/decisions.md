@@ -629,3 +629,307 @@ Para usarla desde ppc-final, hacer un fetch cross-project o duplicar la tabla en
 - **Dominio `playcoach.app`** → comprar cuando haya tracción, usar con Resend (emails profesionales)
 
 ### Última actualización: 12 junio 2026
+
+
+---
+
+## Funcionalidades Completas — Estado al 20 junio 2026
+
+### Para Coaches:
+| Feature | Estado | Descripción |
+|---------|--------|-------------|
+| Perfil público | ✅ | Página compartible con slug único (`/coach/nombre`) |
+| Calendario/Disponibilidad | ✅ | Grid de disponibilidad semanal + creación de slots específicos |
+| Clases | ✅ | Individual, group drill, tournament, social. Precio libre. |
+| Booking modes | ✅ | Auto-accept (instantáneo) o Manual approval (coach revisa) |
+| Pagos configurables | ✅ | Bank transfer y/o payment link. Pre-class o post-class. |
+| Gestión de bookings | ✅ | Approve/reject, cancelar, court confirmed. Realtime updates. |
+| Student notes | ✅ | Notas por alumno (focus, progress, objective, general). Historial. |
+| Student rating | ✅ | Rating de nivel 1-5 por alumno (solo post-clase) |
+| Inquiries | ✅ | Recibir consultas de disponibilidad + responder inline |
+| Class packs | ✅ | Crear bundles con descuento (student purchase → Fase 3) |
+| Court policy | ✅ | 3 opciones: has_court, coach_books_court, student_books_court |
+| Court booking alerts | ✅ | Push diaria si tiene bookings sin court confirmada (cron) |
+| No-students reminder | ✅ | Push 24h antes si clase sin alumnos → cancelar cancha |
+| Push notifications | ✅ | Booking request, approval, inquiry, court confirmed, reminders |
+| Email notifications | ✅ | Gmail SMTP para todos los triggers (push + email siempre) |
+| Publish/Unpublish | ✅ | Toggle para hacer visible/invisible la página |
+| Multiple locations | ✅ | Agregar varias canchas con autocomplete de known_venues |
+| Share link | ✅ | Copy link fácil en el dashboard overview |
+| Pending badges | ✅ | Badges en sidebar (desktop + mobile) con conteo realtime |
+
+### Para Students:
+| Feature | Estado | Descripción |
+|---------|--------|-------------|
+| Search by location | ✅ | Mapa interactivo + lista, filtros, zoom a venue |
+| Search by name/area | ✅ | Búsqueda por texto (nombre, área, postcode) |
+| Filters | ✅ | Tipo de clase, nivel, precio máx, "only with slots" |
+| Book/Request class | ✅ | Booking instantáneo o request según el coach |
+| Payment flow | ✅ | Ver instrucciones de pago, marcar "I've paid", breakdown con fee |
+| My Bookings | ✅ | Ver upcoming/past, cancelar, payment info expandible |
+| Leave review | ✅ | Rating 1-5 + comentario post-clase |
+| Inquiry form | ✅ | Consultar disponibilidad si el coach no tiene slots visibles |
+| Court finder | ✅ | Mapa de canchas con disponibilidad real (JSON de court_monitor) |
+| Back button | ✅ | Navegación app-like en todas las páginas internas |
+| Push notifications | ✅ | Booking approved/rejected, court confirmed, class reminder |
+| Email notifications | ✅ | Mismos triggers que push (siempre se envía email) |
+
+### Infraestructura:
+| Feature | Estado | Descripción |
+|---------|--------|-------------|
+| PWA instalable | ✅ | Manifest + SW + offline page + íconos PNG |
+| Auto-deploy | ❌ Desactivado | GitHub Action existe pero desactivado (conflicto con ppc-final). Deploy manual. |
+| Cron jobs (4) | ✅ | expire-bookings, class-reminders, court-booking-alerts, no-students-reminder |
+| Realtime | ✅ | Supabase Realtime en bookings + inquiries (badges se actualizan solos) |
+| Error boundary | ✅ | Chunk loading failure → auto-reload |
+| Responsive | ✅ | Mobile-first, sidebar en desktop, hamburger en mobile |
+
+---
+
+## Fase 2 — COMPLETADA ✅
+
+Todo lo que estaba planificado para Fase 2 está implementado:
+
+- ✅ Search & Discovery (mapa, filtros, zoom)
+- ✅ Reviews/Ratings (bidireccional: student→coach, coach→student level)
+- ✅ Payment flow (mark as paid, auto-expire 48h, fee breakdown visible)
+- ✅ Court Integration (cron alerts, court confirmed push, BYO court badges)
+- ✅ Email notifications (Gmail SMTP, todos los triggers)
+- ✅ Push notifications (todos los triggers)
+- ✅ PWA (offline page, íconos, manifest, install prompt)
+- ✅ Student Notes (coach tracks progress, focus, objectives)
+- ✅ UX Polish (mobile layout, back button, time slots 30min, pending badges)
+- ✅ Class Packs — coach creation (student purchase → Fase 3)
+
+**Única cosa movida a Fase 3:** Class Packs student purchase flow + perfil público del alumno.
+
+---
+
+## Fase 3 — Plan
+
+| # | Feature | Prioridad | Esfuerzo |
+|---|---------|-----------|----------|
+| 1 | **Onboarding coaches reales** | 🔴 Alta | Operativo (no código) |
+| 2 | **Dominio custom** (playcoach.app) + Resend emails | 🔴 Alta | 1-2h config |
+| 3 | **SEO básico** | 🟡 Media | Meta tags, sitemap, coach pages indexables |
+| 4 | **Class Packs — student purchase** | 🟡 Media | UI en CoachPage + usar créditos al reservar |
+| 5 | **Student public profile** | 🟡 Media | Nivel, historial, canchas preferidas |
+| 6 | **Multi-país Chile** | 🟡 Media | CLP, timezone, español, canchas chilenas |
+| 7 | **Stripe Connect** | 🟢 Baja (cuando haya volumen) | Pagos escrow, payouts |
+| 8 | **Matchmaking** | 🟢 Baja | Conectar alumnos del mismo nivel para jugar |
+| 9 | **App nativa** | 🟢 Baja | Evaluar TWA/PWA wrapper vs React Native |
+
+### Prioridad inmediata (siguiente sesión):
+1. Conseguir 3-5 coaches reales (usar los mensajes de arriba)
+2. Comprar dominio `playcoach.app` cuando haya tracción
+3. Bugs/polish que surjan de los coaches reales usando la plataforma
+
+---
+
+## Deploy manual (mientras auto-deploy está desactivado)
+
+```bash
+cd c:\Users\jifon\projects\playcoach
+npm run build
+git add -A && git commit -m "descripción"
+git push
+npx vercel --prod --yes --force
+```
+
+**IMPORTANTE**: siempre usar `--force` para evitar caches cruzados con ppc-final.
+
+### Root cause del problema de deploy (resuelto 20 jun 2026):
+El proyecto playcoach en Vercel tenía el repo de ppc-final conectado via Git Integration nativa. Cada push a ppc-final triggereaba un deploy que sobreescribía playcoach. Se desconectó el repo en Vercel → Settings → Git → Disconnect. El GitHub Action de auto-deploy se desactivó como medida adicional.
+
+---
+
+## Última actualización: 20 junio 2026
+
+
+---
+
+## Expansión Chile — Investigación (20 junio 2026)
+
+### Plataformas existentes en Chile
+
+| Plataforma | Tipo | Tennis | Coaching | Notas |
+|------------|------|--------|----------|-------|
+| **EasyCancha** | SaaS para clubs + app consumer | ✅ | ❌ | Dominante en Chile. Court booking para clubs. NO tiene discovery de coaches. |
+| **Reva** | App booking canchas | ✅ | ❌ | Activa en Chile |
+| **Playtomic** | Booking canchas | ⚠️ Solo pádel | ❌ | No relevante para tenis en Chile |
+| **Superprof.cl** | Marketplace tutores | ✅ Listados | ✅ Genérico | Mismo modelo malo que UK |
+| **GoPlay!** | App booking | ✅ | ❌ | Más nueva |
+
+**GAP**: No hay plataforma de discovery + booking de coaches de tenis en Chile. EasyCancha maneja canchas, no coaching.
+
+### Zonas clave en Santiago
+
+| Comuna | Densidad | Venues principales |
+|--------|----------|-------------------|
+| Las Condes | ⭐⭐⭐⭐⭐ | Parque Tenis El Alba (16 courts), Club Martín de Zamora, Parque Araucano (3 gratuitas) |
+| Vitacura | ⭐⭐⭐⭐ | Club Lo Cañas, Fernando González Academy, Stade Français |
+| La Reina | ⭐⭐⭐ | Dragones de La Reina, MI CLUB, Club Parque |
+| Providencia | ⭐⭐⭐ | Club de Tenis Providencia (histórico) |
+| Ñuñoa | ⭐⭐ | Estadio Español |
+| Huechuraba | ⭐⭐ | SportPark |
+
+### Precios Chile (CLP)
+
+| Concepto | Rango | Equivalente USD |
+|----------|-------|-----------------|
+| Cancha municipal | $5.000-$12.000/hr | $5-12 |
+| Cancha privada | $10.000-$20.000/hr | $10-20 |
+| Clase individual (independiente) | $20.000-$40.000/hr | $20-40 |
+| Clase individual (academia premium) | $35.000-$60.000/hr | $35-60 |
+| Clase grupal | $10.000-$18.000/pp | $10-18 |
+
+### Cómo operan coaches freelance en Chile
+1. Instagram + WhatsApp (principal canal)
+2. Superprof.cl (poco diferenciación)
+3. Boca a boca en clubs
+4. Academias que emplean coaches
+
+### Desafíos para la expansión
+- Precio más bajo → fee debe ajustarse (CLP $200-500 por booking, no £0.50)
+- WhatsApp muy enraizado como herramienta de comunicación
+- Lealtad al club (jugadores no cambian fácil)
+- Idioma: todo en español
+- Pagos: Webpay/Transbank domina, Stripe es viable pero menos conocido
+
+### Posible estrategia para court data
+- **NO scrapeamos EasyCancha** (API privada, no viable)
+- **Sí**: crear directorio manual de canchas conocidas (seed estático como hicimos con London)
+- Links a EasyCancha/GoPlay para booking (similar a como linkamos a Better en UK)
+- Empezar con 15-20 venues en Las Condes + Vitacura + Providencia
+- Agregar venue suggestion form (ya existe en la app)
+
+---
+
+## Matchmaking (Fase 4) — Diseño preliminar
+
+### Rating system
+- Escala: **1.0 a 5.0** con incrementos de 0.5 (tipo NTRP: 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0)
+- El coach pone el rating inicial del alumno
+- Después del rating inicial, se ajusta por resultados de partidos
+
+### Matching rules
+- Un jugador nivel X puede jugar con: **X - 0.5 a X + 0.5**
+  - Ej: nivel 3.0 → puede jugar con 2.5 a 3.5
+- Más adelante se puede flexibilizar con consentimiento mutuo
+
+### ELO-like scoring post-partido
+- Ganar a un rival de nivel similar: +pocos puntos
+- Ganar a un rival superior: +muchos puntos
+- Perder contra un rival inferior: -muchos puntos
+- Perder contra un rival superior: -pocos puntos
+- Fórmula base: ELO estándar con K-factor adaptado al nivel
+
+### Lo que se necesita (Fase 4)
+- Tabla `friendly_matches` (challenge, accept, result, ELO delta)
+- Tabla `player_elo` (profile_id, elo_score, level_display, last_match_at)
+- UI de "Find a Match" en student dashboard
+- Filtro por nivel + ubicación + disponibilidad
+- Resultado ingresado por ambos jugadores (o uno con confirmación del otro)
+- Historial de partidos + progresión de nivel visual
+
+
+---
+
+## Canchas Chile — Directorio para seed (20 junio 2026)
+
+### Venues en EasyCancha (confirmados con booking online)
+
+| # | Venue | Comuna | URL | Surface |
+|---|-------|--------|-----|---------|
+| 1 | Parque Tenis El Alba | Las Condes | easycancha.com/clubes/parque-tenis-el-alba | Clay, 16 courts, lighting |
+| 2 | Brain Sports – San Carlos de Apoquindo | Las Condes | easycancha.com/clubes/brain-sports---san-carlos-de-apoquindo | Clay |
+| 3 | Fernando González – Casa Matriz | Vitacura | easycancha.com/clubes/fernando-gonzalez---casa-matriz-vitacura | Clay |
+| 4 | Centro Deportivo Dragones de La Reina | La Reina | easycancha.com/clubes/centro-deportivo-dragones-de-la-reina | Clay |
+| 5 | Centro Deportivo MI CLUB La Reina | La Reina | easycancha.com/clubes/centro-deportivo-mi-club-la-reina | Clay |
+| 6 | Centro Panamericano de Tenis | Ñuñoa | easycancha.com/clubes/centro-panamericano-de-tenis | Clay |
+| 7 | Club Ossandón | La Reina | easycancha.com/clubes/club-ossandon | Clay |
+| 8 | Club Parque La Reina | La Reina | easycancha.com/clubes/club-parque-la-reina | Clay |
+| 9 | Federación de Tenis de Chile | Las Condes | easycancha.com/clubes/federacion-de-tenis-de-chile-(cerro-colorado) | Clay |
+| 10 | Fundación Futuros para el Tenis | Las Condes area | easycancha.com/clubes/fundacion-futuros-para-el-tenis | Hard |
+| 11 | SportPark Huechuraba | Huechuraba | easycancha.com/clubes/sportpark-huechuraba | Clay |
+| 12 | Stade Francais | Vitacura | easycancha.com/clubes/stade-francais | Clay |
+| 13 | Canchas UC Campus San Joaquín | San Joaquín | easycancha.com/clubes/canchas-uc-campus-san-joaquin | Hard |
+| 14 | Play Tenis Chicureo | Colina | easycancha.com/clubes/play-tenis-chicureo | Clay |
+| 15 | Alto Tenis – Padel Chicauma | Lampa | easycancha.com/clubes/alto-tenis---padel-chicauma | Clay + Padel |
+
+### Venues adicionales (sin EasyCancha — booking por WhatsApp/teléfono/web propia)
+
+| # | Venue | Comuna | Courts | Surface | Precio aprox/hr |
+|---|-------|--------|--------|---------|-----------------|
+| 16 | Club Lo Cañas | Vitacura | 8+ | Clay | $12.000-18.000 |
+| 17 | Club Martin de Zamora | Las Condes | 6 | Clay | $12.000-15.000 |
+| 18 | Ciudad Deportiva Iván Zamorano | Las Condes | 12 | Clay | $10.000-15.000 |
+| 19 | Parque Araucano (público) | Las Condes | 3 | Hard | GRATIS |
+| 20 | Estadio Israelita | Las Condes | 4-6 | Clay | Miembros + invitados |
+| 21 | San Carlos de Apoquindo (UC) | Las Condes | Multiple | Clay | $12.000-18.000 |
+| 22 | Club de Tenis Lo Cañas (La Florida) | La Florida | 4+ | Clay | $8.000-12.000 |
+| 23 | Centro Deportivo Talinay | La Reina | 2-4 | Synthetic | $8.000-12.000 |
+| 24 | Santa Rosa de Huechuraba | Huechuraba | — | Clay | — |
+
+### Notas para implementación
+- EasyCancha NO tiene API pública. Scraping posible pero risky.
+- Mejor approach: directorio estático + link a EasyCancha/web del club para booking
+- Misma estructura que `known_venues` en London (slug, name, lat, lng, platform, booking_url)
+- Diferencia: `platform` será "easycancha" | "whatsapp" | "web" | "free"
+- Pádel: algunos venues (Alto Tenis, SportPark) tienen canchas de pádel → soportar sport: "tennis" | "padel"
+
+---
+
+## Rating System — Diseño final (Fase 4)
+
+### Investigación de sistemas existentes
+
+| Sistema | Escala | Granularidad | Coach? | Auto-ajuste? |
+|---------|--------|-------------|--------|--------------|
+| Playtomic | 1.0-7.0 | decimal (0.01) | Sí (Leveling Clubs) | Sí (ELO modificado + reliability) |
+| UTR | 1.00-16.50 | decimal (0.01) | No | Sí (% games won weighted) |
+| SPIN | Divisiones | No numérico | No | Por temporada (promo/relegation) |
+| LTA/PadelMates | 1.0-7.0 | 0.5 | Sí (método primario) | No (manual) |
+
+### Diseño PlayCoach: Dual Rating
+
+**1. Coach Assessment (1.0 – 5.0)**
+- Puesto por el coach durante/después de clases
+- Granularidad: 0.5 (1.0, 1.5, 2.0... 5.0 = 9 niveles)
+- Mide: calidad técnica, comprensión táctica, potencial
+- Actualizado por el coach cada 4-8 sesiones
+- Solo el coach puede modificar (no el alumno)
+
+**2. Match Rating (ELO interno, display 1.0-5.0)**
+- Comienza derivado del Coach Assessment (ej: Coach 3.0 → ELO 1200)
+- Internamente es un número ELO (800-2000), se mapea a 1.0-5.0 para display
+- Ajusta automáticamente después de cada partido registrado
+- K-factor alto para nuevos (volatilidad), bajo para veteranos (estabilidad)
+- Usa % de games ganados (no solo W/L) — inspirado en UTR
+- Permite "casual match" que no afecta rating — inspirado en Playtomic
+
+**3. Displayed Level (blend)**
+- `DisplayedLevel = (CoachRating × weight_c) + (MatchRating × weight_m)`
+- Con <5 matches: `weight_c = 0.7, weight_m = 0.3`
+- Con 5-20 matches: `weight_c = 0.4, weight_m = 0.6`
+- Con 20+ matches: `weight_c = 0.2, weight_m = 0.8`
+- Display: "Level 3.2" con una decimal
+
+**4. Matching rules**
+- Puede jugar con: su nivel ± 0.5
+- Ej: Level 3.2 → puede jugar con 2.7 a 3.7
+- Con consentimiento mutuo, rango se expande a ± 1.0
+
+**5. Labels**
+- 1.0-1.9: Beginner
+- 2.0-2.9: Improver  
+- 3.0-3.9: Intermediate
+- 4.0-4.5: Advanced
+- 4.5-5.0: Competition
+
+### Conceptos clave (de la investigación)
+- **Reliability/volatilidad** (Playtomic): nuevos jugadores calibran rápido, veteranos son estables
+- **% games won** (UTR): no solo W/L. Perder 6-7 6-7 no te baja mucho vs un rival superior
+- **Coach anchoring**: previene gaming del sistema jugando solo contra débiles
+- **Self-lowering** (Playtomic): el jugador puede bajarse el nivel, pero no subirse — previene inflación
+- **Casual mode**: permite jugar sin presión de rating

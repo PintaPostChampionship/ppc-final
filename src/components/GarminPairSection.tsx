@@ -30,7 +30,17 @@ export default function GarminPairSection({ currentUser, supabase }: GarminPairS
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isPaired, setIsPaired] = useState(!!currentUser.garmin_paired_at);
+  // If there's an active pairing code in session, show it even if already paired
+  const [isPaired, setIsPaired] = useState(() => {
+    try {
+      const storedCode = sessionStorage.getItem("garmin_pair_code");
+      const storedExpires = sessionStorage.getItem("garmin_pair_expires");
+      if (storedCode && storedExpires && new Date(storedExpires).getTime() > Date.now()) {
+        return false; // Show code view, not paired view
+      }
+    } catch {}
+    return !!currentUser.garmin_paired_at;
+  });
   const [countdown, setCountdown] = useState(0);
 
   // Persist code to sessionStorage when generated
