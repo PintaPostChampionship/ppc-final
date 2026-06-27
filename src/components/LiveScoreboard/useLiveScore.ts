@@ -125,12 +125,19 @@ export function useLiveScore(
   useEffect(() => {
     loadState();
     subscribe();
+
+    // Polling fallback: fetch state every 5s in case Realtime disconnects silently
+    const pollInterval = setInterval(() => {
+      loadState();
+    }, 5000);
+
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      clearInterval(pollInterval);
     };
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
