@@ -933,3 +933,139 @@ El proyecto playcoach en Vercel tenía el repo de ppc-final conectado via Git In
 - **Coach anchoring**: previene gaming del sistema jugando solo contra débiles
 - **Self-lowering** (Playtomic): el jugador puede bajarse el nivel, pero no subirse — previene inflación
 - **Casual mode**: permite jugar sin presión de rating
+
+
+---
+
+## Sesión 27 junio 2026 — Fase 2 completada + Inicio Fase 3
+
+### Resumen de todo lo implementado hoy:
+
+**Payment Flow Simplification:**
+- `book_class` RPC ahora setea `payment_status` (pending/not_required) según `payment_timing` del coach
+- StudentBookings: botón "✓ I've paid" + panel expandible con datos de pago
+- BookingList (coach): badges 💰 Unpaid / ✅ Paid
+- Expire-bookings cron: expira confirmed+unpaid después de 48h
+- Notification push + email al coach cuando alumno marca pagado
+- Fee breakdown visible: Class + Service fee + Beta discount = Total
+
+**Court Integration Crons:**
+- `/api/cron/court-booking-alerts` (1x/día 7am): cruza bookings sin court con JSON de disponibilidad → push al coach con urgencia
+- `/api/cron/no-students-reminder` (1x/día 9am): avisa si clase de mañana no tiene alumnos
+
+**Email Notifications:**
+- Gmail SMTP (`playcoachtennis@gmail.com`) con App Password
+- `api/lib/email.ts`: sendEmail + 7 templates HTML (booking confirmed/request/approved/rejected, class reminder, inquiry, payment marked)
+- `send-notification.ts` ahora envía push + email automáticamente en cada trigger
+- Class reminders cron también envía emails con template completo
+
+**PWA Improvements:**
+- Service Worker con offline fallback
+- `offline.html` con mensaje + botón retry
+- Manifest actualizado (theme_color indigo, start_url con hash)
+- Íconos PNG generados (192, 512, apple-touch-icon, favicon-32) via `scripts/generate-icons.mjs`
+- BackButton component en CoachPage + StudentBookings
+
+**UX Polish:**
+- CoachPage: profile más espacio arriba, sidebar no-sticky, classes responsive en mobile
+- Header: "My Bookings" (no "Bookings")
+- Coach Dashboard: sidebar reordenado (Bookings primero), pending badges realtime (desktop + mobile)
+- Mobile header: badge naranja con total pendientes
+- ClassForm: time selector en bloques de 30 min
+- ClassesTab: botón "← Back to classes"
+- StudentRating: solo aparece para clases pasadas (no upcoming)
+- BookingList header: pills "X upcoming" + "X pending approval"
+
+**Color Palette Redesign:**
+- Indigo-600 primary + Orange-500 CTAs (reemplaza forest green)
+- Landing: slate-950 → indigo-950 (dark elegante)
+- 35 archivos actualizados para consistencia
+
+**Student Notes System:**
+- Tabla `student_notes` (coach tracks focus, progress, objectives, general)
+- Panel modal con historial + agregar notas rápidas
+- Resumen inline en BookingList (última nota del alumno)
+- Botón "📋 Notes" en cada booking card
+
+**Search & Map Fixes:**
+- Markers ya no muestran número (confundía con coach count) → muestran punto
+- No reordena lista al clickear marker
+- Zoom al clickear marker (level 15) → filtra coaches visible
+- `/search?venue=X` ahora filtra por venue name (desde Court Finder)
+
+**Rating Scale 1-7:**
+- DB actualizada: numeric 1.0-7.0
+- UI: botones 0.5 en 0.5 (1.0, 1.5, 2.0... 7.0)
+- Labels: Beginner → Improver → Intermediate → Upper Int. → Advanced → Competition
+- Compatible con Playtomic/PadelMates escala
+
+**Canchas Chile (seed):**
+- 20 venues en Santiago seeded en `known_venues` con country='CL'
+- Columnas nuevas: country, surface, sport
+- Covers: Las Condes (7), Vitacura (3), La Reina (4), Ñuñoa (1), Huechuraba (1), La Florida (1), San Joaquín (1), Colina (1), Lampa (1)
+- Plataformas: easycancha, web, free
+
+**i18n (inglés/español):**
+- Sistema completo: `src/lib/i18n/` con en.json + es.json + hook
+- Auto-detecta idioma del browser
+- URL param `?lang=es` para compartir links en español
+- Landing Page + Header completamente traducidos
+- `formatLocalPrice()` para CLP ($25.000) vs GBP (£25.00)
+
+**Infra:**
+- Auto-deploy GitHub Action desactivado (conflicto con ppc-final resuelto: Git Integration desconectada)
+- Deploy manual: `npx vercel --prod --yes --force`
+- Email test endpoint: `/api/test-email` (protegido con CRON_SECRET)
+
+---
+
+## Fase 2 — COMPLETADA ✅
+
+No queda nada pendiente. Todo lo planificado está deployed en https://playcoach.vercel.app
+
+---
+
+## Fase 3 — Pendientes (por prioridad)
+
+### 🔴 Inmediato (siguiente sesión)
+1. **Completar i18n español** — traducir: SearchPage, CoachPage, StudentDashboard, StudentBookings, Auth pages (Login, Register, Onboarding), CoachDashboard
+2. **Court Finder filtrado por country** — mostrar solo venues CL cuando idioma=es, solo GB cuando idioma=en
+3. **Formato moneda CLP** — usar `formatLocalPrice()` en vez de `formatPrice()` en componentes con i18n
+4. **Onboarding coaches reales (Londres)** — enviar mensajes a coaches, configurar sus perfiles
+5. **Test email delivery** — verificar que no caiga en spam con uso real
+
+### 🟡 Próximo mes
+6. **Dominio custom** (playcoach.app) + Resend para emails profesionales
+7. **SEO básico** — meta tags dinámicos, sitemap, coach pages indexables por Google
+8. **Scraper EasyCancha** — investigar si hay endpoint viable para disponibilidad real en Chile
+9. **Pádel support** — agregar sport='padel' a classes, filtro en search
+
+### 🟢 Fase 4
+10. **Matchmaking** — partidos amistosos entre jugadores del mismo nivel
+    - Rating dual: Coach Assessment (1-7, manual) + Match Rating (ELO auto)
+    - Displayed Level = blend ponderado de ambos
+    - Matching: ±0.5 de nivel
+    - ELO: K-factor con reliability (Playtomic), % games won (UTR)
+    - Casual mode (sin afectar rating)
+11. **Class Packs — student purchase flow** (UI en CoachPage + usar créditos al reservar)
+12. **Student public profile** (nivel, historial, canchas preferidas, disponibilidad)
+13. **Stripe Connect** (pagos escrow cuando GMV > £2k/mes)
+14. **App nativa** (evaluar TWA/PWA wrapper vs React Native)
+
+---
+
+## Deploy (recordatorio)
+
+```bash
+cd c:\Users\jifon\projects\playcoach
+npm run build
+git add -A && git commit -m "descripción"
+git push
+npx vercel --prod --yes --force
+```
+
+SIEMPRE usar `--force`. La Git Integration nativa de Vercel fue desconectada del proyecto playcoach el 20 jun 2026. Deploy es solo manual o vía workflow_dispatch.
+
+---
+
+## Última actualización: 27 junio 2026

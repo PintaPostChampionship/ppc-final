@@ -174,6 +174,7 @@ async function handleGetScheduled(
   const uniqueRivalIds = Array.from(new Set(rivalIds));
 
   let profileMap: Record<string, string> = {};
+  let initialsMap: Record<string, string> = {};
   if (uniqueRivalIds.length > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
@@ -182,9 +183,20 @@ async function handleGetScheduled(
 
     if (profiles) {
       for (const p of profiles as any[]) {
-        // Usar nickname si existe, sino primer nombre
+        // Short name for the match picker display
         const displayName = p.nickname || (p.name ? p.name.split(' ')[0] : '?');
         profileMap[p.id] = displayName;
+        // Initials: first letter of first name + first letter of last name
+        if (p.name) {
+          const parts = p.name.trim().split(/\s+/);
+          if (parts.length >= 2) {
+            initialsMap[p.id] = parts[0][0].toUpperCase() + '.' + parts[parts.length - 1][0].toUpperCase();
+          } else {
+            initialsMap[p.id] = parts[0].substring(0, 2).toUpperCase();
+          }
+        } else {
+          initialsMap[p.id] = '??';
+        }
       }
     }
   }
@@ -205,6 +217,7 @@ async function handleGetScheduled(
     return {
       id: m.id,
       vs: rivalName,       // nombre corto del rival
+      ini: rivalId ? (initialsMap[rivalId] || '??') : '??', // initials for watch display
       d: dateStr,          // fecha DD/MM
       t: m.time || '',     // hora
       h: isHome ? 1 : 0,  // 1 si es home (P1), 0 si es away (P2)
@@ -408,6 +421,17 @@ async function handleSync(
     .eq('match_id', matchId);
 
   if (error) {
+    return res.status(500).json({ error: 'Failed to sync state', detail: error.message });
+  }
+
+  // Ensure match status is 'live' (fallback in case initMatch didn't set it)
+  if (updatePayload.status === 'live') {
+    await supabase
+      .from('matches')
+      .update({ status: 'live' } as any)
+      .eq('id', matchId)
+      .in('status', ['scheduled', 'pending']);
+  }
     return res.status(500).json({ error: 'Failed to sync state', detail: error.message });
   }
 

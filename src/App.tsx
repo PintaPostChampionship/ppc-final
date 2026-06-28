@@ -181,6 +181,9 @@ const App = () => {
     if (activitySlug === BOOKING_VENUES.rosemary.activity_slug) {
       return BOOKING_VENUES.rosemary;
     }
+    if (activitySlug === BOOKING_VENUES.swimming.activity_slug) {
+      return BOOKING_VENUES.swimming;
+    }
     return BOOKING_VENUES.highbury;
   };
 
@@ -6067,7 +6070,7 @@ const App = () => {
                       >
                         <option value="highbury">Highbury Fields</option>
                         <option value="rosemary">Rosemary Gardens</option>
-                        {currentUser?.id === 'cd5a32f3-a98f-4936-9b43-4f8374fa488c' && (
+                        {(currentUser?.id === 'cd5a32f3-a98f-4936-9b43-4f8374fa488c' || isBookingAdmin) && (
                           <option value="swimming">Open Water Swimming</option>
                         )}
                       </select>
