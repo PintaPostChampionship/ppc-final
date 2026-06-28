@@ -10,6 +10,7 @@ import LiveScoreboard from './components/LiveScoreboard/LiveScoreboard';
 import LiveMatchBanner from './components/LiveScoreboard/LiveMatchBanner';
 import FriendlyMatchCreator from './components/FriendlyMatchCreator';
 import GarminPairSection from './components/GarminPairSection';
+import MatchAnalytics from './components/MatchAnalytics';
 import { isEditor } from './components/LiveScoreboard/liveScoreUtils';
 import { usePaymentStatus } from './hooks/usePaymentStatus';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -1484,19 +1485,41 @@ const App = () => {
         acc => String(acc.owner_profile_id) === String(uid)
       );
 
-  // Bloques de 1h disponibles en Better (Highbury Fields y Rosemary Gardens)
-  const betterTimeSlots: { value: string; label: string }[] = Array.from(
-    { length: 13 },
-    (_, i) => {
-      const startH = 8 + i;
-      const endH = startH + 1;
-      const pad = (n: number) => String(n).padStart(2, '0');
-      return {
-        value: `${pad(startH)}:00`,
-        label: `${pad(startH)}:00–${pad(endH)}:00`,
-      };
+  // Bloques horarios disponibles en Better (dinámico según venue)
+  const betterTimeSlots: { value: string; label: string }[] = (() => {
+    if (newBooking.activity_slug === 'open-water-swimming') {
+      // Swimming: slots cada 10 min, de 07:00 a 19:30
+      const slots: { value: string; label: string }[] = [];
+      for (let h = 7; h <= 19; h++) {
+        const startMinutes = h === 7 ? [0, 10, 20, 30, 40, 50] :
+                             h === 19 ? [0, 10, 20, 30] :
+                             [0, 10, 20, 30, 40, 50];
+        for (const m of startMinutes) {
+          const endH = m + 60 >= 60 ? h + 1 : h;
+          const endM = (m + 60) % 60;
+          const pad = (n: number) => String(n).padStart(2, '0');
+          slots.push({
+            value: `${pad(h)}:${pad(m)}`,
+            label: `${pad(h)}:${pad(m)}–${pad(endH)}:${pad(endM)}`,
+          });
+        }
+      }
+      return slots;
     }
-  ); // 08:00–09:00 … 20:00–21:00
+    // Tennis: bloques de 1h, de 08:00 a 20:00
+    return Array.from(
+      { length: 13 },
+      (_, i) => {
+        const startH = 8 + i;
+        const endH = startH + 1;
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return {
+          value: `${pad(startH)}:00`,
+          label: `${pad(startH)}:00–${pad(endH)}:00`,
+        };
+      }
+    );
+  })();
 
   const ACTIVE_STATES = ['PENDING','SEARCHING','QUEUED','CREATED'];
 
@@ -6044,6 +6067,9 @@ const App = () => {
                       >
                         <option value="highbury">Highbury Fields</option>
                         <option value="rosemary">Rosemary Gardens</option>
+                        {currentUser?.id === 'cd5a32f3-a98f-4936-9b43-4f8374fa488c' && (
+                          <option value="swimming">Open Water Swimming</option>
+                        )}
                       </select>
                     </div>
 
@@ -6118,7 +6144,9 @@ const App = () => {
                         ))}
                       </select>
                       <p className="mt-1 text-xs text-gray-500">
-                        Bloques disponibles en Better (1 hora).
+                        {selectedBookingVenue.key === 'swimming'
+                          ? 'Slots cada 10 min (1 hora de sesión).'
+                          : 'Bloques disponibles en Better (1 hora).'}
                       </p>
                     </div>
                   </div>
@@ -6126,7 +6154,7 @@ const App = () => {
                   {/* Cancha preferida */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Canchas preferidas
+                      {selectedBookingVenue.key === 'swimming' ? 'Lanes preferidas' : 'Canchas preferidas'}
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <select
@@ -6486,6 +6514,9 @@ const App = () => {
             <p className="text-white/70 text-sm mb-3">Lleva el marcador desde tu reloj Garmin. Los puntos se sincronizan en tiempo real con la web.</p>
             <GarminPairSection currentUser={currentUser} supabase={supabase} />
           </div>
+
+          {/* Sección: Match Analytics */}
+          <MatchAnalytics currentUser={currentUser} />
         </div>
       </div>
     );

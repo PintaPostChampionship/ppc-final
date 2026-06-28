@@ -89,4 +89,16 @@ export const BOOKING_VENUES = {
     ],
     defaultPreferences: ['Court 1', 'Court 2', ''],
   },
+  swimming: {
+    key: 'swimming' as BookingVenueKey,
+    venue_slug: 'west-reservoir-centre',
+    activity_slug: 'open-water-swimming',
+    venue_label: 'West Reservoir Centre (Open Water Swimming)',
+    activity_label: 'Open Water Swimming',
+    courtOptions: Array.from({ length: 6 }, (_, i) => ({
+      short: `Reservoir ${i + 1}`,
+      full: `Open Water Swimming ${i + 1}`,
+    })),
+    defaultPreferences: ['Reservoir 1', 'Reservoir 2', 'Reservoir 3'],
+  },
 } as const;
