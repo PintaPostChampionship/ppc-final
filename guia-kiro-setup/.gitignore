@@ -1,0 +1,5 @@
+# Este repo es solo documentación, pero por si acaso:
+.env
+.env.local
+.DS_Store
+Thumbs.db

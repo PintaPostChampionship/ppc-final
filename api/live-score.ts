@@ -1,18 +1,7 @@
+// Force rebuild: 639183420577820217
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { verifyAuth } from './lib/verifyAuth.js';
-
-/**
- * /api/live-score — Proxy para sincronizar el marcador Garmin ↔ Supabase
- *
- * GET  /api/live-score?match_id=xxx           → devuelve estado actual del partido
- * GET  /api/live-score?player_id=xxx&active=1 → devuelve partidos live del jugador
- * POST /api/live-score                        → registra un punto desde el Garmin
- * POST /api/live-score (action: init)         → inicia un partido desde el Garmin
- * POST /api/live-score (action: undo)         → deshace el último punto
- *
- * Auth: JWT via Authorization header, or X-Player-Id as fallback for Garmin devices
- */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Supabase = SupabaseClient<any, any, any>;
@@ -431,8 +420,6 @@ async function handleSync(
       .update({ status: 'live' } as any)
       .eq('id', matchId)
       .in('status', ['scheduled', 'pending']);
-  }
-    return res.status(500).json({ error: 'Failed to sync state', detail: error.message });
   }
 
   // If match finished, also update the matches table
