@@ -339,6 +339,53 @@ function StatsSummary({ points, duration }: { points: PointLog[]; duration: numb
   );
 }
 
+// --- HR vs Win Rate (cross analysis) ---
+
+function HRvsWinRate({ points }: { points: PointLog[] }) {
+  // Group points by HR zone and calculate win rate for each
+  const zones = [
+    { label: "<120", min: 0, max: 120, color: "#34d399" },
+    { label: "120-140", min: 120, max: 140, color: "#a3e635" },
+    { label: "140-160", min: 140, max: 160, color: "#fbbf24" },
+    { label: ">160", min: 160, max: 999, color: "#f87171" },
+  ];
+
+  const zoneStats = zones.map(zone => {
+    const zonePoints = points.filter(p => p.hr >= zone.min && p.hr < zone.max && p.hr > 0);
+    const won = zonePoints.filter(p => p.p === 1).length;
+    const total = zonePoints.length;
+    const winPct = total > 0 ? Math.round((won / total) * 100) : 0;
+    return { ...zone, won, total, winPct };
+  }).filter(z => z.total > 0);
+
+  if (zoneStats.length < 2) return null;
+
+  return (
+    <div>
+      <p className="text-white/60 text-xs font-medium mb-2">🎯 Win Rate by HR Zone</p>
+      <div className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-2">
+        {zoneStats.map((z, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-white/50 text-[10px] w-14">{z.label} bpm</span>
+            <div className="flex-1 h-4 rounded-full bg-white/10 overflow-hidden relative">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${z.winPct}%`, backgroundColor: z.color }}
+              />
+              <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold">
+                {z.winPct}% ({z.won}/{z.total})
+              </span>
+            </div>
+          </div>
+        ))}
+        <p className="text-white/30 text-[9px] mt-1">
+          Points won at each heart rate zone — shows if you perform better rested or under pressure
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // --- Main Component ---
 
 export default function MatchAnalytics({ currentUser }: { currentUser: Profile }) {
@@ -346,6 +393,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "official" | "friendly">("all");
 
   const hasGarmin = !!currentUser.garmin_paired_at;
 
@@ -363,7 +411,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
           .select("*")
           .eq("profile_id", currentUser.id)
           .order("created_at", { ascending: false })
-          .limit(20);
+          .limit(50);
 
         if (fetchError) throw fetchError;
         if (!cancelled) setSessions((data as MatchPointLog[]) || []);
@@ -379,6 +427,13 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     return () => { cancelled = true; };
   }, [hasGarmin, currentUser.id]);
 
+  // Filtered sessions
+  const filteredSessions = useMemo(() => {
+    if (filter === "all") return sessions;
+    if (filter === "official") return sessions.filter(s => s.match_id != null);
+    return sessions.filter(s => s.match_id == null);
+  }, [sessions, filter]);
+
   // --- No Garmin paired CTA ---
   if (!hasGarmin) {
     return (
@@ -386,10 +441,9 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
         <div className="flex items-start gap-3">
           <span className="text-2xl">⌚</span>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-sm mb-1">Conectá tu Garmin</h3>
+            <h3 className="text-white font-semibold text-sm mb-1">Connect your Garmin</h3>
             <p className="text-white/60 text-xs leading-relaxed mb-3">
-              Conectá tu reloj Garmin para trackear frecuencia cardíaca, intensidad y estadísticas
-              durante tus partidos.
+              Connect your Garmin watch to track heart rate, intensity, and match analytics during play.
             </p>
             <a
               href="https://apps.garmin.com/apps/54b355b9-097a-4192-a115-48107e4269c8"
@@ -397,7 +451,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 bg-white text-emerald-700 font-semibold text-xs px-4 py-2 rounded-xl hover:bg-emerald-50 transition"
             >
-              📥 Descargar app Garmin
+              📥 Download Garmin App
             </a>
           </div>
         </div>
@@ -411,7 +465,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
       <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6 text-center">
         <div className="animate-pulse flex flex-col items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-white/20" />
-          <p className="text-white/50 text-sm">Cargando sesiones...</p>
+          <p className="text-white/50 text-sm">Loading sessions...</p>
         </div>
       </div>
     );
@@ -431,21 +485,39 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     return (
       <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6 text-center">
         <span className="text-3xl mb-2 block">📊</span>
-        <p className="text-white/70 text-sm">Aún no hay sesiones registradas.</p>
-        <p className="text-white/40 text-xs mt-1">Jugá un partido con tu Garmin para ver tus analytics.</p>
+        <p className="text-white/70 text-sm">No sessions recorded yet.</p>
+        <p className="text-white/40 text-xs mt-1">Play a match with your Garmin to see analytics.</p>
       </div>
     );
   }
 
-  // --- Session list ---
+  // --- Session list with filters ---
   return (
     <div className="space-y-3">
-      <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-        <span>📊</span> Match Analytics
-        <span className="text-white/40 text-xs font-normal">({sessions.length})</span>
-      </h3>
+      {/* Header + Filters */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+          <span>📊</span> Match History
+          <span className="text-white/40 text-xs font-normal">({filteredSessions.length})</span>
+        </h3>
+        <div className="flex gap-1">
+          {(["all", "official", "friendly"] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-medium transition ${
+                filter === f
+                  ? "bg-white/20 text-white"
+                  : "bg-white/5 text-white/40 hover:bg-white/10"
+              }`}
+            >
+              {f === "all" ? "All" : f === "official" ? "Official" : "Friendly"}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {sessions.map((session) => {
+      {filteredSessions.map((session) => {
         const isExpanded = expandedId === session.id;
         const totalPoints = session.point_log?.length || 0;
 
@@ -464,91 +536,85 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="text-white/80 text-xs">{formatDate(session.created_at)}</span>
-                  {/* Official/Friendly badge */}
                   {session.match_id ? (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                      Oficial
+                      Official
                     </span>
                   ) : (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/50 border border-white/10">
-                      Amistoso
+                      Friendly
                     </span>
                   )}
-                  {/* Format badge */}
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/10 text-white/40">
                     {FORMAT_LABELS[session.format] || session.format}
                   </span>
                 </div>
 
-                {/* Result */}
                 <p className="text-white font-bold text-sm">
                   {formatResult(session.result)}
                 </p>
 
-                {/* Quick stats */}
                 <div className="flex items-center gap-3 mt-1 text-white/50 text-xs">
                   <span>⏱ {formatDuration(session.duration_secs)}</span>
-                  <span>❤️ {session.avg_hr} bpm</span>
-                  <span>🔥 {session.calories} cal</span>
+                  {session.avg_hr > 0 && <span>❤️ {session.avg_hr} bpm</span>}
+                  {session.calories > 0 && <span>🔥 {session.calories} cal</span>}
                   <span>🎯 {totalPoints} pts</span>
                 </div>
               </div>
 
-              {/* Expand icon */}
-              <span
-                className={`text-white/40 text-sm transition-transform ${isExpanded ? "rotate-180" : ""}`}
-              >
+              <span className={`text-white/40 text-sm transition-transform ${isExpanded ? "rotate-180" : ""}`}>
                 ▼
               </span>
             </button>
 
             {/* Expanded detail */}
-            {isExpanded && (
+            {isExpanded && session.point_log && session.point_log.length > 0 && (
               <div
                 id={`session-detail-${session.id}`}
                 className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4"
               >
                 {/* HR over time chart */}
-                {session.point_log && session.point_log.length > 1 && (
+                {session.point_log.length > 1 && (
                   <div>
-                    <p className="text-white/60 text-xs font-medium mb-2">❤️ Frecuencia cardíaca</p>
+                    <p className="text-white/60 text-xs font-medium mb-2">❤️ Heart Rate</p>
                     <HRChart points={session.point_log} />
                   </div>
                 )}
 
+                {/* HR vs Win Rate — cross analysis */}
+                {session.point_log.length > 5 && (
+                  <HRvsWinRate points={session.point_log} />
+                )}
+
                 {/* Rhythm chart */}
-                {session.point_log && session.point_log.length > 2 && (
+                {session.point_log.length > 2 && (
                   <div>
-                    <p className="text-white/60 text-xs font-medium mb-2">⚡ Ritmo entre puntos</p>
+                    <p className="text-white/60 text-xs font-medium mb-2">⚡ Point Rhythm</p>
                     <RhythmChart points={session.point_log} />
                   </div>
                 )}
 
                 {/* Stats summary */}
-                {session.point_log && session.point_log.length > 0 && (
-                  <StatsSummary points={session.point_log} duration={session.duration_secs} />
-                )}
+                <StatsSummary points={session.point_log} duration={session.duration_secs} />
 
                 {/* Point by point timeline */}
-                {session.point_log && session.point_log.length > 0 && (
-                  <div>
-                    <p className="text-white/60 text-xs font-medium mb-2">🎾 Punto a punto</p>
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                      <PointTimeline points={session.point_log} />
-                      <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
-                        <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400" /> Yo
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-2 h-2 rounded-full bg-red-400" /> Rival
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <span className="w-px h-3 bg-white/30 inline-block" /> Game
-                        </span>
-                      </div>
+                <div>
+                  <p className="text-white/60 text-xs font-medium mb-2">🎾 Point by Point</p>
+                  <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                    <PointTimeline points={session.point_log} />
+                    <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> Me
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-red-400" /> Rival
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-px h-3 bg-white/30 inline-block" /> Game
+                      </span>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             )}
           </div>
