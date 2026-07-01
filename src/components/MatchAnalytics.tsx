@@ -342,7 +342,6 @@ function StatsSummary({ points, duration }: { points: PointLog[]; duration: numb
 // --- HR vs Win Rate (cross analysis) ---
 
 function HRvsWinRate({ points }: { points: PointLog[] }) {
-  // Group points by HR zone and calculate win rate for each
   const zones = [
     { label: "<120", min: 0, max: 120, color: "#34d399" },
     { label: "120-140", min: 120, max: 140, color: "#a3e635" },
@@ -366,22 +365,171 @@ function HRvsWinRate({ points }: { points: PointLog[] }) {
       <div className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-2">
         {zoneStats.map((z, i) => (
           <div key={i} className="flex items-center gap-2">
-            <span className="text-white/50 text-[10px] w-14">{z.label} bpm</span>
-            <div className="flex-1 h-4 rounded-full bg-white/10 overflow-hidden relative">
+            <span className="text-white/50 text-[10px] w-14">{z.label}</span>
+            <div className="flex-1 h-5 rounded-full bg-white/10 overflow-hidden relative">
               <div
                 className="h-full rounded-full transition-all"
                 style={{ width: `${z.winPct}%`, backgroundColor: z.color }}
               />
-              <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white font-bold">
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] text-white font-bold drop-shadow">
                 {z.winPct}% ({z.won}/{z.total})
               </span>
             </div>
           </div>
         ))}
         <p className="text-white/30 text-[9px] mt-1">
-          Points won at each heart rate zone — shows if you perform better rested or under pressure
+          Do you perform better rested or under pressure?
         </p>
       </div>
+    </div>
+  );
+}
+
+// --- Momentum Chart: running win % over time ---
+
+function MomentumChart({ points }: { points: PointLog[] }) {
+  if (points.length < 10) return null;
+
+  const width = 600;
+  const height = 160;
+  const padding = { top: 15, right: 15, bottom: 25, left: 35 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+
+  // Calculate rolling win % (window of 10 points)
+  const windowSize = 8;
+  const momentumData: Array<{t: number, pct: number, hr: number}> = [];
+  
+  for (let i = windowSize; i <= points.length; i++) {
+    const window = points.slice(i - windowSize, i);
+    const won = window.filter(p => p.p === 1).length;
+    const pct = (won / windowSize) * 100;
+    const avgHr = Math.round(window.reduce((s, p) => s + p.hr, 0) / windowSize);
+    momentumData.push({ t: points[i-1].t, pct, hr: avgHr });
+  }
+
+  const minT = momentumData[0].t;
+  const maxT = momentumData[momentumData.length - 1].t;
+  const timeRange = maxT - minT || 1;
+
+  const toX = (t: number) => padding.left + ((t - minT) / timeRange) * innerW;
+  const toY = (pct: number) => padding.top + (1 - pct / 100) * innerH;
+
+  // Momentum line
+  const pathD = momentumData
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${toX(d.t).toFixed(1)} ${toY(d.pct).toFixed(1)}`)
+    .join(" ");
+
+  // HR line (scaled to same height)
+  const minHR = Math.min(...momentumData.map(d => d.hr));
+  const maxHR = Math.max(...momentumData.map(d => d.hr));
+  const hrRange = maxHR - minHR || 1;
+  const toYhr = (hr: number) => padding.top + (1 - (hr - minHR) / hrRange) * innerH;
+
+  const hrPathD = momentumData
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${toX(d.t).toFixed(1)} ${toYhr(d.hr).toFixed(1)}`)
+    .join(" ");
+
+  return (
+    <div>
+      <p className="text-white/60 text-xs font-medium mb-2">📈 Momentum vs HR</p>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img">
+        <rect x={0} y={0} width={width} height={height} rx={8} className="fill-black/40" />
+        
+        {/* 50% line (neutral) */}
+        <line x1={padding.left} y1={toY(50)} x2={width - padding.right} y2={toY(50)}
+          stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
+        <text x={padding.left - 4} y={toY(50) + 3} textAnchor="end" className="fill-white/40" fontSize={9}>50%</text>
+        <text x={padding.left - 4} y={toY(100) + 3} textAnchor="end" className="fill-white/40" fontSize={9}>100%</text>
+        <text x={padding.left - 4} y={toY(0) + 3} textAnchor="end" className="fill-white/40" fontSize={9}>0%</text>
+
+        {/* HR line (background, subtle) */}
+        <path d={hrPathD} fill="none" stroke="rgba(248,113,113,0.3)" strokeWidth={1.5} strokeDasharray="3 3" />
+
+        {/* Momentum line (main) */}
+        <path d={pathD} fill="none" stroke="#34d399" strokeWidth={2.5} strokeLinejoin="round" />
+
+        {/* Area fill under momentum */}
+        <path d={`${pathD} L ${toX(maxT)} ${toY(0)} L ${toX(minT)} ${toY(0)} Z`}
+          fill="url(#momentumGradient)" opacity={0.2} />
+        <defs>
+          <linearGradient id="momentumGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Legend */}
+        <line x1={width - 120} y1={12} x2={width - 105} y2={12} stroke="#34d399" strokeWidth={2} />
+        <text x={width - 100} y={15} className="fill-white/60" fontSize={9}>Win %</text>
+        <line x1={width - 60} y1={12} x2={width - 45} y2={12} stroke="rgba(248,113,113,0.5)" strokeWidth={1.5} strokeDasharray="3 3" />
+        <text x={width - 40} y={15} className="fill-white/40" fontSize={9}>HR</text>
+
+        {/* X axis */}
+        <text x={padding.left} y={height - 4} className="fill-white/40" fontSize={9}>Start</text>
+        <text x={width - padding.right} y={height - 4} textAnchor="end" className="fill-white/40" fontSize={9}>End</text>
+      </svg>
+      <p className="text-white/30 text-[9px] mt-1">Green line = your rolling win rate. Red dashed = HR trend. When they diverge, fatigue affects performance.</p>
+    </div>
+  );
+}
+
+// --- Point Intensity scatter: HR at each point, colored by outcome ---
+
+function IntensityScatter({ points }: { points: PointLog[] }) {
+  if (points.length < 5) return null;
+
+  const width = 600;
+  const height = 140;
+  const padding = { top: 15, right: 15, bottom: 25, left: 40 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+
+  const validPoints = points.filter(p => p.hr > 0);
+  if (validPoints.length < 5) return null;
+
+  const minT = validPoints[0].t;
+  const maxT = validPoints[validPoints.length - 1].t;
+  const minHR = Math.min(...validPoints.map(p => p.hr)) - 5;
+  const maxHR = Math.max(...validPoints.map(p => p.hr)) + 5;
+  const timeRange = maxT - minT || 1;
+  const hrRange = maxHR - minHR || 1;
+
+  const toX = (t: number) => padding.left + ((t - minT) / timeRange) * innerW;
+  const toY = (hr: number) => padding.top + (1 - (hr - minHR) / hrRange) * innerH;
+
+  return (
+    <div>
+      <p className="text-white/60 text-xs font-medium mb-2">💥 Point Intensity</p>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img">
+        <rect x={0} y={0} width={width} height={height} rx={8} className="fill-black/40" />
+
+        {/* Y axis labels */}
+        <text x={padding.left - 4} y={toY(maxHR) + 3} textAnchor="end" className="fill-white/40" fontSize={9}>{maxHR}</text>
+        <text x={padding.left - 4} y={toY(minHR) + 3} textAnchor="end" className="fill-white/40" fontSize={9}>{minHR}</text>
+
+        {/* Points as dots: green=won, red=lost */}
+        {validPoints.map((p, i) => (
+          <circle
+            key={i}
+            cx={toX(p.t)}
+            cy={toY(p.hr)}
+            r={3}
+            fill={p.p === 1 ? "#34d399" : "#f87171"}
+            opacity={0.7}
+          />
+        ))}
+
+        {/* Legend */}
+        <circle cx={width - 100} cy={12} r={3} fill="#34d399" />
+        <text x={width - 93} y={15} className="fill-white/60" fontSize={9}>Won</text>
+        <circle cx={width - 55} cy={12} r={3} fill="#f87171" />
+        <text x={width - 48} y={15} className="fill-white/60" fontSize={9}>Lost</text>
+
+        <text x={padding.left} y={height - 4} className="fill-white/40" fontSize={9}>Match start →</text>
+        <text x={width - padding.right} y={height - 4} textAnchor="end" className="fill-white/40" fontSize={9}>End</text>
+      </svg>
+      <p className="text-white/30 text-[9px] mt-1">Each dot = one point. Y-axis = your HR. Green dots above red = you win more at high intensity.</p>
     </div>
   );
 }
@@ -390,10 +538,12 @@ function HRvsWinRate({ points }: { points: PointLog[] }) {
 
 export default function MatchAnalytics({ currentUser }: { currentUser: Profile }) {
   const [sessions, setSessions] = useState<MatchPointLog[]>([]);
+  const [rivalNames, setRivalNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "official" | "friendly">("all");
+  const [filterType, setFilterType] = useState<"todos" | "oficial" | "amistoso">("todos");
+  const [filterMonth, setFilterMonth] = useState<string>("todos");
 
   const hasGarmin = !!currentUser.garmin_paired_at;
 
@@ -414,7 +564,43 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
           .limit(50);
 
         if (fetchError) throw fetchError;
-        if (!cancelled) setSessions((data as MatchPointLog[]) || []);
+        if (!cancelled) {
+          const sessionsData = (data as MatchPointLog[]) || [];
+          setSessions(sessionsData);
+
+          // Fetch rival names for official matches
+          const matchIds = sessionsData.filter(s => s.match_id).map(s => s.match_id!);
+          if (matchIds.length > 0) {
+            const { data: matches } = await supabase
+              .from("matches")
+              .select("id, home_player_id, away_player_id")
+              .in("id", matchIds);
+
+            if (matches) {
+              const rivalIds = (matches as any[]).map(m =>
+                m.home_player_id === currentUser.id ? m.away_player_id : m.home_player_id
+              ).filter(Boolean);
+
+              const { data: profiles } = await supabase
+                .from("profiles")
+                .select("id, name, nickname")
+                .in("id", [...new Set(rivalIds)]);
+
+              const nameMap: Record<string, string> = {};
+              if (profiles) {
+                const profileMap: Record<string, string> = {};
+                for (const p of profiles as any[]) {
+                  profileMap[p.id] = p.nickname || p.name?.split(" ")[0] || "?";
+                }
+                for (const m of matches as any[]) {
+                  const rivalId = m.home_player_id === currentUser.id ? m.away_player_id : m.home_player_id;
+                  nameMap[m.id] = profileMap[rivalId] || "?";
+                }
+              }
+              setRivalNames(nameMap);
+            }
+          }
+        }
       } catch (err) {
         if (!cancelled) setError("Error al cargar sesiones");
         console.error(err);
@@ -427,12 +613,29 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     return () => { cancelled = true; };
   }, [hasGarmin, currentUser.id]);
 
+  // Available months for filter
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    sessions.forEach(s => {
+      const d = new Date(s.created_at);
+      months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    });
+    return Array.from(months).sort().reverse();
+  }, [sessions]);
+
   // Filtered sessions
   const filteredSessions = useMemo(() => {
-    if (filter === "all") return sessions;
-    if (filter === "official") return sessions.filter(s => s.match_id != null);
-    return sessions.filter(s => s.match_id == null);
-  }, [sessions, filter]);
+    let result = sessions;
+    if (filterType === "oficial") result = result.filter(s => s.match_id != null);
+    if (filterType === "amistoso") result = result.filter(s => s.match_id == null);
+    if (filterMonth !== "todos") {
+      result = result.filter(s => {
+        const d = new Date(s.created_at);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` === filterMonth;
+      });
+    }
+    return result;
+  }, [sessions, filterType, filterMonth]);
 
   // --- No Garmin paired CTA ---
   if (!hasGarmin) {
@@ -441,9 +644,9 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
         <div className="flex items-start gap-3">
           <span className="text-2xl">⌚</span>
           <div className="flex-1">
-            <h3 className="text-white font-semibold text-sm mb-1">Connect your Garmin</h3>
+            <h3 className="text-white font-semibold text-sm mb-1">Conecta tu Garmin</h3>
             <p className="text-white/60 text-xs leading-relaxed mb-3">
-              Connect your Garmin watch to track heart rate, intensity, and match analytics during play.
+              Conecta tu reloj Garmin para trackear frecuencia cardíaca, intensidad y estadísticas durante tus partidos.
             </p>
             <a
               href="https://apps.garmin.com/apps/54b355b9-097a-4192-a115-48107e4269c8"
@@ -451,7 +654,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 bg-white text-emerald-700 font-semibold text-xs px-4 py-2 rounded-xl hover:bg-emerald-50 transition"
             >
-              📥 Download Garmin App
+              📥 Descargar app Garmin
             </a>
           </div>
         </div>
@@ -465,7 +668,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
       <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6 text-center">
         <div className="animate-pulse flex flex-col items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-white/20" />
-          <p className="text-white/50 text-sm">Loading sessions...</p>
+          <p className="text-white/50 text-sm">Cargando partidos...</p>
         </div>
       </div>
     );
@@ -485,8 +688,8 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     return (
       <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-6 text-center">
         <span className="text-3xl mb-2 block">📊</span>
-        <p className="text-white/70 text-sm">No sessions recorded yet.</p>
-        <p className="text-white/40 text-xs mt-1">Play a match with your Garmin to see analytics.</p>
+        <p className="text-white/70 text-sm">No hay partidos registrados.</p>
+        <p className="text-white/40 text-xs mt-1">Juega un partido con tu Garmin para ver tus estadísticas.</p>
       </div>
     );
   }
@@ -494,132 +697,153 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
   // --- Session list with filters ---
   return (
     <div className="space-y-3">
-      {/* Header + Filters */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
-          <span>📊</span> Match History
-          <span className="text-white/40 text-xs font-normal">({filteredSessions.length})</span>
-        </h3>
+      {/* Filters row */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Type filter */}
         <div className="flex gap-1">
-          {(["all", "official", "friendly"] as const).map(f => (
+          {(["todos", "oficial", "amistoso"] as const).map(f => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-medium transition ${
-                filter === f
+              onClick={() => setFilterType(f)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition capitalize ${
+                filterType === f
                   ? "bg-white/20 text-white"
                   : "bg-white/5 text-white/40 hover:bg-white/10"
               }`}
             >
-              {f === "all" ? "All" : f === "official" ? "Official" : "Friendly"}
+              {f}
             </button>
           ))}
         </div>
+        {/* Month filter */}
+        {availableMonths.length > 1 && (
+          <select
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="px-2 py-1 rounded-lg text-[11px] bg-white/10 text-white/70 border border-white/10 outline-none"
+          >
+            <option value="todos">Todos los meses</option>
+            {availableMonths.map(m => {
+              const [y, mo] = m.split("-");
+              const label = new Date(Number(y), Number(mo) - 1).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+              return <option key={m} value={m}>{label}</option>;
+            })}
+          </select>
+        )}
+        <span className="text-white/30 text-[10px] ml-auto">{filteredSessions.length} partidos</span>
       </div>
 
-      {filteredSessions.map((session) => {
-        const isExpanded = expandedId === session.id;
-        const totalPoints = session.point_log?.length || 0;
+      {/* Match selector — compact cards */}
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+        {filteredSessions.map((session) => {
+          const isSelected = expandedId === session.id;
+          const rival = session.match_id ? rivalNames[session.match_id] : null;
+          return (
+            <button
+              key={session.id}
+              onClick={() => setExpandedId(isSelected ? null : session.id)}
+              className={`flex-shrink-0 p-3 rounded-xl border transition text-left min-w-[130px] ${
+                isSelected
+                  ? "bg-white/20 border-white/40 shadow-lg"
+                  : "bg-white/5 border-white/10 hover:bg-white/10"
+              }`}
+            >
+              <p className="text-white/50 text-[10px]">
+                {new Date(session.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+              </p>
+              {rival && <p className="text-white/80 text-[11px] font-medium">vs {rival}</p>}
+              <p className="text-white font-bold text-xs mt-0.5">{formatResult(session.result)}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                {session.match_id ? (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Oficial" />
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/30" title="Amistoso" />
+                )}
+                <span className="text-white/40 text-[9px]">{formatDuration(session.duration_secs)}</span>
+                {session.avg_hr > 0 && <span className="text-white/40 text-[9px]">❤️{session.avg_hr}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Selected match detail */}
+      {expandedId && (() => {
+        const session = filteredSessions.find(s => s.id === expandedId);
+        if (!session || !session.point_log || session.point_log.length === 0) return null;
+        const rival = session.match_id ? rivalNames[session.match_id] : null;
 
         return (
-          <div
-            key={session.id}
-            className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 overflow-hidden transition-all"
-          >
-            {/* Session card header */}
-            <button
-              onClick={() => setExpandedId(isExpanded ? null : session.id)}
-              className="w-full p-4 text-left flex items-center gap-3 hover:bg-white/5 transition"
-              aria-expanded={isExpanded}
-              aria-controls={`session-detail-${session.id}`}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="text-white/80 text-xs">{formatDate(session.created_at)}</span>
+          <div className="space-y-4">
+            {/* Match header */}
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
                   {session.match_id ? (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                      Official
-                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Oficial</span>
                   ) : (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/50 border border-white/10">
-                      Friendly
-                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/50 border border-white/10">Amistoso</span>
                   )}
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/10 text-white/40">
                     {FORMAT_LABELS[session.format] || session.format}
                   </span>
                 </div>
-
-                <p className="text-white font-bold text-sm">
-                  {formatResult(session.result)}
-                </p>
-
-                <div className="flex items-center gap-3 mt-1 text-white/50 text-xs">
-                  <span>⏱ {formatDuration(session.duration_secs)}</span>
-                  {session.avg_hr > 0 && <span>❤️ {session.avg_hr} bpm</span>}
-                  {session.calories > 0 && <span>🔥 {session.calories} cal</span>}
-                  <span>🎯 {totalPoints} pts</span>
-                </div>
+                <span className="text-white/50 text-xs">{formatDate(session.created_at)}</span>
               </div>
+              {rival && <p className="text-white/60 text-xs mb-1">vs {rival}</p>}
+              <p className="text-white font-bold text-lg">{formatResult(session.result)}</p>
+              <div className="flex items-center gap-4 mt-2 text-white/60 text-xs">
+                <span>⏱ {formatDuration(session.duration_secs)}</span>
+                {session.avg_hr > 0 && <span>❤️ {session.avg_hr} bpm prom</span>}
+                {session.max_hr > 0 && <span>🔺 {session.max_hr} bpm máx</span>}
+                {session.calories > 0 && <span>🔥 {session.calories} cal</span>}
+                <span>🎯 {session.point_log.length} puntos</span>
+              </div>
+            </div>
 
-              <span className={`text-white/40 text-sm transition-transform ${isExpanded ? "rotate-180" : ""}`}>
-                ▼
-              </span>
-            </button>
-
-            {/* Expanded detail */}
-            {isExpanded && session.point_log && session.point_log.length > 0 && (
-              <div
-                id={`session-detail-${session.id}`}
-                className="px-4 pb-4 space-y-4 border-t border-white/10 pt-4"
-              >
-                {/* HR over time chart */}
-                {session.point_log.length > 1 && (
-                  <div>
-                    <p className="text-white/60 text-xs font-medium mb-2">❤️ Heart Rate</p>
-                    <HRChart points={session.point_log} />
-                  </div>
-                )}
-
-                {/* HR vs Win Rate — cross analysis */}
-                {session.point_log.length > 5 && (
-                  <HRvsWinRate points={session.point_log} />
-                )}
-
-                {/* Rhythm chart */}
-                {session.point_log.length > 2 && (
-                  <div>
-                    <p className="text-white/60 text-xs font-medium mb-2">⚡ Point Rhythm</p>
-                    <RhythmChart points={session.point_log} />
-                  </div>
-                )}
-
-                {/* Stats summary */}
-                <StatsSummary points={session.point_log} duration={session.duration_secs} />
-
-                {/* Point by point timeline */}
-                <div>
-                  <p className="text-white/60 text-xs font-medium mb-2">🎾 Point by Point</p>
-                  <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                    <PointTimeline points={session.point_log} />
-                    <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> Me
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-red-400" /> Rival
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="w-px h-3 bg-white/30 inline-block" /> Game
-                      </span>
-                    </div>
-                  </div>
-                </div>
+            {/* Charts */}
+            {session.point_log.length > 1 && (
+              <div>
+                <p className="text-white/60 text-xs font-medium mb-2">❤️ Frecuencia Cardíaca</p>
+                <HRChart points={session.point_log} />
               </div>
             )}
+
+            {session.point_log.length > 5 && (
+              <HRvsWinRate points={session.point_log} />
+            )}
+
+            {session.point_log.length > 10 && (
+              <MomentumChart points={session.point_log} />
+            )}
+
+            {session.point_log.length > 5 && (
+              <IntensityScatter points={session.point_log} />
+            )}
+
+            {session.point_log.length > 2 && (
+              <div>
+                <p className="text-white/60 text-xs font-medium mb-2">⚡ Ritmo entre Puntos</p>
+                <RhythmChart points={session.point_log} />
+              </div>
+            )}
+
+            <StatsSummary points={session.point_log} duration={session.duration_secs} />
+
+            <div>
+              <p className="text-white/60 text-xs font-medium mb-2">🎾 Punto a Punto</p>
+              <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                <PointTimeline points={session.point_log} />
+                <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Yo</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Rival</span>
+                  <span className="flex items-center gap-1"><span className="w-px h-3 bg-white/30 inline-block" /> Game</span>
+                </div>
+              </div>
+            </div>
           </div>
         );
-      })}
+      })()}
     </div>
   );
 }

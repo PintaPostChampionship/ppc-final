@@ -106,6 +106,7 @@ const App = () => {
   const [showMonitor, setShowMonitor] = useState(false);
   const [showMonitorTips, setShowMonitorTips] = useState(false);
   const [showMarcador, setShowMarcador] = useState(false);
+  const [marcadorTab, setMarcadorTab] = useState("live");
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
     // Inicializar desde el hash actual al cargar la página
@@ -6493,33 +6494,63 @@ const App = () => {
           </div>
         </header>
         {renderNavMenu()}
-        <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-          {/* Sección: Partidos en Vivo */}
-          <div>
-            <h2 className="text-lg font-bold text-white mb-3">🔴 Partidos en Vivo</h2>
-            <LiveMatchBanner currentProfile={currentUser} />
-            <p className="mt-2 text-white/60 text-xs">Inicia un partido en vivo desde la vista de tu división, o desde un reloj Garmin.</p>
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          {/* Tab navigation */}
+          <div className="flex gap-1 mb-4 bg-white/5 rounded-xl p-1">
+            {[
+              { id: "live", label: "🔴 En Vivo" },
+              { id: "play", label: "🎾 Jugar" },
+              { id: "history", label: "📊 Historial" },
+              { id: "garmin", label: "⌚ Garmin" },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setMarcadorTab(tab.id)}
+                className={`flex-1 py-2 px-2 rounded-lg text-xs font-semibold transition ${
+                  marcadorTab === tab.id
+                    ? "bg-white/20 text-white shadow-sm"
+                    : "text-white/50 hover:text-white/70 hover:bg-white/5"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          {/* Sección: Crear Amistoso */}
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
-            <h2 className="text-lg font-bold text-white mb-2">🎾 Crear Amistoso</h2>
-            <p className="text-white/70 text-sm mb-4">Lleva el marcador de un partido amistoso. No se guarda en las tablas oficiales.</p>
-            <FriendlyMatchCreator
-              profiles={profiles}
-              currentUser={currentUser}
-            />
-          </div>
+          {/* Tab content */}
+          <div className="space-y-4">
+            {marcadorTab === "live" && (
+              <>
+                <div>
+                  <LiveMatchBanner currentProfile={currentUser} />
+                  <p className="mt-2 text-white/60 text-xs">Inicia un partido en vivo desde la vista de tu división, o desde un reloj Garmin.</p>
+                </div>
+              </>
+            )}
 
-          {/* Sección: Conectar Garmin */}
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
-            <h2 className="text-lg font-bold text-white mb-2">⌚ Garmin Watch</h2>
-            <p className="text-white/70 text-sm mb-3">Lleva el marcador desde tu reloj Garmin. Los puntos se sincronizan en tiempo real con la web.</p>
-            <GarminPairSection currentUser={currentUser} supabase={supabase} />
-          </div>
+            {marcadorTab === "play" && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
+                <h2 className="text-lg font-bold text-white mb-2">🎾 Amistoso</h2>
+                <p className="text-white/70 text-sm mb-4">Lleva el marcador de un partido amistoso. No se guarda en las tablas oficiales.</p>
+                <FriendlyMatchCreator
+                  profiles={profiles}
+                  currentUser={currentUser}
+                />
+              </div>
+            )}
 
-          {/* Sección: Match Analytics */}
-          <MatchAnalytics currentUser={currentUser} />
+            {marcadorTab === "history" && (
+              <MatchAnalytics currentUser={currentUser} />
+            )}
+
+            {marcadorTab === "garmin" && (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
+                <h2 className="text-lg font-bold text-white mb-2">⌚ Garmin Watch</h2>
+                <p className="text-white/70 text-sm mb-3">Lleva el marcador desde tu reloj. Los puntos se sincronizan en tiempo real con la web.</p>
+                <GarminPairSection currentUser={currentUser} supabase={supabase} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
