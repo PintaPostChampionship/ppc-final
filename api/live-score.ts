@@ -2,6 +2,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { verifyAuth } from './lib/verifyAuth.js';
+import { configureWebPush } from './lib/pushUtils.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Supabase = SupabaseClient<any, any, any>;
@@ -373,6 +374,11 @@ async function handleInit(
     .update({ status: 'live' } as any)
     .eq('id', matchId);
 
+  // ── Notify all subscribed users that a match is live ──
+  notifyMatchLive(supabase, matchId).catch(err =>
+    console.error('[live-score] Push notification error:', err?.message || err)
+  );
+
   return res.status(201).json({ ok: true });
 }
 
@@ -566,4 +572,80 @@ async function handleSaveLog(
   }
 
   return res.status(201).json({ ok: true });
+}
+
+// ─── Push notification: notify all subscribers when a match goes live ────────
+
+async function notifyMatchLive(supabase: Supabase, matchId: string) {
+  // Get match details for the notification body
+  const { data: match } = await supabase
+    .from('matches')
+    .select('home_player_id, away_player_id, home_historic_player_id, away_historic_player_id')
+    .eq('id', matchId)
+    .maybeSingle();
+
+  if (!match) return;
+
+  // Resolve player names
+  let p1Name = 'Jugador 1';
+  let p2Name = 'Jugador 2';
+
+  if (match.home_player_id) {
+    const { data: p } = await supabase.from('profiles').select('name, nickname').eq('id', match.home_player_id).maybeSingle();
+    if (p) p1Name = (p as any).nickname || (p as any).name?.split(' ')[0] || 'Jugador 1';
+  } else if (match.home_historic_player_id) {
+    const { data: p } = await supabase.from('historic_players').select('name').eq('id', match.home_historic_player_id).maybeSingle();
+    if (p) p1Name = (p as any).name?.split(' ')[0] || 'Jugador 1';
+  }
+
+  if (match.away_player_id) {
+    const { data: p } = await supabase.from('profiles').select('name, nickname').eq('id', match.away_player_id).maybeSingle();
+    if (p) p2Name = (p as any).nickname || (p as any).name?.split(' ')[0] || 'Jugador 2';
+  } else if (match.away_historic_player_id) {
+    const { data: p } = await supabase.from('historic_players').select('name').eq('id', match.away_historic_player_id).maybeSingle();
+    if (p) p2Name = (p as any).name?.split(' ')[0] || 'Jugador 2';
+  }
+
+  // Get ALL push subscriptions (broadcast to everyone)
+  const { data: subs } = await supabase
+    .from('push_subscriptions')
+    .select('id, endpoint, p256dh_key, auth_key');
+
+  if (!subs || subs.length === 0) return;
+
+  // Configure web push
+  let webpush: ReturnType<typeof configureWebPush>;
+  try {
+    webpush = configureWebPush();
+  } catch {
+    console.error('[live-score] VAPID not configured, skipping push');
+    return;
+  }
+
+  const payload = JSON.stringify({
+    title: `🔴 Partido en vivo`,
+    body: `${p1Name} vs ${p2Name} — ¡Mira el marcador ahora!`,
+    data: {
+      url: `/#live/match/${matchId}`,
+      actions: [{ action: 'open', title: 'Ver partido' }],
+    },
+  });
+
+  let sent = 0;
+  for (const sub of subs) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: (sub as any).endpoint, keys: { p256dh: (sub as any).p256dh_key, auth: (sub as any).auth_key } },
+        payload,
+        { urgency: 'high' }
+      );
+      sent++;
+    } catch (err: any) {
+      if (err?.statusCode === 410 || err?.statusCode === 404) {
+        await supabase.from('push_subscriptions').delete().eq('id', (sub as any).id);
+      }
+    }
+  }
+
+  console.log(`[live-score] Notified ${sent}/${subs.length} subscribers about live match`);
 }

@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // LiveMatchBanner.tsx — Banner global de partidos en vivo
-// Solo visible para admins en Fase 1.
+// Visible para todos los usuarios logueados.
 // Se actualiza automáticamente via Supabase Realtime.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -36,9 +36,6 @@ export interface LiveMatchBannerProps {
 export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps) {
   const [liveMatches, setLiveMatches] = useState<LiveMatchInfo[]>([]);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-
-  // Solo admins en Fase 1
-  if (currentProfile?.role !== 'admin') return null;
 
   // ── Carga de partidos en vivo ───────────────────────────────────────────────
 

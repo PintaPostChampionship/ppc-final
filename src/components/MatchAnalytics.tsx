@@ -28,6 +28,7 @@ interface MatchPointLog {
   calories: number;
   source: string;
   created_at: string;
+  analysis_text?: string | null;
 }
 
 // --- Helpers ---
@@ -818,6 +819,16 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
                 <span>🎯 {session.point_log.length} puntos</span>
               </div>
             </div>
+
+            {/* Analysis text (if available) */}
+            {session.analysis_text && (
+              <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-4">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-white/70 text-xs font-medium">📝 Análisis</span>
+                </div>
+                <p className="text-white/70 text-xs leading-relaxed whitespace-pre-line">{session.analysis_text}</p>
+              </div>
+            )}
 
             {/* Charts */}
             {session.point_log.length > 1 && (

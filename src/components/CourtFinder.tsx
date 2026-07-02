@@ -41,6 +41,7 @@ interface VenueSummary {
   totalSlots: number;
   slots: CourtSlot[];
   distance?: number;
+  floodlit?: boolean | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -63,42 +64,42 @@ const ALL_HOURS = [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
 const NON_TENNIS_KEYWORDS = ["cricket", "netball", "football", "muga", "astro", "pitch"];
 
 // All configured venues (always shown even with 0 availability)
-const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; postcode: string; lat: number; lng: number }> = [
-  { name: "Highbury Fields", slug: "islington-tennis-centre", platform: "better", postcode: "N5 1AR", lat: 51.552, lng: -0.098 },
-  { name: "Islington Tennis Centre (Outdoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113 },
-  { name: "Islington Tennis Centre (Indoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113 },
-  { name: "Tufnell Park", slug: "islington-tennis-centre", platform: "better", postcode: "N7 0PG", lat: 51.553, lng: -0.134 },
-  { name: "Rosemary Gardens", slug: "islington-tennis-centre", platform: "better", postcode: "N1 2DT", lat: 51.540, lng: -0.095 },
-  { name: "Kennington Park", slug: "kenningtonpark", platform: "clubspark", postcode: "SE11 4BE", lat: 51.480, lng: -0.106 },
-  { name: "Archbishops Park", slug: "archbishopsparklambethnorth", platform: "clubspark", postcode: "SE1 7LE", lat: 51.498, lng: -0.115 },
-  { name: "Burgess Park", slug: "BurgessParkSouthwark", platform: "clubspark", postcode: "SE5 0RJ", lat: 51.483, lng: -0.082 },
-  { name: "Vauxhall Park", slug: "VauxhallPark", platform: "clubspark", postcode: "SW8 1LA", lat: 51.478, lng: -0.123 },
-  { name: "Larkhall Park", slug: "LarkhallPark", platform: "clubspark", postcode: "SW8 1QQ", lat: 51.474, lng: -0.127 },
-  { name: "Battersea Park", slug: "BatterseaParkTennisCourts", platform: "clubspark", postcode: "SW11 4NJ", lat: 51.478, lng: -0.157 },
-  { name: "Clapham Common", slug: "ClaphamCommon", platform: "clubspark", postcode: "SW4 9DE", lat: 51.457, lng: -0.148 },
-  { name: "Myatts Field Park", slug: "myattsfieldspark", platform: "clubspark", postcode: "SE5 9RA", lat: 51.472, lng: -0.098 },
-  { name: "Parliament Hill", slug: "ParliamentHillFieldsTennisCourts", platform: "clubspark", postcode: "NW5 1QR", lat: 51.556, lng: -0.150 },
-  { name: "Finsbury Park", slug: "FinsburyPark", platform: "clubspark", postcode: "N4 2NQ", lat: 51.566, lng: -0.103 },
-  { name: "Queens Park", slug: "QueensParkTennisCourts", platform: "clubspark", postcode: "NW6 6SG", lat: 51.534, lng: -0.204 },
-  { name: "Clissold Park", slug: "ClissoldParkHackney", platform: "clubspark", postcode: "N16 9HJ", lat: 51.561, lng: -0.080 },
-  { name: "Hackney Downs", slug: "HackneyDowns", platform: "clubspark", postcode: "E5 8ND", lat: 51.553, lng: -0.057 },
-  { name: "Millfields Park", slug: "MillfieldsParkMiddlesex", platform: "clubspark", postcode: "E5 0AR", lat: 51.556, lng: -0.046 },
-  { name: "London Fields", slug: "LondonFieldsPark", platform: "clubspark", postcode: "E8 3EU", lat: 51.541, lng: -0.058 },
-  { name: "Spring Hill", slug: "SpringHillParkTennis", platform: "clubspark", postcode: "E5 9BE", lat: 51.557, lng: -0.049 },
-  { name: "Abbotts Park", slug: "abbotts_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 5PJ", lat: 51.583, lng: -0.020 },
-  { name: "Lloyd & Aveling Park", slug: "lloyd_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 4PP", lat: 51.585, lng: -0.028 },
-  { name: "Hyde Park", slug: "hyde-park-courts", platform: "parks", postcode: "W2 2UH", lat: 51.507, lng: -0.170 },
-  { name: "Regent's Park", slug: "the-regents-park-courts", platform: "parks", postcode: "NW1 4NR", lat: 51.527, lng: -0.153 },
-  { name: "Hackney Parks (Outdoor)", slug: "hackney-parks", platform: "better", postcode: "E9 5SF", lat: 51.543, lng: -0.046 },
-  { name: "Gunnersbury Park", slug: "gunnersbury-park-sports-hub", platform: "better", postcode: "W3 8LQ", lat: 51.492, lng: -0.283 },
-  { name: "Avondale Park", slug: "AvondalePark", platform: "clubspark", postcode: "W11 4EY", lat: 51.510, lng: -0.207 },
-  { name: "Kensington Memorial Park", slug: "KensingtonMemorialPark", platform: "clubspark", postcode: "W11 4QP", lat: 51.509, lng: -0.213 },
-  { name: "Chelmsford Square", slug: "ChelmsfordSquare", platform: "clubspark", postcode: "NW10 3AR", lat: 51.533, lng: -0.225 },
-  { name: "Ravenscourt Park", slug: "RavenscourtPark", platform: "clubspark", postcode: "W6 0UL", lat: 51.494, lng: -0.236 },
-  { name: "Kilburn Grange", slug: "kilburn-grange", platform: "camden", postcode: "NW6 2JH", lat: 51.543, lng: -0.198 },
-  { name: "Waterlow Park", slug: "waterlow-park", platform: "camden", postcode: "N6 5HG", lat: 51.569, lng: -0.147 },
-  { name: "Victoria Park", slug: "VictoriaPark11", platform: "clubspark", postcode: "E9 7DE", lat: 51.536, lng: -0.040 },
-  { name: "Acton Park", slug: "ActonPark2", platform: "clubspark", postcode: "W3 7JB", lat: 51.508, lng: -0.271 },
+const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; postcode: string; lat: number; lng: number; floodlit: boolean | null }> = [
+  { name: "Highbury Fields", slug: "islington-tennis-centre", platform: "better", postcode: "N5 1AR", lat: 51.552, lng: -0.098, floodlit: true },
+  { name: "Islington Tennis Centre (Outdoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113, floodlit: true },
+  { name: "Islington Tennis Centre (Indoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113, floodlit: true },
+  { name: "Tufnell Park", slug: "islington-tennis-centre", platform: "better", postcode: "N7 0PG", lat: 51.553, lng: -0.134, floodlit: true },
+  { name: "Rosemary Gardens", slug: "islington-tennis-centre", platform: "better", postcode: "N1 2DT", lat: 51.540, lng: -0.095, floodlit: true },
+  { name: "Kennington Park", slug: "kenningtonpark", platform: "clubspark", postcode: "SE11 4BE", lat: 51.480, lng: -0.106, floodlit: null },
+  { name: "Archbishops Park", slug: "archbishopsparklambethnorth", platform: "clubspark", postcode: "SE1 7LE", lat: 51.498, lng: -0.115, floodlit: null },
+  { name: "Burgess Park", slug: "BurgessParkSouthwark", platform: "clubspark", postcode: "SE5 0RJ", lat: 51.483, lng: -0.082, floodlit: null },
+  { name: "Vauxhall Park", slug: "VauxhallPark", platform: "clubspark", postcode: "SW8 1LA", lat: 51.478, lng: -0.123, floodlit: false },
+  { name: "Larkhall Park", slug: "LarkhallPark", platform: "clubspark", postcode: "SW8 1QQ", lat: 51.474, lng: -0.127, floodlit: null },
+  { name: "Battersea Park", slug: "BatterseaParkTennisCourts", platform: "clubspark", postcode: "SW11 4NJ", lat: 51.478, lng: -0.157, floodlit: true },
+  { name: "Clapham Common", slug: "ClaphamCommon", platform: "clubspark", postcode: "SW4 9DE", lat: 51.457, lng: -0.148, floodlit: true },
+  { name: "Myatts Field Park", slug: "myattsfieldspark", platform: "clubspark", postcode: "SE5 9RA", lat: 51.472, lng: -0.098, floodlit: null },
+  { name: "Parliament Hill", slug: "ParliamentHillFieldsTennisCourts", platform: "clubspark", postcode: "NW5 1QR", lat: 51.556, lng: -0.150, floodlit: false },
+  { name: "Finsbury Park", slug: "FinsburyPark", platform: "clubspark", postcode: "N4 2NQ", lat: 51.566, lng: -0.103, floodlit: true },
+  { name: "Queens Park", slug: "QueensParkTennisCourts", platform: "clubspark", postcode: "NW6 6SG", lat: 51.534, lng: -0.204, floodlit: false },
+  { name: "Clissold Park", slug: "ClissoldParkHackney", platform: "clubspark", postcode: "N16 9HJ", lat: 51.561, lng: -0.080, floodlit: null },
+  { name: "Hackney Downs", slug: "HackneyDowns", platform: "clubspark", postcode: "E5 8ND", lat: 51.553, lng: -0.057, floodlit: true },
+  { name: "Millfields Park", slug: "MillfieldsParkMiddlesex", platform: "clubspark", postcode: "E5 0AR", lat: 51.556, lng: -0.046, floodlit: null },
+  { name: "London Fields", slug: "LondonFieldsPark", platform: "clubspark", postcode: "E8 3EU", lat: 51.541, lng: -0.058, floodlit: false },
+  { name: "Spring Hill", slug: "SpringHillParkTennis", platform: "clubspark", postcode: "E5 9BE", lat: 51.557, lng: -0.049, floodlit: null },
+  { name: "Abbotts Park", slug: "abbotts_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 5PJ", lat: 51.583, lng: -0.020, floodlit: null },
+  { name: "Lloyd & Aveling Park", slug: "lloyd_playtenniswalthamforest_com", platform: "clubspark", postcode: "E17 4PP", lat: 51.585, lng: -0.028, floodlit: null },
+  { name: "Hyde Park", slug: "hyde-park-courts", platform: "parks", postcode: "W2 2UH", lat: 51.507, lng: -0.170, floodlit: true },
+  { name: "Regent's Park", slug: "the-regents-park-courts", platform: "parks", postcode: "NW1 4NR", lat: 51.527, lng: -0.153, floodlit: null },
+  { name: "Hackney Parks (Outdoor)", slug: "hackney-parks", platform: "better", postcode: "E9 5SF", lat: 51.543, lng: -0.046, floodlit: null },
+  { name: "Gunnersbury Park", slug: "gunnersbury-park-sports-hub", platform: "better", postcode: "W3 8LQ", lat: 51.492, lng: -0.283, floodlit: null },
+  { name: "Avondale Park", slug: "AvondalePark", platform: "clubspark", postcode: "W11 4EY", lat: 51.510, lng: -0.207, floodlit: null },
+  { name: "Kensington Memorial Park", slug: "KensingtonMemorialPark", platform: "clubspark", postcode: "W11 4QP", lat: 51.509, lng: -0.213, floodlit: null },
+  { name: "Chelmsford Square", slug: "ChelmsfordSquare", platform: "clubspark", postcode: "NW10 3AR", lat: 51.533, lng: -0.225, floodlit: null },
+  { name: "Ravenscourt Park", slug: "RavenscourtPark", platform: "clubspark", postcode: "W6 0UL", lat: 51.494, lng: -0.236, floodlit: null },
+  { name: "Kilburn Grange", slug: "kilburn-grange", platform: "camden", postcode: "NW6 2JH", lat: 51.543, lng: -0.198, floodlit: null },
+  { name: "Waterlow Park", slug: "waterlow-park", platform: "camden", postcode: "N6 5HG", lat: 51.569, lng: -0.147, floodlit: null },
+  { name: "Victoria Park", slug: "VictoriaPark11", platform: "clubspark", postcode: "E9 7DE", lat: 51.536, lng: -0.040, floodlit: false },
+  { name: "Acton Park", slug: "ActonPark2", platform: "clubspark", postcode: "W3 7JB", lat: 51.508, lng: -0.271, floodlit: null },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -352,7 +353,11 @@ function VenueCard({ venue, filterDate, filterTimeRange, filterDuration, allDate
           <div className="flex items-center gap-3">
             <span className="text-gray-400 text-xs">{expanded ? "▼" : "▶"}</span>
             <div>
-              <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{venue.name}</h3>
+              <h3 className="font-semibold text-gray-900 text-sm sm:text-base">
+                {venue.name}
+                {venue.floodlit === true && <span className="ml-1.5 text-xs text-amber-500" title="Tiene luces">💡</span>}
+                {venue.floodlit === false && <span className="ml-1.5 text-xs text-gray-300" title="Sin luces">🌙</span>}
+              </h3>
               {venue.distance != null && <span className="text-xs text-gray-400">{venue.distance.toFixed(1)} km</span>}
             </div>
           </div>
@@ -434,6 +439,19 @@ function VenueCard({ venue, filterDate, filterTimeRange, filterDuration, allDate
                     );
                   })}
                 </div>
+                {/* Expanded court list when a time is selected */}
+                {selectedHour?.date === date && hourMap.has(selectedHour.time) && (
+                  <div className="mt-2 ml-1 flex flex-wrap gap-1.5">
+                    {hourMap.get(selectedHour.time)!.map((court, idx) => (
+                      <a key={idx} href={court.booking_link} target="_blank" rel="noopener noreferrer"
+                        className="text-xs px-2.5 py-1.5 rounded-md border border-gray-200 bg-white hover:border-emerald-400 hover:bg-emerald-50 transition flex items-center gap-1.5">
+                        <span className="text-gray-700">{court.court_name || `Cancha ${idx + 1}`}</span>
+                        {court.price_gbp != null && <span className="text-gray-400">£{court.price_gbp.toFixed(0)}</span>}
+                        <span className="text-emerald-600 font-semibold">→</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -592,6 +610,7 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
   const [filterVenues, setFilterVenues] = React.useState<Set<string>>(new Set(savedState?.filterVenues ?? []));
   const [filterPlatform, setFilterPlatform] = React.useState<string>(savedState?.filterPlatform ?? "all");
   const [filterDuration, setFilterDuration] = React.useState<1 | 2>(1); // 1h or 2h consecutive
+  const [filterFloodlit, setFilterFloodlit] = React.useState<"all" | "yes" | "no">("all");
 
   // Location
   const [userLat, setUserLat] = React.useState<number | null>(savedState?.userLat ?? null);
@@ -867,7 +886,7 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
         timeCount = uniqueTimes.size;
       }
       summaries.push({ name: sv.name, slug: sv.slug, platform: sv.platform, postcode: sv.postcode,
-        lat: sv.lat, lng: sv.lng, totalSlots: timeCount, slots, distance });
+        lat: sv.lat, lng: sv.lng, totalSlots: timeCount, slots, distance, floodlit: sv.floodlit });
     }
 
     // Also add any venues from the JSON that aren't in the static list
@@ -905,8 +924,11 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
       return b.totalSlots - a.totalSlots;
     });
 
-    return filterPlatform === "all" ? summaries : summaries.filter(v => v.platform === filterPlatform);
-  }, [data, userLat, userLng, filterDate, filterTimeRange, filterPlatform, filterDuration]);
+    let result = filterPlatform === "all" ? summaries : summaries.filter(v => v.platform === filterPlatform);
+    if (filterFloodlit === "yes") result = result.filter(v => v.floodlit === true);
+    else if (filterFloodlit === "no") result = result.filter(v => v.floodlit === false);
+    return result;
+  }, [data, userLat, userLng, filterDate, filterTimeRange, filterPlatform, filterDuration, filterFloodlit]);
 
   const displayVenues = React.useMemo(() => {
     // If specific venues selected, show those first then the rest visible
@@ -1154,6 +1176,20 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
               <button onClick={() => setFilterDuration(2)}
                 className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterDuration === 2 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 2 horas
+              </button>
+              <span className="mx-2 text-gray-300">|</span>
+              <span className="text-sm font-medium text-gray-700">Luces:</span>
+              <button onClick={() => setFilterFloodlit("all")}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterFloodlit === "all" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                Todas
+              </button>
+              <button onClick={() => setFilterFloodlit("yes")}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterFloodlit === "yes" ? "bg-amber-500 text-white border-amber-500" : "bg-white text-gray-600 border-gray-300 hover:border-amber-400"}`}>
+                💡 Con luces
+              </button>
+              <button onClick={() => setFilterFloodlit("no")}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterFloodlit === "no" ? "bg-gray-600 text-white border-gray-600" : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"}`}>
+                🌙 Sin luces
               </button>
             </div>
             {/* Search — autocomplete for venue names */}

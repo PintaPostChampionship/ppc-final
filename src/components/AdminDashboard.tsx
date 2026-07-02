@@ -447,6 +447,88 @@ export function AdminDashboard({
             <p className="text-sm text-slate-500 italic">Sin datos históricos disponibles</p>
           )}
         </div>
+
+        {/* Top 10 más y menos activos — across active PPC/WPPC tournaments */}
+        {(() => {
+          // Find active PPC and WPPC tournaments
+          const activeTournaments = tournaments.filter(t =>
+            t.status === 'active' &&
+            (t.format === 'league' || !t.format) &&
+            (/^(PPC|WPPC) Edición/i.test(t.name || ''))
+          );
+
+          if (activeTournaments.length === 0) return null;
+
+          // Build player match counts across all active tournaments
+          type PlayerRow = { id: string; name: string; division: string; tournament: string; played: number };
+          const playerRows: PlayerRow[] = [];
+
+          for (const t of activeTournaments) {
+            const tDivs = divisions.filter(d => d.tournament_id === t.id);
+            const tRegs = registrations.filter(r => r.tournament_id === t.id && r.status !== 'retired');
+            const tMatches = matches.filter(m => m.tournament_id === t.id && m.status === 'played' && !m.phase);
+
+            for (const reg of tRegs) {
+              const pid = reg.profile_id;
+              if (!pid) continue;
+              const profile = profiles.find(p => p.id === pid);
+              if (!profile) continue;
+              const div = tDivs.find(d => d.id === reg.division_id);
+              const played = tMatches.filter(m =>
+                m.home_player_id === pid || m.away_player_id === pid
+              ).length;
+              playerRows.push({
+                id: pid,
+                name: profile.name || '—',
+                division: div?.name || '—',
+                tournament: t.name.replace(/\s*\(.*\)/, ''),
+                played,
+              });
+            }
+          }
+
+          const sorted = [...playerRows].sort((a, b) => b.played - a.played);
+          const top10 = sorted.slice(0, 10);
+          const bottom10 = sorted.filter(p => p.played >= 0).sort((a, b) => a.played - b.played).slice(0, 10);
+
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+              {/* Top 10 más activos */}
+              <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
+                <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">🏆 Top 10 — Más Partidos</h2>
+                <div className="space-y-1.5">
+                  {top10.map((p, i) => (
+                    <div key={`${p.id}-${p.tournament}`} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 w-5 text-right text-xs">{i + 1}.</span>
+                        <span className="text-white font-medium">{p.name}</span>
+                        <span className="text-[10px] text-slate-500">{p.division} · {p.tournament}</span>
+                      </div>
+                      <span className="text-emerald-400 font-bold">{p.played}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top 10 menos activos */}
+              <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
+                <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">⚠️ Top 10 — Menos Partidos</h2>
+                <div className="space-y-1.5">
+                  {bottom10.map((p, i) => (
+                    <div key={`${p.id}-${p.tournament}`} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 w-5 text-right text-xs">{i + 1}.</span>
+                        <span className="text-white font-medium">{p.name}</span>
+                        <span className="text-[10px] text-slate-500">{p.division} · {p.tournament}</span>
+                      </div>
+                      <span className={`font-bold ${p.played === 0 ? 'text-rose-400' : 'text-amber-400'}`}>{p.played}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
