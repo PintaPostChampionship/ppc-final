@@ -98,6 +98,7 @@ const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; p
   { name: "Kilburn Grange", slug: "kilburn-grange", platform: "camden", postcode: "NW6 2JH", lat: 51.543, lng: -0.198 },
   { name: "Waterlow Park", slug: "waterlow-park", platform: "camden", postcode: "N6 5HG", lat: 51.569, lng: -0.147 },
   { name: "Victoria Park", slug: "VictoriaPark11", platform: "clubspark", postcode: "E9 7DE", lat: 51.536, lng: -0.040 },
+  { name: "Acton Park", slug: "ActonPark2", platform: "clubspark", postcode: "W3 7JB", lat: 51.508, lng: -0.271 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -283,10 +284,11 @@ function WatchPanel({ venue, allDates, availableHoursByDate, watchlist, onSave, 
 
 // ─── Venue Card ───────────────────────────────────────────────────────────────
 
-function VenueCard({ venue, filterDate, filterTimeRange, allDates, watchlist, onSaveWatch }: {
+function VenueCard({ venue, filterDate, filterTimeRange, filterDuration, allDates, watchlist, onSaveWatch }: {
   venue: VenueSummary;
   filterDate: string;
   filterTimeRange: [number, number];
+  filterDuration: 1 | 2;
   allDates: string[];
   watchlist: Set<string>;
   onSaveWatch: (venueSlug: string, venueName: string, platform: string, alerts: {date: string; hour: string}[], notifyBy: string) => void;
@@ -314,6 +316,19 @@ function VenueCard({ venue, filterDate, filterTimeRange, allDates, watchlist, on
     const hourMap = byDate.get(slot.date)!;
     if (!hourMap.has(slot.start_time)) hourMap.set(slot.start_time, []);
     hourMap.get(slot.start_time)!.push(slot);
+  }
+
+  // For 2h filter: remove hours that don't have a consecutive next hour
+  if (filterDuration === 2) {
+    for (const [, hourMap] of byDate) {
+      const hours = Array.from(hourMap.keys());
+      for (const time of hours) {
+        const nextHour = `${String(getHour(time) + 1).padStart(2, "0")}:00`;
+        if (!hourMap.has(nextHour)) {
+          hourMap.delete(time);
+        }
+      }
+    }
   }
 
   // Available hours by date (for watch panel)
@@ -530,7 +545,7 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
           iconAnchor: [isSelected ? 16 : 13, isSelected ? 16 : 13],
         });
         const marker = L.marker([venue.lat, venue.lng], { icon }).addTo(map);
-        marker.bindPopup('<strong>' + venue.name + '</strong><br/>' + venue.totalSlots + ' slots · ' + venue.postcode);
+        marker.bindPopup('<strong>' + venue.name + '</strong><br/>' + venue.totalSlots + ' opciones · ' + venue.postcode);
         marker.on("click", () => onVenueClick(venue.name));
         markersRef.current.push(marker);
       }
@@ -576,6 +591,7 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
   const [filterTimeRange, setFilterTimeRange] = React.useState<[number, number]>(savedState?.filterTimeRange ?? [7, 22]);
   const [filterVenues, setFilterVenues] = React.useState<Set<string>>(new Set(savedState?.filterVenues ?? []));
   const [filterPlatform, setFilterPlatform] = React.useState<string>(savedState?.filterPlatform ?? "all");
+  const [filterDuration, setFilterDuration] = React.useState<1 | 2>(1); // 1h or 2h consecutive
 
   // Location
   const [userLat, setUserLat] = React.useState<number | null>(savedState?.userLat ?? null);
@@ -835,8 +851,23 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
         if (hour < filterTimeRange[0] || hour >= filterTimeRange[1]) return false;
         return true;
       });
+      // Count unique time options (date+time combos, not individual courts)
+      const uniqueTimes = new Set(filtered.map(s => `${s.date}|${s.start_time}`));
+      // For 2h filter: only count times that have a consecutive hour available
+      let timeCount: number;
+      if (filterDuration === 2) {
+        let consecutive = 0;
+        for (const key of uniqueTimes) {
+          const [d, t] = key.split("|");
+          const nextHour = `${String(getHour(t) + 1).padStart(2, "0")}:00`;
+          if (uniqueTimes.has(`${d}|${nextHour}`)) consecutive++;
+        }
+        timeCount = consecutive;
+      } else {
+        timeCount = uniqueTimes.size;
+      }
       summaries.push({ name: sv.name, slug: sv.slug, platform: sv.platform, postcode: sv.postcode,
-        lat: sv.lat, lng: sv.lng, totalSlots: filtered.length, slots, distance });
+        lat: sv.lat, lng: sv.lng, totalSlots: timeCount, slots, distance });
     }
 
     // Also add any venues from the JSON that aren't in the static list
@@ -850,8 +881,22 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
           if (hour < filterTimeRange[0] || hour >= filterTimeRange[1]) return false;
           return true;
         });
+        // Count unique time options (date+time combos, not individual courts)
+        const uniqueTimes = new Set(filtered.map(s => `${s.date}|${s.start_time}`));
+        let timeCount: number;
+        if (filterDuration === 2) {
+          let consecutive = 0;
+          for (const key of uniqueTimes) {
+            const [d, t] = key.split("|");
+            const nextHour = `${String(getHour(t) + 1).padStart(2, "0")}:00`;
+            if (uniqueTimes.has(`${d}|${nextHour}`)) consecutive++;
+          }
+          timeCount = consecutive;
+        } else {
+          timeCount = uniqueTimes.size;
+        }
         summaries.push({ name: first.venue_name, slug: first.venue_slug, platform: first.platform, postcode: first.venue_postcode,
-          lat: first.venue_lat, lng: first.venue_lng, totalSlots: filtered.length, slots, distance });
+          lat: first.venue_lat, lng: first.venue_lng, totalSlots: timeCount, slots, distance });
       }
     }
 
@@ -861,7 +906,7 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
     });
 
     return filterPlatform === "all" ? summaries : summaries.filter(v => v.platform === filterPlatform);
-  }, [data, userLat, userLng, filterDate, filterTimeRange, filterPlatform]);
+  }, [data, userLat, userLng, filterDate, filterTimeRange, filterPlatform, filterDuration]);
 
   const displayVenues = React.useMemo(() => {
     // If specific venues selected, show those first then the rest visible
@@ -1099,6 +1144,18 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
 
           {/* Venue + Platform filters */}
           <div className="mb-5">
+            {/* Duration filter */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-sm font-medium text-gray-700">Duración:</span>
+              <button onClick={() => setFilterDuration(1)}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterDuration === 1 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                1 hora
+              </button>
+              <button onClick={() => setFilterDuration(2)}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterDuration === 2 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
+                2 horas
+              </button>
+            </div>
             {/* Search — autocomplete for venue names */}
             <div className="relative mb-2">
               <input
@@ -1192,7 +1249,7 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
           <div className="space-y-3">
             {displayVenues.map(venue => (
               <VenueCard key={venue.name} venue={venue} filterDate={filterDate} filterTimeRange={filterTimeRange}
-                allDates={availableDates} watchlist={watchlist} onSaveWatch={saveWatches} />
+                filterDuration={filterDuration} allDates={availableDates} watchlist={watchlist} onSaveWatch={saveWatches} />
             ))}
           </div>
 

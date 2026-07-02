@@ -107,6 +107,7 @@ const App = () => {
   const [showMonitorTips, setShowMonitorTips] = useState(false);
   const [showMarcador, setShowMarcador] = useState(false);
   const [marcadorTab, setMarcadorTab] = useState("live");
+  const [showTwitch, setShowTwitch] = useState(true);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
     // Inicializar desde el hash actual al cargar la página
@@ -6495,6 +6496,54 @@ const App = () => {
         </header>
         {renderNavMenu()}
         <div className="max-w-4xl mx-auto px-4 py-4">
+          {/* Show tabs only for admins/players, spectators get clean live view */}
+          {(() => {
+            const isParticipant = currentUser.role === 'admin' ||
+              registrations.some(r => r.profile_id === currentUser.id);
+
+            if (!isParticipant) {
+              // Spectator view: just live score + Twitch, clean and simple
+              return (
+                <div className="space-y-4">
+                  <LiveMatchBanner currentProfile={currentUser} />
+                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden">
+                    <button
+                      onClick={() => setShowTwitch(!showTwitch)}
+                      className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition"
+                    >
+                      <span className="text-white/80 text-sm font-semibold">📺 PintaPost TV</span>
+                      <div className="flex items-center gap-2">
+                        <a
+                          href="https://twitch.tv/pintaposttv"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-purple-300 text-xs hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Abrir en Twitch ↗
+                        </a>
+                        <span className={`text-white/40 text-xs transition-transform ${showTwitch ? 'rotate-180' : ''}`}>▼</span>
+                      </div>
+                    </button>
+                    {showTwitch && (
+                      <div style={{ aspectRatio: '16/9' }}>
+                        <iframe
+                          src="https://player.twitch.tv/?channel=pintaposttv&parent=ppctennis.vercel.app&parent=localhost"
+                          width="100%"
+                          height="100%"
+                          allowFullScreen
+                          style={{ border: 0 }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Participant view: full tabs
+            return (
+              <>
           {/* Tab navigation */}
           <div className="flex gap-1 mb-4 bg-white/5 rounded-xl p-1">
             {[
@@ -6520,12 +6569,41 @@ const App = () => {
           {/* Tab content */}
           <div className="space-y-4">
             {marcadorTab === "live" && (
-              <>
-                <div>
-                  <LiveMatchBanner currentProfile={currentUser} />
-                  <p className="mt-2 text-white/60 text-xs">Inicia un partido en vivo desde la vista de tu división, o desde un reloj Garmin.</p>
+              <div className="space-y-3">
+                <LiveMatchBanner currentProfile={currentUser} />
+                {/* Twitch embed — collapsible */}
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden">
+                  <button
+                    onClick={() => setShowTwitch(!showTwitch)}
+                    className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition"
+                  >
+                    <span className="text-white/80 text-sm font-semibold">📺 PintaPost TV</span>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href="https://twitch.tv/pintaposttv"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-purple-300 text-xs hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Abrir en Twitch ↗
+                      </a>
+                      <span className={`text-white/40 text-xs transition-transform ${showTwitch ? 'rotate-180' : ''}`}>▼</span>
+                    </div>
+                  </button>
+                  {showTwitch && (
+                    <div style={{ aspectRatio: '16/9' }}>
+                      <iframe
+                        src="https://player.twitch.tv/?channel=pintaposttv&parent=ppctennis.vercel.app&parent=localhost"
+                        width="100%"
+                        height="100%"
+                        allowFullScreen
+                        style={{ border: 0 }}
+                      />
+                    </div>
+                  )}
                 </div>
-              </>
+              </div>
             )}
 
             {marcadorTab === "play" && (
@@ -6551,6 +6629,9 @@ const App = () => {
               </div>
             )}
           </div>
+              </>
+            );
+          })()}
         </div>
       </div>
     );

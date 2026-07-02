@@ -67,15 +67,15 @@ function HRChart({ points }: { points: PointLog[] }) {
   if (points.length < 2) return null;
 
   const width = 600;
-  const height = 180;
+  const height = 200;
   const padding = { top: 20, right: 20, bottom: 30, left: 40 };
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
 
   const minT = points[0].t;
   const maxT = points[points.length - 1].t;
-  const minHR = Math.min(...points.map((p) => p.hr)) - 5;
-  const maxHR = Math.max(...points.map((p) => p.hr)) + 5;
+  const minHR = Math.min(Math.min(...points.map((p) => p.hr)), 90) - 5;
+  const maxHR = Math.max(Math.max(...points.map((p) => p.hr)), 180) + 5;
 
   const timeRange = maxT - minT || 1;
   const hrRange = maxHR - minHR || 1;
@@ -87,56 +87,59 @@ function HRChart({ points }: { points: PointLog[] }) {
     .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(p.t).toFixed(1)} ${toY(p.hr).toFixed(1)}`)
     .join(" ");
 
-  // HR zone lines
-  const zones = [120, 150];
+  // HR reference zones for tennis — colored bands
+  const zones = [
+    { min: 0, max: 120, color: "rgba(96, 165, 250, 0.18)", label: "Descanso" },   // blue
+    { min: 120, max: 150, color: "rgba(74, 222, 128, 0.18)", label: "Moderado" },  // green
+    { min: 150, max: 170, color: "rgba(250, 204, 21, 0.16)", label: "Intenso" },   // yellow
+    { min: 170, max: 999, color: "rgba(248, 113, 113, 0.18)", label: "Máximo" },   // red
+  ];
 
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
       className="w-full h-auto"
       role="img"
-      aria-label="Gráfico de frecuencia cardíaca durante el partido"
+      aria-label="Frecuencia cardíaca durante el partido"
     >
       <rect x={0} y={0} width={width} height={height} rx={8} className="fill-black/40" />
 
-      {/* Grid lines for HR zones */}
-      {zones.map((z) =>
-        z >= minHR && z <= maxHR ? (
-          <g key={z}>
-            <line
-              x1={padding.left}
-              y1={toY(z)}
-              x2={width - padding.right}
-              y2={toY(z)}
-              stroke="rgba(255,255,255,0.15)"
-              strokeDasharray="4 4"
-            />
-            <text
-              x={padding.left - 4}
-              y={toY(z) + 4}
-              textAnchor="end"
-              className="fill-white/50"
-              fontSize={10}
-            >
-              {z}
+      {/* Zone backgrounds — colored bands */}
+      {zones.map((zone, i) => {
+        const yTop = Math.max(toY(Math.min(zone.max, maxHR)), padding.top);
+        const yBot = Math.min(toY(Math.max(zone.min, minHR)), padding.top + innerH);
+        if (yBot <= yTop) return null;
+        return (
+          <g key={i}>
+            <rect x={padding.left} y={yTop} width={innerW} height={yBot - yTop} fill={zone.color} />
+            <text x={width - padding.right - 4} y={yTop + 11} textAnchor="end" className="fill-white/50" fontSize={9} fontWeight="500">
+              {zone.label}
             </text>
           </g>
-        ) : null,
-      )}
+        );
+      })}
 
-      {/* Y-axis labels */}
-      <text x={padding.left - 4} y={toY(maxHR) + 4} textAnchor="end" className="fill-white/50" fontSize={10}>
-        {maxHR}
-      </text>
-      <text x={padding.left - 4} y={toY(minHR) + 4} textAnchor="end" className="fill-white/50" fontSize={10}>
-        {minHR}
-      </text>
+      {/* Zone boundary lines */}
+      {[120, 150, 170].map(hr => {
+        if (hr < minHR || hr > maxHR) return null;
+        return (
+          <g key={hr}>
+            <line x1={padding.left} y1={toY(hr)} x2={width - padding.right} y2={toY(hr)}
+              stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
+            <text x={padding.left - 4} y={toY(hr) + 3} textAnchor="end" className="fill-white/40" fontSize={9}>
+              {hr}
+            </text>
+          </g>
+        );
+      })}
 
-      {/* X-axis labels */}
-      <text x={padding.left} y={height - 6} textAnchor="start" className="fill-white/50" fontSize={10}>
-        0m
-      </text>
-      <text x={width - padding.right} y={height - 6} textAnchor="end" className="fill-white/50" fontSize={10}>
+      {/* Y-axis min/max */}
+      <text x={padding.left - 4} y={toY(maxHR) + 4} textAnchor="end" className="fill-white/50" fontSize={9}>{maxHR}</text>
+      <text x={padding.left - 4} y={toY(minHR) + 4} textAnchor="end" className="fill-white/50" fontSize={9}>{minHR}</text>
+
+      {/* X-axis */}
+      <text x={padding.left} y={height - 6} textAnchor="start" className="fill-white/50" fontSize={9}>0m</text>
+      <text x={width - padding.right} y={height - 6} textAnchor="end" className="fill-white/50" fontSize={9}>
         {Math.round((maxT - minT) / 60)}m
       </text>
 
@@ -334,6 +337,22 @@ function StatsSummary({ points, duration }: { points: PointLog[]; duration: numb
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Contextual insights */}
+      <div className="bg-white/5 rounded-xl p-3 border border-white/10 col-span-2">
+        <p className="text-white/50 text-xs mb-2">💡 Insights</p>
+        <ul className="space-y-1.5 text-white/70 text-[11px]">
+          {p1Pct >= 55 && <li>✅ Dominaste el partido ({p1Pct}% de puntos ganados)</li>}
+          {p1Pct < 45 && <li>⚠️ Tu rival ganó más puntos ({100 - p1Pct}%). Revisa momentos de presión.</li>}
+          {p1Pct >= 45 && p1Pct < 55 && <li>⚖️ Partido parejo — la diferencia estuvo en momentos clave.</li>}
+          {zone3Pct > 50 && <li>🔥 Alta intensidad — más del {zone3Pct}% del partido sobre 150 bpm. Buen esfuerzo físico.</li>}
+          {zone3Pct < 20 && zone1Pct > 40 && <li>😌 Partido de baja intensidad — la mayoría del tiempo bajo 120 bpm.</li>}
+          {avgGap > 30 && <li>🐢 Ritmo lento ({avgGap}s entre puntos) — mucho descanso entre rallies.</li>}
+          {avgGap < 15 && <li>⚡ Ritmo rápido ({avgGap}s entre puntos) — rallies cortos y puntos rápidos.</li>}
+          {maxGap > 120 && <li>⏸️ Hubo una pausa larga ({Math.round(maxGap / 60)} min) — posible cambio de lado o descanso.</li>}
+          {duration > 5400 && <li>🏋️ Partido largo ({Math.round(duration / 60)} min) — buena resistencia.</li>}
+        </ul>
       </div>
     </div>
   );
@@ -636,7 +655,6 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     }
     return result;
   }, [sessions, filterType, filterMonth]);
-
   // --- No Garmin paired CTA ---
   if (!hasGarmin) {
     return (
