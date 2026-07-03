@@ -28,3 +28,9 @@ dist-ssr
 
 # Kiro agents (shared across projects, not repo-specific)
 .kiro/agents/
+
+# Personal files
+Madeira_Actividades_Jul2026.md
+Madeira_Actividades_Jul2026.pdf
+mdpdf.log
+generate_pdf.py

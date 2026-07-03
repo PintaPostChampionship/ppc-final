@@ -381,7 +381,7 @@ function HRvsWinRate({ points }: { points: PointLog[] }) {
 
   return (
     <div>
-      <p className="text-white/60 text-xs font-medium mb-2">🎯 Win Rate by HR Zone</p>
+      <p className="text-white/90 text-sm font-medium mb-2">🎯 Win Rate by HR Zone</p>
       <div className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-2">
         {zoneStats.map((z, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -452,7 +452,7 @@ function MomentumChart({ points }: { points: PointLog[] }) {
 
   return (
     <div>
-      <p className="text-white/60 text-xs font-medium mb-2">📈 Momentum vs HR</p>
+      <p className="text-white/90 text-sm font-medium mb-2">📈 Momentum vs HR</p>
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img">
         <rect x={0} y={0} width={width} height={height} rx={8} className="fill-black/40" />
         
@@ -520,7 +520,7 @@ function IntensityScatter({ points }: { points: PointLog[] }) {
 
   return (
     <div>
-      <p className="text-white/60 text-xs font-medium mb-2">💥 Point Intensity</p>
+      <p className="text-white/90 text-sm font-medium mb-2">💥 Point Intensity</p>
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img">
         <rect x={0} y={0} width={width} height={height} rx={8} className="fill-black/40" />
 
@@ -865,7 +865,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
             })}
           </select>
         )}
-        <span className="text-white/30 text-[10px] ml-auto">{filteredSessions.length} partidos</span>
+        <span className="text-white/60 text-[11px] ml-auto">{filteredSessions.length} partidos</span>
       </div>
 
       {/* Match selector — compact cards */}
@@ -880,22 +880,22 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
               className={`flex-shrink-0 p-3 rounded-xl border transition text-left min-w-[130px] ${
                 isSelected
                   ? "bg-white/20 border-white/40 shadow-lg"
-                  : "bg-white/5 border-white/10 hover:bg-white/10"
+                  : "bg-white/8 border-white/15 hover:bg-white/15"
               }`}
             >
-              <p className="text-white/50 text-[10px]">
+              <p className="text-white/70 text-[11px]">
                 {new Date(session.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
               </p>
-              {rival && <p className="text-white/80 text-[11px] font-medium">vs {rival}</p>}
-              <p className="text-white font-bold text-xs mt-0.5">{formatResult(session.result)}</p>
+              {rival && <p className="text-white text-xs font-medium">vs {rival}</p>}
+              <p className="text-white font-bold text-sm mt-0.5">{formatResult(session.result)}</p>
               <div className="flex items-center gap-1.5 mt-1">
                 {session.match_id ? (
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Oficial" />
                 ) : (
-                  <span className="w-1.5 h-1.5 rounded-full bg-white/30" title="Amistoso" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/40" title="Amistoso" />
                 )}
-                <span className="text-white/40 text-[9px]">{formatDuration(session.duration_secs)}</span>
-                {session.avg_hr > 0 && <span className="text-white/40 text-[9px]">❤️{session.avg_hr}</span>}
+                <span className="text-white/60 text-[10px]">{formatDuration(session.duration_secs)}</span>
+                {session.avg_hr > 0 && <span className="text-white/60 text-[10px]">❤️{session.avg_hr}</span>}
               </div>
             </button>
           );
@@ -911,23 +911,23 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
         return (
           <div className="space-y-4">
             {/* Match header */}
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-4">
+            <div className="bg-white/15 backdrop-blur-md rounded-2xl border border-white/25 p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   {session.match_id ? (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Oficial</span>
                   ) : (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/50 border border-white/10">Amistoso</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/60 border border-white/20">Amistoso</span>
                   )}
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/10 text-white/40">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/10 text-white/60">
                     {FORMAT_LABELS[session.format] || session.format}
                   </span>
                 </div>
-                <span className="text-white/50 text-xs">{formatDate(session.created_at)}</span>
+                <span className="text-white/70 text-xs">{formatDate(session.created_at)}</span>
               </div>
-              {rival && <p className="text-white/60 text-xs mb-1">vs {rival}</p>}
+              {rival && <p className="text-white/80 text-xs mb-1">vs {rival}</p>}
               <p className="text-white font-bold text-lg">{formatResult(session.result)}</p>
-              <div className="flex items-center gap-4 mt-2 text-white/60 text-xs">
+              <div className="flex items-center gap-4 mt-2 text-white/80 text-xs">
                 <span>⏱ {formatDuration(session.duration_secs)}</span>
                 {session.avg_hr > 0 && <span>❤️ {session.avg_hr} bpm prom</span>}
                 {session.max_hr > 0 && <span>🔺 {session.max_hr} bpm máx</span>}
@@ -937,9 +937,9 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
             </div>
 
             {/* Analysis text (if available) or generate button */}
-            <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-4">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-white/70 text-xs font-medium">📝 Análisis</span>
+                <span className="text-white/90 text-sm font-medium">📝 Análisis</span>
                 {!session.analysis_text && (
                   <button
                     onClick={() => generateAnalysis(session.id)}
@@ -951,15 +951,15 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
                 )}
               </div>
               {session.analysis_text ? (
-                <div className="text-white/70 text-xs leading-relaxed space-y-2">
+                <div className="text-white/90 text-sm leading-relaxed space-y-3">
                   {session.analysis_text.split('\n\n').map((paragraph, i) => {
                     const colonIdx = paragraph.indexOf(':');
-                    if (colonIdx > 0 && colonIdx < 20) {
+                    if (colonIdx > 0 && colonIdx < 25) {
                       const label = paragraph.slice(0, colonIdx);
                       const content = paragraph.slice(colonIdx + 1).trim();
                       return (
                         <p key={i}>
-                          <span className="text-white/90 font-semibold">{label}:</span> {content}
+                          <span className="text-white font-semibold">{label}:</span> {content}
                         </p>
                       );
                     }
@@ -967,7 +967,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
                   })}
                 </div>
               ) : (
-                <p className="text-white/30 text-[11px] italic">
+                <p className="text-white/50 text-xs italic">
                   Genera un resumen del partido con puntos fuertes y areas de mejora.
                 </p>
               )}
@@ -976,7 +976,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
             {/* Charts */}
             {session.point_log.length > 1 && (
               <div>
-                <p className="text-white/60 text-xs font-medium mb-2">❤️ Frecuencia Cardíaca</p>
+                <p className="text-white/90 text-sm font-medium mb-2">❤️ Frecuencia Cardíaca</p>
                 <HRChart points={session.point_log} />
               </div>
             )}
@@ -995,7 +995,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
 
             {session.point_log.length > 2 && (
               <div>
-                <p className="text-white/60 text-xs font-medium mb-2">⚡ Ritmo entre Puntos</p>
+                <p className="text-white/90 text-sm font-medium mb-2">⚡ Ritmo entre Puntos</p>
                 <RhythmChart points={session.point_log} />
               </div>
             )}
@@ -1003,7 +1003,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
             <StatsSummary points={session.point_log} duration={session.duration_secs} />
 
             <div>
-              <p className="text-white/60 text-xs font-medium mb-2">🎾 Punto a Punto</p>
+              <p className="text-white/90 text-sm font-medium mb-2">🎾 Punto a Punto</p>
               <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                 <PointTimeline points={session.point_log} />
                 <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
