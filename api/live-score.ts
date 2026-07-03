@@ -23,6 +23,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
+  // Analysis action doesn't need player auth (frontend handles its own session)
+  if (req.method === 'POST' && req.body?.action === 'analysis') {
+    return handleAnalysis(req, res);
+  }
+
   // Auth: prefer JWT, fallback to X-Player-Id for Garmin devices
   let playerId = await verifyAuth(req);
   if (!playerId) {
