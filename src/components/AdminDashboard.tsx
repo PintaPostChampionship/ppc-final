@@ -449,86 +449,155 @@ export function AdminDashboard({
         </div>
 
         {/* Top 10 más y menos activos — across active PPC/WPPC tournaments */}
-        {(() => {
-          // Find active PPC and WPPC tournaments
-          const activeTournaments = tournaments.filter(t =>
-            t.status === 'active' &&
-            (t.format === 'league' || !t.format) &&
-            (/^(PPC|WPPC) Edición/i.test(t.name || ''))
-          );
+        <PlayerActivityRanking
+          tournaments={tournaments}
+          divisions={divisions}
+          matches={matches}
+          registrations={registrations}
+          profiles={profiles}
+        />
+      </div>
+    </div>
+  );
+}
 
-          if (activeTournaments.length === 0) return null;
 
-          // Build player match counts across all active tournaments
-          type PlayerRow = { id: string; name: string; division: string; tournament: string; played: number };
-          const playerRows: PlayerRow[] = [];
+// --- Extracted component: Player Activity Ranking with filters ---
+function PlayerActivityRanking({
+  tournaments,
+  divisions,
+  matches,
+  registrations,
+  profiles,
+}: {
+  tournaments: Tournament[];
+  divisions: Division[];
+  matches: Match[];
+  registrations: Registration[];
+  profiles: Profile[];
+}) {
+  const [onlyMen, setOnlyMen] = useState(false);
+  const [includeScheduled, setIncludeScheduled] = useState(false);
 
-          for (const t of activeTournaments) {
-            const tDivs = divisions.filter(d => d.tournament_id === t.id);
-            const tRegs = registrations.filter(r => r.tournament_id === t.id && r.status !== 'retired');
-            const tMatches = matches.filter(m => m.tournament_id === t.id && m.status === 'played' && !m.phase);
+  const data = useMemo(() => {
+    // Find active PPC and WPPC tournaments
+    let activeTournaments = tournaments.filter(t =>
+      t.status === 'active' &&
+      (t.format === 'league' || !t.format) &&
+      (/^(PPC|WPPC) Edición/i.test(t.name || ''))
+    );
 
-            for (const reg of tRegs) {
-              const pid = reg.profile_id;
-              if (!pid) continue;
-              const profile = profiles.find(p => p.id === pid);
-              if (!profile) continue;
-              const div = tDivs.find(d => d.id === reg.division_id);
-              const played = tMatches.filter(m =>
-                m.home_player_id === pid || m.away_player_id === pid
-              ).length;
-              playerRows.push({
-                id: pid,
-                name: profile.name || '—',
-                division: div?.name || '—',
-                tournament: t.name.replace(/\s*\(.*\)/, ''),
-                played,
-              });
-            }
-          }
+    if (onlyMen) {
+      activeTournaments = activeTournaments.filter(t => /^PPC /i.test(t.name || ''));
+    }
 
-          const sorted = [...playerRows].sort((a, b) => b.played - a.played);
-          const top10 = sorted.slice(0, 10);
-          const bottom10 = sorted.filter(p => p.played >= 0).sort((a, b) => a.played - b.played).slice(0, 10);
+    if (activeTournaments.length === 0) return { top10: [], bottom10: [] };
 
-          return (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              {/* Top 10 más activos */}
-              <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-                <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">🏆 Top 10 — Más Partidos</h2>
-                <div className="space-y-1.5">
-                  {top10.map((p, i) => (
-                    <div key={`${p.id}-${p.tournament}`} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-500 w-5 text-right text-xs">{i + 1}.</span>
-                        <span className="text-white font-medium">{p.name}</span>
-                        <span className="text-[10px] text-slate-500">{p.division} · {p.tournament}</span>
-                      </div>
-                      <span className="text-emerald-400 font-bold">{p.played}</span>
-                    </div>
-                  ))}
+    type PlayerRow = { id: string; name: string; division: string; count: number };
+    const playerRows: PlayerRow[] = [];
+
+    for (const t of activeTournaments) {
+      const tDivs = divisions.filter(d => d.tournament_id === t.id);
+      const tRegs = registrations.filter(r => r.tournament_id === t.id && r.status !== 'retired');
+
+      const statusFilter = includeScheduled
+        ? (m: Match) => m.status === 'played' || m.status === 'scheduled'
+        : (m: Match) => m.status === 'played';
+
+      const tMatches = matches.filter(m => m.tournament_id === t.id && statusFilter(m) && !m.phase);
+
+      for (const reg of tRegs) {
+        const pid = reg.profile_id;
+        if (!pid) continue;
+        const profile = profiles.find(p => p.id === pid);
+        if (!profile) continue;
+        const div = tDivs.find(d => d.id === reg.division_id);
+        const count = tMatches.filter(m =>
+          m.home_player_id === pid || m.away_player_id === pid
+        ).length;
+        playerRows.push({
+          id: pid,
+          name: profile.name || '—',
+          division: div?.name || '—',
+          count,
+        });
+      }
+    }
+
+    const sorted = [...playerRows].sort((a, b) => b.count - a.count);
+    const top10 = sorted.slice(0, 10);
+    const bottom10 = [...playerRows].sort((a, b) => a.count - b.count).slice(0, 10);
+
+    return { top10, bottom10 };
+  }, [tournaments, divisions, matches, registrations, profiles, onlyMen, includeScheduled]);
+
+  if (data.top10.length === 0 && data.bottom10.length === 0) return null;
+
+  const countLabel = includeScheduled ? 'GP + GS' : 'GP';
+
+  return (
+    <div className="mt-6">
+      {/* Title + Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+        <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+          Ranking de Actividad — Torneos Activos
+        </h2>
+        <div className="flex items-center gap-4 text-xs">
+          <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={onlyMen}
+              onChange={e => setOnlyMen(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500 w-3.5 h-3.5"
+            />
+            Solo Hombres
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={includeScheduled}
+              onChange={e => setIncludeScheduled(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500 w-3.5 h-3.5"
+            />
+            Incluir agendados
+          </label>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Top 10 más activos */}
+        <div className="bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-700">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">🏆 Más Partidos ({countLabel})</h3>
+          <div className="space-y-1.5">
+            {data.top10.map((p, i) => (
+              <div key={`top-${p.id}`} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-slate-500 w-4 text-right text-[11px] shrink-0">{i + 1}.</span>
+                  <span className="text-white text-xs sm:text-sm font-medium truncate">{p.name}</span>
+                  <span className="text-[9px] sm:text-[10px] text-slate-500 shrink-0">({p.division})</span>
                 </div>
+                <span className="text-emerald-400 font-bold text-sm ml-2 shrink-0">{p.count}</span>
               </div>
+            ))}
+          </div>
+        </div>
 
-              {/* Top 10 menos activos */}
-              <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-                <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">⚠️ Top 10 — Menos Partidos</h2>
-                <div className="space-y-1.5">
-                  {bottom10.map((p, i) => (
-                    <div key={`${p.id}-${p.tournament}`} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-500 w-5 text-right text-xs">{i + 1}.</span>
-                        <span className="text-white font-medium">{p.name}</span>
-                        <span className="text-[10px] text-slate-500">{p.division} · {p.tournament}</span>
-                      </div>
-                      <span className={`font-bold ${p.played === 0 ? 'text-rose-400' : 'text-amber-400'}`}>{p.played}</span>
-                    </div>
-                  ))}
+        {/* Top 10 menos activos */}
+        <div className="bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-700">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚠️ Menos Partidos ({countLabel})</h3>
+          <div className="space-y-1.5">
+            {data.bottom10.map((p, i) => (
+              <div key={`bot-${p.id}`} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-slate-500 w-4 text-right text-[11px] shrink-0">{i + 1}.</span>
+                  <span className="text-white text-xs sm:text-sm font-medium truncate">{p.name}</span>
+                  <span className="text-[9px] sm:text-[10px] text-slate-500 shrink-0">({p.division})</span>
                 </div>
+                <span className={`font-bold text-sm ml-2 shrink-0 ${p.count === 0 ? 'text-rose-400' : 'text-amber-400'}`}>{p.count}</span>
               </div>
-            </div>
-          );
-        })()}
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
