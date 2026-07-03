@@ -666,6 +666,60 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     setAnalysisLoading(sessionId);
     try {
       const rival = session.match_id ? rivalNames[session.match_id] : "Rival";
+      const points = session.point_log;
+      const totalPoints = points.length;
+      const pointsMe = points.filter(p => p.p === 1).length;
+      const pointsRival = points.filter(p => p.p === 2).length;
+
+      // --- Per-set stats ---
+      // Split points into sets using cumulative game count from result
+      const setStats: { me: number; rival: number; hrAvg: number }[] = [];
+      const gamesPerSet = session.result || [];
+      let pointIdx = 0;
+      for (let s = 0; s < gamesPerSet.length; s++) {
+        const totalGamesInSet = gamesPerSet[s].p1 + gamesPerSet[s].p2;
+        // Approximate: distribute points proportionally per total games
+        const pointsInSet = s < gamesPerSet.length - 1
+          ? Math.round((totalGamesInSet / gamesPerSet.reduce((a, g) => a + g.p1 + g.p2, 0)) * totalPoints)
+          : totalPoints - pointIdx;
+        const setPoints = points.slice(pointIdx, pointIdx + pointsInSet);
+        const setMe = setPoints.filter(p => p.p === 1).length;
+        const setRival = setPoints.filter(p => p.p === 2).length;
+        const setHrs = setPoints.filter(p => p.hr > 0).map(p => p.hr);
+        const setHrAvg = setHrs.length > 0 ? Math.round(setHrs.reduce((a, b) => a + b, 0) / setHrs.length) : 0;
+        setStats.push({ me: setMe, rival: setRival, hrAvg: setHrAvg });
+        pointIdx += pointsInSet;
+      }
+
+      // --- Streaks ---
+      let maxStreakMe = 0, maxStreakRival = 0, curMe = 0, curRival = 0;
+      for (const p of points) {
+        if (p.p === 1) { curMe++; curRival = 0; maxStreakMe = Math.max(maxStreakMe, curMe); }
+        else { curRival++; curMe = 0; maxStreakRival = Math.max(maxStreakRival, curRival); }
+      }
+
+      // --- HR first half vs second half ---
+      const halfIdx = Math.floor(points.length / 2);
+      const firstHalfHr = points.slice(0, halfIdx).filter(p => p.hr > 0).map(p => p.hr);
+      const secondHalfHr = points.slice(halfIdx).filter(p => p.hr > 0).map(p => p.hr);
+      const hrFirstHalf = firstHalfHr.length > 0 ? Math.round(firstHalfHr.reduce((a, b) => a + b, 0) / firstHalfHr.length) : 0;
+      const hrSecondHalf = secondHalfHr.length > 0 ? Math.round(secondHalfHr.reduce((a, b) => a + b, 0) / secondHalfHr.length) : 0;
+
+      // --- Serve/return approximation ---
+      // Server alternates every game. We approximate from history.
+      let servePointsMe = 0, serveTotal = 0, returnPointsMe = 0, returnTotal = 0;
+      let currentServer = 1; // assume I served first
+      let gamePoints = 0;
+      for (const p of points) {
+        if (currentServer === 1) { serveTotal++; if (p.p === 1) servePointsMe++; }
+        else { returnTotal++; if (p.p === 1) returnPointsMe++; }
+        gamePoints++;
+        // Approximate game length: ~4-6 points, use 5 as average game trigger
+        if (gamePoints >= 5) { currentServer = currentServer === 1 ? 2 : 1; gamePoints = 0; }
+      }
+      const servePct = serveTotal > 0 ? Math.round((servePointsMe / serveTotal) * 100) : 0;
+      const returnPct = returnTotal > 0 ? Math.round((returnPointsMe / returnTotal) * 100) : 0;
+
       const payload = {
         session_id: sessionId,
         result: formatResult(session.result),
@@ -674,11 +728,19 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
         avg_hr: session.avg_hr,
         max_hr: session.max_hr,
         calories: session.calories,
-        total_points: session.point_log.length,
-        points_won_me: session.point_log.filter(p => p.p === 1).length,
-        points_won_rival: session.point_log.filter(p => p.p === 2).length,
+        total_points: totalPoints,
+        points_won_me: pointsMe,
+        points_won_rival: pointsRival,
         rival_name: rival || "Rival",
         date: session.created_at,
+        // Enriched data
+        set_stats: setStats.map((s, i) => `Set ${i + 1}: ${s.me}-${s.rival} puntos, HR prom ${s.hrAvg}`).join("; "),
+        max_streak_me: maxStreakMe,
+        max_streak_rival: maxStreakRival,
+        hr_first_half: hrFirstHalf,
+        hr_second_half: hrSecondHalf,
+        serve_pct: servePct,
+        return_pct: returnPct,
       };
 
       const res = await fetch("/api/live-score", {

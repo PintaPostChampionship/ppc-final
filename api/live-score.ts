@@ -671,7 +671,8 @@ async function handleAnalysis(req: VercelRequest, res: VercelResponse) {
   const {
     session_id, result, format, duration_secs, avg_hr, max_hr,
     calories, total_points, points_won_me, points_won_rival,
-    rival_name, date,
+    rival_name, date, set_stats, max_streak_me, max_streak_rival,
+    hr_first_half, hr_second_half, serve_pct, return_pct,
   } = req.body ?? {};
 
   if (!session_id) {
@@ -686,25 +687,30 @@ async function handleAnalysis(req: VercelRequest, res: VercelResponse) {
     : format === 'nextgen' ? 'NextGen (tiebreak at 3-3)'
     : format;
 
-  const prompt = `Eres un analista de tenis amateur. Genera un analisis breve (max 150 palabras) en espanol de este partido. Se directo, usa datos concretos, y da 1-2 consejos accionables.
+  const prompt = `Eres un analista de tenis amateur. Genera un analisis breve (max 180 palabras) en espanol de este partido. Se directo, usa datos concretos, y da consejos accionables. No uses markdown.
 
 DATOS DEL PARTIDO:
 - Resultado: ${result} (formato: ${formatLabel})
 - Rival: ${rival_name || 'Rival'}
 - Duracion: ${durationMin} minutos
-- Puntos totales: ${total_points} (ganados: ${points_won_me}, perdidos: ${points_won_rival}, ${winPct}% de efectividad)
+- Puntos totales: ${total_points} (ganados: ${points_won_me}, perdidos: ${points_won_rival}, ${winPct}% efectividad)
 - HR promedio: ${avg_hr} bpm | HR maxima: ${max_hr} bpm
 - Calorias: ${calories}
-- Fecha: ${date ? new Date(date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) : 'desconocida'}
+- Desglose por set: ${set_stats || 'no disponible'}
+- Racha maxima mia: ${max_streak_me || '?'} puntos seguidos | Rival: ${max_streak_rival || '?'} puntos seguidos
+- HR primera mitad: ${hr_first_half || '?'} bpm | HR segunda mitad: ${hr_second_half || '?'} bpm
+- Rendimiento al servicio: ${serve_pct || '?'}% | Al resto: ${return_pct || '?'}%
 
-FORMATO DE RESPUESTA (usa exactamente estas secciones, separadas por linea vacia):
-Resumen: (1-2 frases del partido)
+FORMATO DE RESPUESTA (usa exactamente estas secciones, separadas por linea vacia, sin asteriscos ni markdown):
+Resumen: (2 frases sobre el partido)
 
-Lo positivo: (basado en los datos)
+Rendimiento por set: (como evoluciono cada set, donde se gano/perdio el partido)
 
-Area de mejora: (basado en los datos)
+Fisico: (como respondio el cuerpo, HR trend, fatiga)
 
-Consejo: (para el proximo partido)`;
+Servicio y resto: (diferencia entre juegos al saque vs al resto)
+
+Consejo: (1-2 acciones concretas para el proximo partido)`;
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
