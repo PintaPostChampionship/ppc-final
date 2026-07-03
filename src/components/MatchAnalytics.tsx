@@ -564,6 +564,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<"todos" | "oficial" | "amistoso">("todos");
   const [filterMonth, setFilterMonth] = useState<string>("todos");
+  const [analysisLoading, setAnalysisLoading] = useState<string | null>(null);
 
   const hasGarmin = !!currentUser.garmin_paired_at;
 
@@ -656,6 +657,59 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     }
     return result;
   }, [sessions, filterType, filterMonth]);
+
+  // Generate AI analysis for a match
+  async function generateAnalysis(sessionId: string) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    setAnalysisLoading(sessionId);
+    try {
+      const rival = session.match_id ? rivalNames[session.match_id] : "Rival";
+      const payload = {
+        session_id: sessionId,
+        result: formatResult(session.result),
+        format: session.format,
+        duration_secs: session.duration_secs,
+        avg_hr: session.avg_hr,
+        max_hr: session.max_hr,
+        calories: session.calories,
+        total_points: session.point_log.length,
+        points_won_me: session.point_log.filter(p => p.p === 1).length,
+        points_won_rival: session.point_log.filter(p => p.p === 2).length,
+        rival_name: rival || "Rival",
+        date: session.created_at,
+      };
+
+      const res = await fetch("/api/match-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error("Error generando análisis");
+
+      const data = await res.json();
+      const analysisText = data.analysis;
+
+      // Save to DB
+      await supabase
+        .from("match_point_logs")
+        .update({ analysis_text: analysisText })
+        .eq("id", sessionId);
+
+      // Update local state
+      setSessions(prev => prev.map(s =>
+        s.id === sessionId ? { ...s, analysis_text: analysisText } : s
+      ));
+    } catch (err) {
+      console.error("Error generating analysis:", err);
+      alert("No se pudo generar el análisis. Inténtalo más tarde.");
+    } finally {
+      setAnalysisLoading(null);
+    }
+  }
+
   // --- No Garmin paired CTA ---
   if (!hasGarmin) {
     return (
@@ -820,15 +874,42 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
               </div>
             </div>
 
-            {/* Analysis text (if available) */}
-            {session.analysis_text && (
-              <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-4">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="text-white/70 text-xs font-medium">📝 Análisis</span>
-                </div>
-                <p className="text-white/70 text-xs leading-relaxed whitespace-pre-line">{session.analysis_text}</p>
+            {/* Analysis text (if available) or generate button */}
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/70 text-xs font-medium">📝 Análisis</span>
+                {!session.analysis_text && (
+                  <button
+                    onClick={() => generateAnalysis(session.id)}
+                    disabled={analysisLoading === session.id}
+                    className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-400/30 hover:bg-purple-500/30 transition disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    {analysisLoading === session.id ? "Generando..." : "Generar analisis"}
+                  </button>
+                )}
               </div>
-            )}
+              {session.analysis_text ? (
+                <div className="text-white/70 text-xs leading-relaxed space-y-2">
+                  {session.analysis_text.split('\n\n').map((paragraph, i) => {
+                    const colonIdx = paragraph.indexOf(':');
+                    if (colonIdx > 0 && colonIdx < 20) {
+                      const label = paragraph.slice(0, colonIdx);
+                      const content = paragraph.slice(colonIdx + 1).trim();
+                      return (
+                        <p key={i}>
+                          <span className="text-white/90 font-semibold">{label}:</span> {content}
+                        </p>
+                      );
+                    }
+                    return <p key={i}>{paragraph}</p>;
+                  })}
+                </div>
+              ) : (
+                <p className="text-white/30 text-[11px] italic">
+                  Genera un resumen del partido con puntos fuertes y areas de mejora.
+                </p>
+              )}
+            </div>
 
             {/* Charts */}
             {session.point_log.length > 1 && (
