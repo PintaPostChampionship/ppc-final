@@ -234,6 +234,11 @@ async function handlePost(
     });
   }
 
+  // ── Action: analysis — Generate AI match analysis via Gemini ──
+  if (action === 'analysis') {
+    return handleAnalysis(req, res);
+  }
+
   if (!match_id) {
     return res.status(400).json({ error: 'Missing match_id' });
   }
@@ -648,4 +653,82 @@ async function notifyMatchLive(supabase: Supabase, matchId: string) {
   }
 
   console.log(`[live-score] Notified ${sent}/${subs.length} subscribers about live match`);
+}
+
+// ─── AI Match Analysis via Gemini ────────────────────────────────────────────
+
+async function handleAnalysis(req: VercelRequest, res: VercelResponse) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
+  }
+
+  const {
+    session_id, result, format, duration_secs, avg_hr, max_hr,
+    calories, total_points, points_won_me, points_won_rival,
+    rival_name, date,
+  } = req.body ?? {};
+
+  if (!session_id) {
+    return res.status(400).json({ error: 'Missing session_id' });
+  }
+
+  const durationMin = Math.round((duration_secs || 0) / 60);
+  const winPct = total_points > 0 ? Math.round((points_won_me / total_points) * 100) : 0;
+
+  const formatLabel = format === 'standard' ? 'Standard (best of 3)'
+    : format === 'supertiebreak' ? 'Super Tiebreak (3rd set = STB)'
+    : format === 'nextgen' ? 'NextGen (tiebreak at 3-3)'
+    : format;
+
+  const prompt = `Eres un analista de tenis amateur. Genera un analisis breve (max 150 palabras) en espanol de este partido. Se directo, usa datos concretos, y da 1-2 consejos accionables.
+
+DATOS DEL PARTIDO:
+- Resultado: ${result} (formato: ${formatLabel})
+- Rival: ${rival_name || 'Rival'}
+- Duracion: ${durationMin} minutos
+- Puntos totales: ${total_points} (ganados: ${points_won_me}, perdidos: ${points_won_rival}, ${winPct}% de efectividad)
+- HR promedio: ${avg_hr} bpm | HR maxima: ${max_hr} bpm
+- Calorias: ${calories}
+- Fecha: ${date ? new Date(date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) : 'desconocida'}
+
+FORMATO DE RESPUESTA (usa exactamente estas secciones, separadas por linea vacia):
+Resumen: (1-2 frases del partido)
+
+Lo positivo: (basado en los datos)
+
+Area de mejora: (basado en los datos)
+
+Consejo: (para el proximo partido)`;
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('Gemini error:', response.status, errorData);
+      return res.status(502).json({ error: 'Error calling AI service' });
+    }
+
+    const data = await response.json();
+    const analysis = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+    if (!analysis) {
+      return res.status(502).json({ error: 'Empty response from AI' });
+    }
+
+    return res.status(200).json({ analysis });
+  } catch (err) {
+    console.error('Match analysis error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 }

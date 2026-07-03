@@ -681,10 +681,10 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
         date: session.created_at,
       };
 
-      const res = await fetch("/api/match-analysis", {
+      const res = await fetch("/api/live-score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ action: "analysis", ...payload }),
       });
 
       if (!res.ok) throw new Error("Error generando análisis");
