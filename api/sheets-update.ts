@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createSign } from 'node:crypto';
+import { createClient } from '@supabase/supabase-js';
 import { verifyAuth } from './lib/verifyAuth.js';
 
 const SPREADSHEET_ID = '1DC64PmiKF7yerp59-PT0fnEGcU0xSW7Dm500PyBtJWg';
@@ -118,9 +119,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing required fields: profile_id and torneo' });
   }
 
-  // Verify the user can only report their own payment
+  // Verify the user can only report their own payment (admins can report for anyone)
   if (profile_id !== userId) {
-    return res.status(403).json({ error: 'Cannot report payment for another user' });
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://tzmbznenarrpjayntyjt.supabase.co';
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const supabase = createClient(url, serviceKey);
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (profile?.role !== 'admin') {
+      return res.status(403).json({ error: 'No puedes confirmar el pago de otro jugador' });
+    }
   }
 
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
