@@ -1166,8 +1166,8 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
 
           {/* Venue + Platform filters */}
           <div className="mb-5">
-            {/* Duration filter */}
-            <div className="flex items-center gap-2 mb-3">
+            {/* Duration & Floodlight filters */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <span className="text-sm font-medium text-gray-700">Duración:</span>
               <button onClick={() => setFilterDuration(1)}
                 className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterDuration === 1 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
@@ -1177,7 +1177,8 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
                 className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterDuration === 2 ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
                 2 horas
               </button>
-              <span className="mx-2 text-gray-300">|</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <span className="text-sm font-medium text-gray-700">Luces:</span>
               <button onClick={() => setFilterFloodlit("all")}
                 className={`text-sm px-3 py-1.5 rounded-lg border transition font-medium ${filterFloodlit === "all" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-600 border-gray-300 hover:border-emerald-400"}`}>
