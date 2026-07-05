@@ -705,17 +705,78 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
       const hrFirstHalf = firstHalfHr.length > 0 ? Math.round(firstHalfHr.reduce((a, b) => a + b, 0) / firstHalfHr.length) : 0;
       const hrSecondHalf = secondHalfHr.length > 0 ? Math.round(secondHalfHr.reduce((a, b) => a + b, 0) / secondHalfHr.length) : 0;
 
-      // --- Serve/return approximation ---
-      // Server alternates every game. We approximate from history.
+      // --- Serve/return via scoring simulation ---
+      // Replay game scoring to accurately track who is serving each point
       let servePointsMe = 0, serveTotal = 0, returnPointsMe = 0, returnTotal = 0;
-      let currentServer = 1; // assume I served first
-      let gamePoints = 0;
+      let srv = 1; // assume I served first
+      let simP1pts = 0, simP2pts = 0;
+      let simP1games = 0, simP2games = 0;
+      let simInTB = false, simInSTB = false;
+
       for (const p of points) {
-        if (currentServer === 1) { serveTotal++; if (p.p === 1) servePointsMe++; }
+        // Track serve/return BEFORE simulating scoring
+        if (srv === 1) { serveTotal++; if (p.p === 1) servePointsMe++; }
         else { returnTotal++; if (p.p === 1) returnPointsMe++; }
-        gamePoints++;
-        // Approximate game length: ~4-6 points, use 5 as average game trigger
-        if (gamePoints >= 5) { currentServer = currentServer === 1 ? 2 : 1; gamePoints = 0; }
+
+        if (simInTB || simInSTB) {
+          // Tiebreak / Super tiebreak scoring
+          if (p.p === 1) simP1pts++; else simP2pts++;
+          const hi = Math.max(simP1pts, simP2pts);
+          const lo = Math.min(simP1pts, simP2pts);
+          const target = simInSTB ? 10 : 7;
+          if (hi >= target && (hi - lo) >= 2) {
+            // TB/STB won — new set
+            simP1pts = 0; simP2pts = 0; simP1games = 0; simP2games = 0;
+            simInTB = false; simInSTB = false;
+            srv = srv === 1 ? 2 : 1;
+          } else {
+            // TB server: after 1st point, then every 2
+            const tbTotal = simP1pts + simP2pts;
+            if (tbTotal === 1 || (tbTotal > 1 && (tbTotal - 1) % 2 === 0)) {
+              srv = srv === 1 ? 2 : 1;
+            }
+          }
+        } else {
+          // Standard tennis game scoring
+          const scorerPts = p.p === 1 ? simP1pts : simP2pts;
+          const otherPts = p.p === 1 ? simP2pts : simP1pts;
+          let gameWon = false;
+
+          if (scorerPts === 3 && otherPts === 3) {
+            // Deuce → advantage
+            if (p.p === 1) simP1pts = 4; else simP2pts = 4;
+          } else if (scorerPts === 4 || otherPts === 4) {
+            if (scorerPts === 4) { gameWon = true; }
+            else { simP1pts = 3; simP2pts = 3; } // back to deuce
+          } else if (scorerPts >= 3) {
+            gameWon = true; // 40 vs <40
+          } else {
+            if (p.p === 1) simP1pts++; else simP2pts++;
+          }
+
+          if (gameWon) {
+            if (p.p === 1) simP1games++; else simP2games++;
+            simP1pts = 0; simP2pts = 0;
+
+            // Check tiebreak at 6-6
+            if (simP1games === 6 && simP2games === 6) {
+              // Check if this is set 3 in supertiebreak format
+              const completedSets = (session.result?.length || 1) - 1;
+              if (session.format === 'supertiebreak' && completedSets >= 2) {
+                simInSTB = true;
+              } else {
+                simInTB = true;
+              }
+            } else {
+              const hiG = Math.max(simP1games, simP2games);
+              const loG = Math.min(simP1games, simP2games);
+              if (hiG >= 6 && (hiG - loG) >= 2) {
+                simP1games = 0; simP2games = 0;
+              }
+            }
+            srv = srv === 1 ? 2 : 1;
+          }
+        }
       }
       const servePct = serveTotal > 0 ? Math.round((servePointsMe / serveTotal) * 100) : 0;
       const returnPct = returnTotal > 0 ? Math.round((returnPointsMe / returnTotal) * 100) : 0;
