@@ -77,6 +77,7 @@ export interface Division {
   tournament_id: string;
   name: string;
   color?: string;
+  captain_profile_id?: string | null;
   direct_promotion_slots?: number;
   promotion_playoff_slots?: number;
   relegation_playoff_slots?: number;
