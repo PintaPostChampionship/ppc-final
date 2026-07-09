@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { simulateMatch } from "../lib/scoringSimulator";
 import type { Profile } from "../types";
 
 // --- Types ---
@@ -216,40 +217,69 @@ function RhythmChart({ points }: { points: PointLog[] }) {
 
 // --- Point Timeline ---
 
-function PointTimeline({ points }: { points: PointLog[] }) {
+function PointTimeline({ points, format }: { points: PointLog[]; format: string }) {
   if (points.length === 0) return null;
 
-  // Calculate game separators (every 4+ points where score resets)
-  // Simple approach: group points into "games" of ~4-8 points each
-  const gameSeparators: number[] = [];
-  let p1Count = 0;
-  let p2Count = 0;
-  for (let i = 0; i < points.length; i++) {
-    if (points[i].p === 1) p1Count++;
-    else p2Count++;
-    // A game ends when someone reaches 4+ and leads by 2+, or tiebreak logic
-    if ((p1Count >= 4 || p2Count >= 4) && Math.abs(p1Count - p2Count) >= 2) {
-      gameSeparators.push(i);
-      p1Count = 0;
-      p2Count = 0;
-    }
-  }
+  const simulated = simulateMatch(points, format);
 
   return (
-    <div className="flex flex-wrap gap-0.5 items-center">
-      {points.map((pt, i) => (
-        <span key={i} className="inline-flex items-center">
-          <span
-            className={`w-2.5 h-2.5 rounded-full ${
-              pt.p === 1 ? "bg-emerald-400" : "bg-red-400"
-            }`}
-            title={`Punto ${i + 1}: ${pt.p === 1 ? "Yo" : "Rival"} — HR: ${pt.hr} — ${Math.round(pt.t / 60)}m`}
-          />
-          {gameSeparators.includes(i) && (
-            <span className="w-px h-4 bg-white/30 mx-1 inline-block" />
-          )}
-        </span>
-      ))}
+    <div className="space-y-3">
+      {simulated.sets.map((set, si) => {
+        const setLabel = set.isSuperTiebreak
+          ? `STB (${set.myGames}-${set.rivalGames})`
+          : `Set ${si + 1} (${set.myGames}-${set.rivalGames})`;
+        const setIcon = set.wonByMe
+          ? <span className="text-emerald-400">✓</span>
+          : <span className="text-red-400">✗</span>;
+
+        return (
+          <div key={si}>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="text-white/70 text-[11px] font-medium">{setLabel}</span>
+              {setIcon}
+            </div>
+            <div className="flex flex-wrap gap-0.5 items-center">
+              {set.games.map((game, gi) => (
+                <span key={gi} className="inline-flex items-center">
+                  {gi > 0 && (
+                    <span className="w-px h-4 bg-white/30 mx-1 inline-block" />
+                  )}
+                  <span className={`inline-flex gap-0.5 items-center ${game.isTiebreak ? "bg-white/10 rounded px-1 py-0.5" : ""}`}>
+                    {game.points.map((pt, pi) => (
+                      <span
+                        key={pi}
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          pt.p === 1 ? "bg-emerald-400" : "bg-red-400"
+                        }`}
+                        title={`Punto ${pi + 1}: ${pt.p === 1 ? "Yo" : "Rival"} — HR: ${pt.hr} — ${Math.round(pt.t / 60)}m`}
+                      />
+                    ))}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {simulated.remainder.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span className="text-white/50 text-[11px] font-medium italic">En curso...</span>
+          </div>
+          <div className="flex flex-wrap gap-0.5 items-center">
+            {simulated.remainder.map((pt, i) => (
+              <span
+                key={i}
+                className={`w-2.5 h-2.5 rounded-full ${
+                  pt.p === 1 ? "bg-emerald-400" : "bg-red-400"
+                }`}
+                title={`Punto ${i + 1}: ${pt.p === 1 ? "Yo" : "Rival"} — HR: ${pt.hr} — ${Math.round(pt.t / 60)}m`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -561,7 +591,17 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
   const [rivalNames, setRivalNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem("ppc_match_expanded") || null; } catch { return null; }
+  });
+
+  // Persist expanded match across tab switches
+  useEffect(() => {
+    try {
+      if (expandedId) sessionStorage.setItem("ppc_match_expanded", expandedId);
+      else sessionStorage.removeItem("ppc_match_expanded");
+    } catch { /* ignore */ }
+  }, [expandedId]);
   const [filterType, setFilterType] = useState<"todos" | "oficial" | "amistoso">("todos");
   const [filterMonth, setFilterMonth] = useState<string>("todos");
   const [analysisLoading, setAnalysisLoading] = useState<string | null>(null);
@@ -659,7 +699,7 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
   }, [sessions, filterType, filterMonth]);
 
   // Generate AI analysis for a match
-  async function generateAnalysis(sessionId: string) {
+  async function generateAnalysis(sessionId: string, silent = false) {
     const session = sessions.find(s => s.id === sessionId);
     if (!session) return;
 
@@ -827,11 +867,23 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
       ));
     } catch (err) {
       console.error("Error generating analysis:", err);
-      alert("No se pudo generar el análisis. Inténtalo más tarde.");
+      if (!silent) alert("No se pudo generar el análisis. Inténtalo más tarde.");
     } finally {
       setAnalysisLoading(null);
     }
   }
+
+  // Auto-generate analysis when expanding a match that has point_log but no analysis
+  useEffect(() => {
+    if (!expandedId) return;
+    const session = sessions.find(s => s.id === expandedId);
+    if (!session) return;
+    if (session.analysis_text) return;
+    if (!session.point_log || session.point_log.length < 10) return;
+    if (analysisLoading === expandedId) return;
+    // Silent auto-generate (no alert on failure)
+    generateAnalysis(expandedId, true);
+  }, [expandedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- No Garmin paired CTA ---
   if (!hasGarmin) {
@@ -890,6 +942,88 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     );
   }
 
+  // --- Detail view (replaces list when a match is selected) ---
+  if (expandedId) {
+    const session = filteredSessions.find(s => s.id === expandedId) || sessions.find(s => s.id === expandedId);
+    if (!session || !session.point_log || session.point_log.length === 0) {
+      return <div><button onClick={() => setExpandedId(null)} className="text-white/70 text-sm">← Volver</button><p className="text-white/50 text-sm mt-2">Sin datos disponibles.</p></div>;
+    }
+    const rival = session.match_id ? rivalNames[session.match_id] : null;
+
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setExpandedId(null)} className="text-white/70 text-sm font-medium hover:text-white transition flex items-center gap-1">← Todos los partidos</button>
+
+        <div className="bg-white/15 backdrop-blur-md rounded-2xl border border-white/25 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {session.match_id ? (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Oficial</span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/60 border border-white/20">Amistoso</span>
+              )}
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/10 text-white/60">{FORMAT_LABELS[session.format] || session.format}</span>
+            </div>
+            <span className="text-white/70 text-xs">{formatDate(session.created_at)}</span>
+          </div>
+          {rival && <p className="text-white/80 text-xs mb-1">vs {rival}</p>}
+          <p className="text-white font-bold text-lg">{formatResult(session.result)}</p>
+          <div className="flex flex-wrap items-center gap-3 mt-2 text-white/80 text-xs">
+            <span>⏱ {formatDuration(session.duration_secs)}</span>
+            {session.avg_hr > 0 && <span>❤️ {session.avg_hr} bpm prom</span>}
+            {session.max_hr > 0 && <span>🔺 {session.max_hr} bpm máx</span>}
+            {session.calories > 0 && <span>🔥 {session.calories} cal</span>}
+            <span>🎯 {session.point_log.length} puntos</span>
+          </div>
+        </div>
+
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-white/90 text-sm font-medium">📝 Análisis</span>
+            {session.analysis_text && (
+              <button onClick={() => { setSessions(prev => prev.map(s => s.id === session.id ? { ...s, analysis_text: null } : s)); generateAnalysis(session.id); }} disabled={analysisLoading === session.id} className="px-2 py-1 rounded-lg text-[10px] text-white/50 hover:text-white/80 hover:bg-white/10 transition disabled:opacity-50" title="Regenerar">↻</button>
+            )}
+          </div>
+          {analysisLoading === session.id ? (
+            <div className="flex items-center gap-2 py-2"><div className="w-3 h-3 border-2 border-white/30 border-t-white/80 rounded-full animate-spin" /><span className="text-white/60 text-xs">Generando análisis...</span></div>
+          ) : session.analysis_text ? (
+            <div className="text-white/90 text-sm leading-relaxed space-y-3">
+              {session.analysis_text.split('\n\n').map((paragraph, i) => {
+                const colonIdx = paragraph.indexOf(':');
+                if (colonIdx > 0 && colonIdx < 25) {
+                  const label = paragraph.slice(0, colonIdx);
+                  const content = paragraph.slice(colonIdx + 1).trim();
+                  return <p key={i}><span className="text-white font-semibold">{label}:</span> {content}</p>;
+                }
+                return <p key={i}>{paragraph}</p>;
+              })}
+            </div>
+          ) : (
+            <p className="text-white/50 text-xs italic">No hay suficientes datos para generar un análisis.</p>
+          )}
+        </div>
+
+        {session.point_log.length > 1 && (<div><p className="text-white/90 text-sm font-medium mb-2">❤️ Frecuencia Cardíaca</p><HRChart points={session.point_log} /></div>)}
+        {session.point_log.length > 5 && <HRvsWinRate points={session.point_log} />}
+        {session.point_log.length > 10 && <MomentumChart points={session.point_log} />}
+        {session.point_log.length > 5 && <IntensityScatter points={session.point_log} />}
+        {session.point_log.length > 2 && (<div><p className="text-white/90 text-sm font-medium mb-2">⚡ Ritmo entre Puntos</p><RhythmChart points={session.point_log} /></div>)}
+        <StatsSummary points={session.point_log} duration={session.duration_secs} />
+        <div>
+          <p className="text-white/90 text-sm font-medium mb-2">🎾 Punto a Punto</p>
+          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+            <PointTimeline points={session.point_log} format={session.format} />
+            <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Yo</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Rival</span>
+              <span className="flex items-center gap-1"><span className="w-px h-3 bg-white/30 inline-block" /> Game</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // --- Session list with filters ---
   return (
     <div className="space-y-3">
@@ -929,154 +1063,40 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
         <span className="text-white/60 text-[11px] ml-auto">{filteredSessions.length} partidos</span>
       </div>
 
-      {/* Match selector — compact cards */}
-      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+      {/* Match list — vertical */}
+      <div className="space-y-2">
         {filteredSessions.map((session) => {
-          const isSelected = expandedId === session.id;
           const rival = session.match_id ? rivalNames[session.match_id] : null;
           return (
             <button
               key={session.id}
-              onClick={() => setExpandedId(isSelected ? null : session.id)}
-              className={`flex-shrink-0 p-3 rounded-xl border transition text-left min-w-[130px] ${
-                isSelected
-                  ? "bg-white/20 border-white/40 shadow-lg"
-                  : "bg-white/8 border-white/15 hover:bg-white/15"
-              }`}
+              onClick={() => setExpandedId(session.id)}
+              className="w-full p-3 rounded-xl border transition text-left bg-white/8 border-white/15 hover:bg-white/15"
             >
-              <p className="text-white/70 text-[11px]">
-                {new Date(session.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
-              </p>
-              {rival && <p className="text-white text-xs font-medium">vs {rival}</p>}
-              <p className="text-white font-bold text-sm mt-0.5">{formatResult(session.result)}</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                {session.match_id ? (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Oficial" />
-                ) : (
-                  <span className="w-1.5 h-1.5 rounded-full bg-white/40" title="Amistoso" />
-                )}
-                <span className="text-white/60 text-[10px]">{formatDuration(session.duration_secs)}</span>
-                {session.avg_hr > 0 && <span className="text-white/60 text-[10px]">❤️{session.avg_hr}</span>}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-white font-bold text-sm">{formatResult(session.result)}</p>
+                  {rival && <p className="text-white/80 text-xs">vs {rival}</p>}
+                </div>
+                <div className="text-right">
+                  <p className="text-white/70 text-[11px]">
+                    {new Date(session.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                  </p>
+                  <div className="flex items-center gap-1.5 justify-end mt-0.5">
+                    {session.match_id ? (
+                      <span className="text-[9px] text-emerald-300 font-medium">Oficial</span>
+                    ) : (
+                      <span className="text-[9px] text-white/50">Amistoso</span>
+                    )}
+                    <span className="text-white/50 text-[10px]">{formatDuration(session.duration_secs)}</span>
+                    {session.avg_hr > 0 && <span className="text-white/50 text-[10px]">❤️{session.avg_hr}</span>}
+                  </div>
+                </div>
               </div>
             </button>
           );
         })}
       </div>
-
-      {/* Selected match detail */}
-      {expandedId && (() => {
-        const session = filteredSessions.find(s => s.id === expandedId);
-        if (!session || !session.point_log || session.point_log.length === 0) return null;
-        const rival = session.match_id ? rivalNames[session.match_id] : null;
-
-        return (
-          <div className="space-y-4">
-            {/* Match header */}
-            <div className="bg-white/15 backdrop-blur-md rounded-2xl border border-white/25 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {session.match_id ? (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">Oficial</span>
-                  ) : (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white/10 text-white/60 border border-white/20">Amistoso</span>
-                  )}
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/10 text-white/60">
-                    {FORMAT_LABELS[session.format] || session.format}
-                  </span>
-                </div>
-                <span className="text-white/70 text-xs">{formatDate(session.created_at)}</span>
-              </div>
-              {rival && <p className="text-white/80 text-xs mb-1">vs {rival}</p>}
-              <p className="text-white font-bold text-lg">{formatResult(session.result)}</p>
-              <div className="flex items-center gap-4 mt-2 text-white/80 text-xs">
-                <span>⏱ {formatDuration(session.duration_secs)}</span>
-                {session.avg_hr > 0 && <span>❤️ {session.avg_hr} bpm prom</span>}
-                {session.max_hr > 0 && <span>🔺 {session.max_hr} bpm máx</span>}
-                {session.calories > 0 && <span>🔥 {session.calories} cal</span>}
-                <span>🎯 {session.point_log.length} puntos</span>
-              </div>
-            </div>
-
-            {/* Analysis text (if available) or generate button */}
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white/90 text-sm font-medium">📝 Análisis</span>
-                {!session.analysis_text && (
-                  <button
-                    onClick={() => generateAnalysis(session.id)}
-                    disabled={analysisLoading === session.id}
-                    className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-400/30 hover:bg-purple-500/30 transition disabled:opacity-50 disabled:cursor-wait"
-                  >
-                    {analysisLoading === session.id ? "Generando..." : "Generar analisis"}
-                  </button>
-                )}
-              </div>
-              {session.analysis_text ? (
-                <div className="text-white/90 text-sm leading-relaxed space-y-3">
-                  {session.analysis_text.split('\n\n').map((paragraph, i) => {
-                    const colonIdx = paragraph.indexOf(':');
-                    if (colonIdx > 0 && colonIdx < 25) {
-                      const label = paragraph.slice(0, colonIdx);
-                      const content = paragraph.slice(colonIdx + 1).trim();
-                      return (
-                        <p key={i}>
-                          <span className="text-white font-semibold">{label}:</span> {content}
-                        </p>
-                      );
-                    }
-                    return <p key={i}>{paragraph}</p>;
-                  })}
-                </div>
-              ) : (
-                <p className="text-white/50 text-xs italic">
-                  Genera un resumen del partido con puntos fuertes y areas de mejora.
-                </p>
-              )}
-            </div>
-
-            {/* Charts */}
-            {session.point_log.length > 1 && (
-              <div>
-                <p className="text-white/90 text-sm font-medium mb-2">❤️ Frecuencia Cardíaca</p>
-                <HRChart points={session.point_log} />
-              </div>
-            )}
-
-            {session.point_log.length > 5 && (
-              <HRvsWinRate points={session.point_log} />
-            )}
-
-            {session.point_log.length > 10 && (
-              <MomentumChart points={session.point_log} />
-            )}
-
-            {session.point_log.length > 5 && (
-              <IntensityScatter points={session.point_log} />
-            )}
-
-            {session.point_log.length > 2 && (
-              <div>
-                <p className="text-white/90 text-sm font-medium mb-2">⚡ Ritmo entre Puntos</p>
-                <RhythmChart points={session.point_log} />
-              </div>
-            )}
-
-            <StatsSummary points={session.point_log} duration={session.duration_secs} />
-
-            <div>
-              <p className="text-white/90 text-sm font-medium mb-2">🎾 Punto a Punto</p>
-              <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                <PointTimeline points={session.point_log} />
-                <div className="flex items-center gap-3 mt-2 text-[10px] text-white/40">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Yo</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Rival</span>
-                  <span className="flex items-center gap-1"><span className="w-px h-3 bg-white/30 inline-block" /> Game</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
