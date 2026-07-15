@@ -5356,11 +5356,19 @@ const App = () => {
                         type="password"
                         value={newUser.password}
                         onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                          newUser.password && newUser.password.length < 6
+                            ? 'border-red-400 bg-red-50'
+                            : 'border-gray-300'
+                        }`}
                         required
                         minLength={6}
                       />
-                      <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
+                      {newUser.password && newUser.password.length < 6 ? (
+                        <p className="text-xs text-red-500 mt-1">La contraseña debe tener al menos 6 caracteres ({newUser.password.length}/6)</p>
+                      ) : (
+                        <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Confirmar Contraseña</label>
