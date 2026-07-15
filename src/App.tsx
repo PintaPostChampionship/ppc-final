@@ -78,6 +78,7 @@ const App = () => {
     postal_code: '',
   });
   const [hasCommitted, setHasCommitted] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
   const [historicTab, setHistoricTab] = useState<'men' | 'women' | 'calibrations' | 'other'>('men');
   const [showHallOfFameView, setShowHallOfFameView] = useState(false);
@@ -1973,26 +1974,25 @@ const App = () => {
         if (!tournamentId || !divisionId || !password) {
           throw new Error('Por favor selecciona un torneo, división e ingresa una contraseña.');
         }
-        
-        const onboardingData = {
-          name: name.trim(),
-          locations: locations || [],
-          availability: availability || {},
-          tournament_id: tournamentId,
-          division_id: divisionId,
-          profilePicDataUrl: profilePic 
-        };
+
+        if (password.length < 6) {
+          throw new Error('La contraseña debe tener al menos 6 caracteres.');
+        }
+
+        if (password !== confirmPassword) {
+          throw new Error('Las contraseñas no coinciden.');
+        }
+
+        // Sanitize name: trim + remove problematic chars for JSON metadata
+        const safeName = name.trim().replace(/[""]/g, '"');
 
         savePending({
-          name: newUser.name,
+          name: safeName,
           email: newUser.email,
           profilePic: newUser.profilePic || undefined,
           locations: newUser.locations || [],
-          // 🔑 IMPORTANTE: pasa availability para que el helper lo comprima (availability_comp)
           // @ts-ignore
           availability: newUser.availability || {},
-          // 🔑 IMPORTANTE: guarda los IDs que espera ensurePendingOnboarding
-          // (además de tus nombres si los quieres seguir mostrando en UI)
           // @ts-ignore
           tournament_id: pickedTournamentId,
           // @ts-ignore
@@ -2007,12 +2007,11 @@ const App = () => {
           options: {
             emailRedirectTo: window.location.origin,
             data: {
-              name: name.trim(),
-              // 👇 nuevo: hint liviano que sí viaja con la sesión en la pestaña de verificación
+              name: safeName,
               onboarding_hint: {
                 tournament_id: tournamentId,
                 division_id: divisionId,
-                locations: (locations || []).slice(0, 9), // cortito
+                locations: (locations || []).slice(0, 9),
                 has_pic: Boolean(profilePic),
                 has_av: Object.keys(availability || {}).length > 0
               }
@@ -2022,10 +2021,24 @@ const App = () => {
 
 
         if (error) throw error;
+
+        // Upload photo to Supabase Storage immediately (before email verification)
+        // This ensures the photo isn't lost if user verifies in a different browser/tab
+        if (profilePic && data?.user?.id) {
+          try {
+            const file = dataURLtoFile(profilePic, `pending_${data.user.id}.jpg`);
+            await supabase.storage
+              .from('avatars')
+              .upload(`pending_${data.user.id}.jpg`, file, { upsert: true });
+          } catch (uploadErr) {
+            console.warn('Pre-upload avatar failed (non-blocking):', uploadErr);
+          }
+        }
         
-        alert('Registration successful! Please check your email to verify your account, then log in.');
+        alert('¡Registro exitoso! Revisa tu email para verificar la cuenta y luego inicia sesión.');
         setLoginView(true);
         setRegistrationStep(1);
+        setConfirmPassword('');
         setNewUser({ name: '', email: '', password: '', profilePic: '', locations: [], availability: {}, tournaments: [], division: '', postal_code: '' });
         setPickedTournamentId('');
         setPickedDivisionId('');
@@ -2224,8 +2237,10 @@ const App = () => {
 
   const displayNameForShare = (id: string) => {
     const p = profiles.find(pp => pp.id === id);
-    const base = (p?.nickname && p.nickname.trim().length > 0) ? p.nickname! : (p?.name || '');
-    return uiName(base);
+    if (p?.nickname && p.nickname.trim().length > 0) {
+      return p.nickname.trim(); // nickname sin formatear
+    }
+    return uiName(p?.name || '');
   };
 
   async function handleSaveEditedSchedule() {
@@ -2662,6 +2677,7 @@ const App = () => {
         onboarding.profilePicDataUrl || onboarding.profilePic;
 
       if (picDataUrl) {
+        // Photo from sessionStorage (same tab)
         const file = dataURLtoFile(picDataUrl, `${userId}.jpg`);
         const { error: uploadErr } = await supabase.storage
           .from('avatars')
@@ -2672,6 +2688,18 @@ const App = () => {
           .from('avatars')
           .getPublicUrl(`${userId}.jpg`);
         await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', userId);
+      } else {
+        // Fallback: check if photo was pre-uploaded during registration (different tab/browser scenario)
+        const pendingPath = `pending_${userId}.jpg`;
+        const { data: pendingFile } = await supabase.storage.from('avatars').download(pendingPath);
+        if (pendingFile) {
+          // Move: upload to final path and delete pending
+          await supabase.storage.from('avatars').upload(`${userId}.jpg`, pendingFile, { upsert: true });
+          await supabase.storage.from('avatars').remove([pendingPath]);
+
+          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(`${userId}.jpg`);
+          await supabase.from('profiles').update({ avatar_url: urlData.publicUrl }).eq('id', userId);
+        }
       }
 
       // --- C. TORNEO + DIVISIÓN ---
@@ -4813,8 +4841,14 @@ const App = () => {
     const file = target.files[0];
     if (!file) return;
 
+    // Limit: 10MB before reading into memory
+    if (file.size > 10 * 1024 * 1024) {
+      alert('La imagen es demasiado pesada (máx 10MB). Intenta con una foto más liviana.');
+      target.value = '';
+      return;
+    }
+
     try {
-      // Redimensiona para reducir drásticamente el tamaño antes de guardar en storage
       const original = await new Promise<string>((resolve, reject) => {
         const r = new FileReader();
         r.onload = () => resolve(r.result as string);
@@ -4822,12 +4856,12 @@ const App = () => {
         r.readAsDataURL(file);
       });
 
-      const resized = await resizeImage(original, 400); // ~ancho 400px, muy liviano
+      const resized = await resizeImage(original, 400);
       setPendingAvatarPreview(resized);
       setNewUser(prev => ({ ...prev, profilePic: resized }));
     } catch (err) {
       console.error('Image resize error:', err);
-      alert('No se pudo procesar la imagen.');
+      alert('No se pudo procesar la imagen. Intenta con otro archivo.');
     }
   };
 
@@ -5079,7 +5113,7 @@ const App = () => {
           {registrationStep === 1 ? (
             <>
               <div className="border-t pt-6">
-                <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">Login</h2>
+                <h2 className="text-2xl font-semibold text-gray-800 mb-6 text-center">Iniciar Sesión</h2>
                 <form onSubmit={handleLogin}>
                   <div className="space-y-4">
                     <div>
@@ -5093,7 +5127,7 @@ const App = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
                       <input
                         type="password"
                         value={newUser.password}
@@ -5106,16 +5140,16 @@ const App = () => {
                       type="submit"
                       className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
                     >
-                      Login
+                      Entrar
                     </button>
 
                     <div className="text-center mt-4">
                       <button
-                        type="button" // Importante que sea "button" para no enviar el formulario
+                        type="button"
                         onClick={handlePasswordReset}
                         className="text-sm text-gray-600 hover:text-gray-900 hover:underline focus:outline-none"
                       >
-                        Forgot your password?
+                        ¿Olvidaste tu contraseña?
                       </button>
                     </div>
 
@@ -5127,11 +5161,11 @@ const App = () => {
               </div>
 
               <div className="mb-6 text-center">
-                <h2 className="text-2xl font-semibold text-gray-800 mb-6">Create Account</h2>
+                <h2 className="text-2xl font-semibold text-gray-800 mb-6">Crear Cuenta</h2>
                 <form onSubmit={handleRegister}>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Nombre Completo</label>
                       <input
                         type="text"
                         value={newUser.name}
@@ -5141,7 +5175,7 @@ const App = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                       <input
                         type="email"
                         value={newUser.email}
@@ -5155,9 +5189,9 @@ const App = () => {
                       type="submit"
                       className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
                     >
-                      Continue
+                      Continuar
                     </button>
-                    <p>Utiliza Nombre + Apellido, y correo personal</p>
+                    <p className="text-sm text-gray-500">Utiliza Nombre + Apellido, y correo personal</p>
                   </div>
                 </form>
               </div>
@@ -5165,11 +5199,11 @@ const App = () => {
             </>
           ) : registrationStep === 2 ? (
             <div>
-              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Complete Your Profile</h2>
+              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Completar Perfil</h2>
               <form onSubmit={handleRegister}>
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Foto de Perfil</label>
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                       {(pendingAvatarPreview || editUser.profilePic) ? (
                         <img
@@ -5185,7 +5219,7 @@ const App = () => {
 
                       <div className="mt-4">
                         <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200">
-                          Upload Photo
+                          Subir Foto
                           <input
                             type="file"
                             accept="image/*"
@@ -5194,7 +5228,7 @@ const App = () => {
                           />
                         </label>
                       </div>
-                      <p className="mt-2 text-sm text-gray-500">PNG/JPG hasta 5MB</p>
+                      <p className="mt-2 text-sm text-gray-500">PNG/JPG hasta 10MB</p>
                     </div>
 
                   </div>
@@ -5275,7 +5309,7 @@ const App = () => {
             </div>
           ) : (
             <div>
-              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Join Tournament</h2>
+              <h2 className="text-2xl font-semibold text-gray-800 mb-6">Unirse al Torneo</h2>
               <form onSubmit={handleRegister}>
                 <div className="space-y-6">
                   <div>
@@ -5317,18 +5351,37 @@ const App = () => {
                     </select>
                   </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
                       <input
                         type="password"
                         value={newUser.password}
                         onChange={(e) => setNewUser({...newUser, password: e.target.value})}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         required
+                        minLength={6}
                       />
-                      <p>Utiliza una clave simple con más de 6 caracteres</p>
+                      <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Confirmar Contraseña</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                          confirmPassword && confirmPassword !== newUser.password
+                            ? 'border-red-400 bg-red-50'
+                            : 'border-gray-300'
+                        }`}
+                        required
+                        minLength={6}
+                      />
+                      {confirmPassword && confirmPassword !== newUser.password && (
+                        <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>
+                      )}
                     </div>
 
-                  {/* Nueva casilla de verificación */}
+                  {/* Casilla de verificación */}
                   <div className="flex items-start mt-4">
                       <div className="flex items-center h-5">
                       <input
@@ -5354,16 +5407,15 @@ const App = () => {
                           onClick={() => setRegistrationStep(2)}
                           className="flex-1 bg-gray-500 text-white py-3 rounded-lg font-semibold hover:bg-gray-600 transition duration-200"
                       >
-                          Back
+                          Volver
                       </button>
                       
-                      {/* El botón de registro ahora solo aparece si la casilla está marcada */}
                       {hasCommitted && (
                       <button
                           type="submit"
                           className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200"
                       >
-                          Complete Registration
+                          Completar Registro
                       </button>
                       )}
                   </div>
@@ -8909,11 +8961,11 @@ const App = () => {
                           <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Jugador</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PJ</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DS</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">G</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SG</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SP</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DS</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pintas</th>
                         </tr>
                       </thead>
@@ -8941,11 +8993,11 @@ const App = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{playerStats.points}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{playerStats.wins + playerStats.losses}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{playerStats.set_diff}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">{playerStats.wins}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">{playerStats.losses}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{playerStats.sets_won}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{playerStats.sets_lost}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{playerStats.set_diff}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
                               <span className="text-lg">🍻</span>
@@ -10423,11 +10475,11 @@ const App = () => {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jugador</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Puntos</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PJ</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DS</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">G</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SG</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SP</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DS</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pintas</th>
                       </tr>
                     </thead>
@@ -10505,11 +10557,11 @@ const App = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900">{stats.points}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stats.wins + stats.losses}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{stats.set_diff}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">{stats.wins}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">{stats.losses}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_won}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{stats.sets_lost}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{stats.set_diff}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                   <span className="text-lg">🍻</span>
