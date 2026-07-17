@@ -30,6 +30,7 @@ interface MatchPointLog {
   source: string;
   created_at: string;
   analysis_text?: string | null;
+  rival_name?: string | null;
 }
 
 // --- Helpers ---
@@ -605,6 +606,8 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
   const [filterType, setFilterType] = useState<"todos" | "oficial" | "amistoso">("todos");
   const [filterMonth, setFilterMonth] = useState<string>("todos");
   const [analysisLoading, setAnalysisLoading] = useState<string | null>(null);
+  const [editingRivalId, setEditingRivalId] = useState<string | null>(null);
+  const [editRivalName, setEditRivalName] = useState("");
 
   const hasGarmin = !!currentUser.garmin_paired_at;
 
@@ -873,6 +876,24 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
     }
   }
 
+  // Delete a match log
+  async function deleteSession(sessionId: string) {
+    if (!confirm("¿Eliminar este partido? No se puede deshacer.")) return;
+    const { error } = await supabase.from("match_point_logs").delete().eq("id", sessionId);
+    if (error) { alert("Error al eliminar"); return; }
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    if (expandedId === sessionId) setExpandedId(null);
+  }
+
+  // Save rival name (for friendly matches without match_id)
+  async function saveRivalName(sessionId: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) { setEditingRivalId(null); return; }
+    await supabase.from("match_point_logs").update({ rival_name: trimmed }).eq("id", sessionId);
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, rival_name: trimmed } : s));
+    setEditingRivalId(null);
+  }
+
   // Auto-generate analysis when expanding a match that has point_log but no analysis
   useEffect(() => {
     if (!expandedId) return;
@@ -1066,37 +1087,79 @@ export default function MatchAnalytics({ currentUser }: { currentUser: Profile }
       {/* Match list — vertical */}
       <div className="space-y-2">
         {filteredSessions.map((session) => {
-          const rival = session.match_id ? rivalNames[session.match_id] : null;
+          const rival = session.match_id ? rivalNames[session.match_id] : session.rival_name;
+          const isFriendly = !session.match_id;
           return (
-            <button
-              key={session.id}
-              onClick={() => setExpandedId(session.id)}
-              className="w-full p-3 rounded-xl border transition text-left bg-white/8 border-white/15 hover:bg-white/15"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-white font-bold text-sm">{formatResult(session.result)}</p>
-                  {rival && <p className="text-white/80 text-xs">vs {rival}</p>}
-                </div>
-                <div className="text-right">
-                  <p className="text-white/70 text-[11px]">
-                    {new Date(session.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
-                  </p>
-                  <div className="flex items-center gap-1.5 justify-end mt-0.5">
-                    {session.match_id ? (
-                      <span className="text-[9px] text-emerald-300 font-medium">Oficial</span>
-                    ) : (
-                      <span className="text-[9px] text-white/50">Amistoso</span>
-                    )}
-                    <span className="text-white/50 text-[10px]">{formatDuration(session.duration_secs)}</span>
-                    {session.avg_hr > 0 && <span className="text-white/50 text-[10px]">❤️{session.avg_hr}</span>}
+            <div key={session.id} className="flex items-center gap-1.5">
+              <button
+                onClick={() => setExpandedId(session.id)}
+                className="flex-1 p-3 rounded-xl border transition text-left bg-white/8 border-white/15 hover:bg-white/15"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-white font-bold text-sm">{formatResult(session.result)}</p>
+                    {rival && <p className="text-white/80 text-xs">vs {rival}</p>}
+                    {!rival && isFriendly && <p className="text-white/40 text-xs italic">Amistoso</p>}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-white/70 text-[11px]">
+                      {new Date(session.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                    </p>
+                    <div className="flex items-center gap-1.5 justify-end mt-0.5">
+                      {session.match_id ? (
+                        <span className="text-[9px] text-emerald-300 font-medium">Oficial</span>
+                      ) : (
+                        <span className="text-[9px] text-white/50">Amistoso</span>
+                      )}
+                      <span className="text-white/50 text-[10px]">{formatDuration(session.duration_secs)}</span>
+                      {session.avg_hr > 0 && <span className="text-white/50 text-[10px]">❤️{session.avg_hr}</span>}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              {/* Edit rival (friendlies only) */}
+              {isFriendly && editingRivalId !== session.id && (
+                <button
+                  onClick={() => { setEditingRivalId(session.id); setEditRivalName(session.rival_name || ""); }}
+                  className="p-2 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/10 transition text-sm"
+                  title="Editar rival"
+                >
+                  ✏️
+                </button>
+              )}
+              <button
+                onClick={() => deleteSession(session.id)}
+                className="p-2 rounded-lg text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition text-sm"
+                title="Eliminar partido"
+              >
+                🗑
+              </button>
+            </div>
           );
         })}
       </div>
+
+      {/* Edit rival inline modal */}
+      {editingRivalId && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setEditingRivalId(null)}>
+          <div className="bg-gray-800 rounded-2xl p-5 w-full max-w-xs" onClick={e => e.stopPropagation()}>
+            <p className="text-white text-sm font-medium mb-3">Nombre del rival</p>
+            <input
+              type="text"
+              value={editRivalName}
+              onChange={e => setEditRivalName(e.target.value)}
+              placeholder="Ej: Carlos, Juan..."
+              className="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm outline-none focus:border-emerald-400 mb-3"
+              autoFocus
+              onKeyDown={e => { if (e.key === "Enter") saveRivalName(editingRivalId, editRivalName); }}
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setEditingRivalId(null)} className="flex-1 py-2 rounded-lg text-xs text-white/60 hover:bg-white/10">Cancelar</button>
+              <button onClick={() => saveRivalName(editingRivalId, editRivalName)} className="flex-1 py-2 rounded-lg text-xs bg-emerald-600 text-white font-medium hover:bg-emerald-500">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
