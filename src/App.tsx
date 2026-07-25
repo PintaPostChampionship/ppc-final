@@ -196,10 +196,12 @@ const App = () => {
   const [courtRequests, setCourtRequests] = useState<CourtBookingRequest[]>([]);
 
   const [showBookingPanel, setShowBookingPanel] = useState(false);
-  const [bookingPanelTab, setBookingPanelTab] = useState<'crear' | 'reservas'>('crear');
+  const [bookingPanelTab, setBookingPanelTab] = useState<'crear' | 'reservas' | 'stats'>('crear');
+  const [courtStats, setCourtStats] = useState<Array<{ day_of_week: number; court_number: number; pct: number }>>([]);
   const [reservasFilter, setReservasFilter] = useState<string>('mine');
   const [betterBookings, setBetterBookings] = useState<Array<{
     id: string;
+    better_booking_id: number;
     starts_at: string;
     ends_at: string;
     court_name: string;
@@ -209,6 +211,7 @@ const App = () => {
     cancel_cut_off: string | null;
     booking_account_id: string;
   }>>([]);
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
   const [loadingBetterBookings, setLoadingBetterBookings] = useState(false);
   const [savingBooking, setSavingBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
@@ -216,6 +219,7 @@ const App = () => {
 
   const [bookingHistoryLimit, setBookingHistoryLimit] = useState<'5' | '10' | '20' | 'all'>('10');
   const [bookingHistoryStatusFilter, setBookingHistoryStatusFilter] = useState<'all' | 'BOOKED' | 'CANCELLED' | 'EXPIRED' | 'CLOSED' | 'FAILED'>('all');
+  const [bookingHistoryPlayerFilter, setBookingHistoryPlayerFilter] = useState<string>('mine');
 
   const [newBooking, setNewBooking] = useState<{
     better_account_id: string;
@@ -652,13 +656,13 @@ const App = () => {
   const formatDate = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-  const todayPlus2 = (() => {
+  const todayPlus1 = (() => {
     const d = new Date();
     d.setHours(0,0,0,0);
-    d.setDate(d.getDate() + 2);
+    d.setDate(d.getDate() + 1);
     return d;
   })();
-  const minDate = formatDate(todayPlus2);
+  const minDate = formatDate(todayPlus1);
 
   // Para agendar partidos: permitir desde hoy
   const minDateToday = (() => {
@@ -1455,6 +1459,31 @@ const App = () => {
         } catch (e) {
           console.error('loadBetterBookings error:', e);
         }
+
+        // Fetch court availability stats
+        try {
+          const { data: rawStats, error: statsErr } = await supabase
+            .from('court_availability_stats')
+            .select('day_of_week, court_number, was_available');
+          if (statsErr) {
+            console.error('loadCourtStats RLS error:', statsErr);
+          } else if (rawStats && rawStats.length > 0) {
+            const map: Record<string, { total: number; available: number }> = {};
+            for (const r of rawStats) {
+              const key = `${r.day_of_week}-${r.court_number}`;
+              if (!map[key]) map[key] = { total: 0, available: 0 };
+              map[key].total++;
+              if (r.was_available) map[key].available++;
+            }
+            const computed = Object.entries(map).map(([key, v]) => {
+              const [dow, cn] = key.split('-').map(Number);
+              return { day_of_week: dow, court_number: cn, pct: Math.round(100 * v.available / v.total) };
+            });
+            setCourtStats(computed);
+          }
+        } catch (e) {
+          console.error('loadCourtStats error:', e);
+        }
       } catch (err) {
         console.error('loadBookingData error:', err);
       }
@@ -1575,6 +1604,12 @@ const App = () => {
   });
 
   const filteredHistoricalRequests = sortedHistoricalRequests.filter(req => {
+    // Player filter
+    if (bookingHistoryPlayerFilter === 'mine') {
+      if (req.profile_id !== currentUser?.id) return false;
+    } else if (bookingHistoryPlayerFilter !== 'all') {
+      if (req.better_account_id !== bookingHistoryPlayerFilter) return false;
+    }
     if (bookingHistoryStatusFilter === 'all') return true;
     return (req.status || '') === bookingHistoryStatusFilter;
   });
@@ -1585,7 +1620,19 @@ const App = () => {
       : filteredHistoricalRequests.slice(0, Number(bookingHistoryLimit));
 
   useEffect(() => {
-    if (!newBooking.better_account_id) return;
+    if (!newBooking.better_account_id) {
+      // Set default account based on the logged-in user's own account
+      const myAccount = bookingAccounts.find(a => a.owner_profile_id === currentUser?.id);
+      if (myAccount) {
+        setNewBooking(prev => ({ ...prev, better_account_id: myAccount.id }));
+        return;
+      }
+      // Fallback to first visible account
+      if (visibleBookingAccounts.length > 0) {
+        setNewBooking(prev => ({ ...prev, better_account_id: visibleBookingAccounts[0].id }));
+      }
+      return;
+    }
 
     const stillVisible = visibleBookingAccounts.some(
       acc => acc.id === newBooking.better_account_id
@@ -1597,7 +1644,7 @@ const App = () => {
         better_account_id: visibleBookingAccounts[0]?.id ?? '',
       }));
     }
-  }, [visibleBookingAccounts, newBooking.better_account_id]);
+  }, [visibleBookingAccounts, newBooking.better_account_id, currentUser?.id, bookingAccounts]);
 
   const formatTimeRange = (req: CourtBookingRequest) => {
     const start = req.target_start_time?.slice(0, 5) ?? '';
@@ -1645,6 +1692,40 @@ const App = () => {
       return;
     }
     setCourtRequests((data as CourtBookingRequest[]) || []);
+  }
+
+  async function handleCancelBooking(booking: { id: string; better_booking_id: number; booking_account_id: string }) {
+    if (!confirm('¿Seguro que quieres cancelar esta reserva? Se liberará la cancha en Better.')) return;
+
+    setCancellingBookingId(booking.id);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const resp = await fetch('/api/cancel-booking', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          booking_id: booking.id,
+          better_booking_id: booking.better_booking_id,
+          booking_account_id: booking.booking_account_id,
+        }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert(`Error al cancelar: ${err.error || resp.statusText}`);
+        return;
+      }
+
+      // Remove from local state
+      setBetterBookings(prev => prev.filter(b => b.id !== booking.id));
+    } catch (err: any) {
+      alert(`Error: ${err?.message || 'Desconocido'}`);
+    } finally {
+      setCancellingBookingId(null);
+    }
   }
 
   async function handleCreateBooking(e: React.FormEvent) {
@@ -1764,11 +1845,16 @@ const App = () => {
       // refrescamos lista
       await reloadCourtRequests();
 
-      // reseteamos el formulario (dejamos misma cuenta/venue/actividad)
+      // reseteamos solo la hora (dejamos fecha, cuenta, venue, canchas)
       setNewBooking((prev) => ({
         ...prev,
-        target_date: '',
-        start_time: '19:00',
+        start_time: (() => {
+          // Auto-advance to next hour if same date
+          const [hStr] = prev.start_time.split(':');
+          const nextH = parseInt(hStr, 10) + 1;
+          if (nextH <= 20) return `${nextH.toString().padStart(2, '0')}:00`;
+          return prev.start_time;
+        })(),
       }));
 
       alert('Reserva automática creada correctamente.');
@@ -3091,6 +3177,12 @@ const App = () => {
 
             {divider()}
 
+            {canSeeDashboard && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
+              '📊 Dashboard Admin',
+              () => { resetNav(); setShowAdminDashboard(true); }
+            )}
+
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/></svg>,
               'Buscador Cancha 2.0',
@@ -3119,12 +3211,6 @@ const App = () => {
               () => { resetNav(); setShowBookingPanel(true); }
             )}
 
-            {canSeeDashboard && menuItem(
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>,
-              '📊 Dashboard Admin',
-              () => { resetNav(); setShowAdminDashboard(true); }
-            )}
-
             {divider()}
 
             {menuItem(
@@ -3134,6 +3220,13 @@ const App = () => {
             )}
 
           </nav>
+
+          {/* Scroll hint for mobile — fades out when scrolled to bottom */}
+          <div className="pointer-events-none absolute bottom-[140px] left-0 right-0 h-8 bg-gradient-to-t from-emerald-900/90 to-transparent lg:hidden flex items-end justify-center pb-1">
+            <svg className="w-4 h-4 text-white/40 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </div>
 
           {/* Join at bottom */}
           <div className="px-3 pt-2 pb-1">
@@ -6014,6 +6107,16 @@ const App = () => {
               >
                 📋 Próximas reservas
               </button>
+              <button
+                onClick={() => setBookingPanelTab('stats')}
+                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition ${
+                  bookingPanelTab === 'stats'
+                    ? 'bg-green-100 text-green-800 border-b-2 border-green-600'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                📊 Disponibilidad
+              </button>
             </div>
 
             {/* TAB: Mis reservas */}
@@ -6065,69 +6168,78 @@ const App = () => {
 
                 {(() => {
                   // Filter bookings based on selected filter
-                  const myAccountIds = new Set(visibleBookingAccounts.map(a => a.id));
+                  const myOwnAccountIds = new Set(
+                    bookingAccounts.filter(a => a.owner_profile_id === currentUser?.id).map(a => a.id)
+                  );
                   const filteredBookings = reservasFilter === 'all'
                     ? betterBookings
                     : reservasFilter === 'mine'
-                      ? betterBookings.filter(b => myAccountIds.has(b.booking_account_id))
+                      ? betterBookings.filter(b => myOwnAccountIds.has(b.booking_account_id))
                       : betterBookings.filter(b => b.booking_account_id === reservasFilter);
 
                   if (filteredBookings.length === 0) {
                     return <p className="text-sm text-gray-600 py-8 text-center">No hay reservas próximas.</p>;
                   }
 
-                  // Group by date, then by player within each date
-                  const grouped: Record<string, Record<string, typeof filteredBookings>> = {};
-                  for (const b of filteredBookings) {
+                  // Sort all bookings by date then player then time
+                  const sorted = [...filteredBookings].sort((a, b) => {
+                    const dateComp = a.starts_at.localeCompare(b.starts_at.slice(0, 10));
+                    if (a.starts_at.slice(0, 10) !== b.starts_at.slice(0, 10)) return a.starts_at.localeCompare(b.starts_at);
+                    const accA = bookingAccounts.find(x => x.id === a.booking_account_id)?.label || '';
+                    const accB = bookingAccounts.find(x => x.id === b.booking_account_id)?.label || '';
+                    if (accA !== accB) return accA.localeCompare(accB);
+                    return a.starts_at.localeCompare(b.starts_at);
+                  });
+
+                  const grouped: Record<string, typeof filteredBookings> = {};
+                  for (const b of sorted) {
                     const dateKey = new Date(b.starts_at).toLocaleDateString('es-CL', {
                       weekday: 'long',
                       day: 'numeric',
                       month: 'long',
                       timeZone: 'Europe/London',
                     });
-                    const account = bookingAccounts.find(a => a.id === b.booking_account_id);
-                    const playerName = account?.label || '—';
-                    if (!grouped[dateKey]) grouped[dateKey] = {};
-                    if (!grouped[dateKey][playerName]) grouped[dateKey][playerName] = [];
-                    grouped[dateKey][playerName].push(b);
+                    if (!grouped[dateKey]) grouped[dateKey] = [];
+                    grouped[dateKey].push(b);
                   }
 
                   return (
                     <div className="space-y-3">
-                      {Object.entries(grouped).map(([dateLabel, players]) => (
+                      {Object.entries(grouped).map(([dateLabel, bookings]) => (
                         <div key={dateLabel} className="border border-gray-200 rounded-xl overflow-hidden">
-                          <div className="bg-green-50 px-4 py-2.5 border-b border-gray-200">
-                            <h3 className="font-semibold text-gray-800 capitalize">{dateLabel}</h3>
+                          <div className="bg-green-50 px-4 py-2 border-b border-gray-200">
+                            <h3 className="font-semibold text-gray-800 capitalize text-sm">{dateLabel}</h3>
                           </div>
                           <div className="divide-y divide-gray-100">
-                            {Object.entries(players).sort((a, b) => a[0].localeCompare(b[0])).map(([playerName, bookings]) => (
-                              <div key={playerName}>
-                                {bookings.sort((a, b) => a.starts_at.localeCompare(b.starts_at)).map((b, idx) => {
-                                  const startLocal = new Date(b.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
-                                  const endLocal = new Date(b.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
-                                  const courtShort = b.court_name
-                                    .replace('Highbury Fields Tennis ', '')
-                                    .replace('Highbury Fields ', '');
-                                  return (
-                                    <div key={b.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50">
-                                      <div className="flex items-center gap-4">
-                                        <div className="text-center min-w-[65px] bg-white border border-gray-200 rounded-lg px-2 py-1">
-                                          <div className="text-sm font-bold text-gray-800">{startLocal}</div>
-                                          <div className="text-xs text-gray-400">{endLocal}</div>
-                                        </div>
-                                        <div>
-                                          <div className="font-medium text-gray-800">{courtShort}</div>
-                                          <div className="text-xs text-gray-500">{playerName}</div>
-                                        </div>
-                                      </div>
-                                      {b.can_cancel && (
-                                        <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">Cancelable</span>
-                                      )}
+                            {bookings.map((b) => {
+                              const startLocal = new Date(b.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+                              const courtShort = b.court_name
+                                .replace('Highbury Fields Tennis ', '')
+                                .replace('Highbury Fields ', '');
+                              const account = bookingAccounts.find(a => a.id === b.booking_account_id);
+                              const playerName = account?.label || '—';
+                              const canCancelThis = b.can_cancel && (isBookingAdmin || account?.owner_profile_id === currentUser?.id);
+                              return (
+                                <div key={b.id} className="px-4 py-2 flex items-center justify-between gap-2 hover:bg-gray-50">
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-sm font-bold text-gray-800 w-[50px]">
+                                      {startLocal}
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            ))}
+                                    <div className="font-medium text-gray-800 text-sm">{courtShort}</div>
+                                    <div className="text-xs text-gray-500">{playerName}</div>
+                                  </div>
+                                  {canCancelThis && (
+                                    <button
+                                      onClick={() => handleCancelBooking({ id: b.id, better_booking_id: b.better_booking_id, booking_account_id: b.booking_account_id })}
+                                      disabled={cancellingBookingId === b.id}
+                                      className="text-xs text-red-600 border border-red-200 px-2 py-1 rounded-md hover:bg-red-50 transition-colors disabled:opacity-50 shrink-0"
+                                    >
+                                      {cancellingBookingId === b.id ? '...' : '✕ Cancelar'}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
@@ -6288,19 +6400,41 @@ const App = () => {
                         type="date"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min={minDate}
-                        value={newBooking.target_date || minDate}
+                        value={newBooking.target_date}
                         onChange={(e) => {
                           const v = e.target.value;
-                          // Si eligen antes de t+7, forzamos t+7
                           setNewBooking({
                             ...newBooking,
-                            target_date: v && v >= minDate ? v : minDate,
+                            target_date: v && v >= minDate ? v : '',
                           });
                         }}
                       />
-                      <p className="mt-1 text-xs text-amber-700">
-                        Solo se permiten reservas a partir de {minDate} (t+2).
+                      <p className="mt-1 text-xs text-gray-500">
+                        Desde mañana (t+1). El bot busca automáticamente.
                       </p>
+                      {/* Recomendaciones de canchas basadas en el día */}
+                      {newBooking.target_date && courtStats.length > 0 && (() => {
+                        const d = new Date(newBooking.target_date + 'T00:00:00');
+                        const dow = d.getDay(); // 0=dom, 1=lun, etc.
+                        const dayStats = courtStats.filter(s => s.day_of_week === dow).sort((a, b) => b.pct - a.pct);
+                        if (dayStats.length === 0) return null;
+                        const dayNames: Record<number, string> = { 0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado' };
+                        const best = dayStats.find(s => s.pct > 0);
+                        if (!best) return null;
+                        return (
+                          <div className="mt-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800">
+                            <p className="font-medium">📊 {dayNames[dow]}: mejor opción → Court {best.court_number} ({best.pct}%)</p>
+                            <p className="mt-0.5 text-blue-600">⚠️ 2 hrs seguidas bajan la probabilidad.</p>
+                            <button
+                              type="button"
+                              onClick={() => setBookingPanelTab('stats')}
+                              className="mt-1 text-blue-600 underline hover:text-blue-800"
+                            >
+                              Ver estadísticas completas →
+                            </button>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -6382,11 +6516,10 @@ const App = () => {
                       Primero intenta la 1ª, luego 2ª y 3ª. Si no hay, el bot elige la mejor alternativa disponible.
                     </p>
 
-                    {/* Conflict detection: warn if another player has overlapping preferences */}
+                    {/* Conflict detection: warn if another player has same date/time/venue */}
                     {(() => {
                       if (!newBooking.target_date || !newBooking.start_time) return null;
                       const myPrefs = [newBooking.preferred_court_name_1, newBooking.preferred_court_name_2, newBooking.preferred_court_name_3].filter(Boolean);
-                      if (myPrefs.length === 0) return null;
                       const conflicts = activeRequests.filter(r => 
                         r.target_date === newBooking.target_date &&
                         r.venue_slug === newBooking.venue_slug &&
@@ -6398,22 +6531,31 @@ const App = () => {
                         const theirPrefs = [r.preferred_court_name_1, r.preferred_court_name_2, r.preferred_court_name_3].filter(Boolean);
                         return myPrefs.some(p => theirPrefs.includes(p));
                       });
-                      if (overlapping.length === 0) return null;
-                      const names = overlapping.map(r => {
+                      const names = conflicts.map(r => {
                         const acc = bookingAccounts.find(a => a.id === r.better_account_id);
                         return acc?.label || 'Otro jugador';
                       });
-                      const theirCourts = [...new Set(overlapping.flatMap(r => 
+                      const theirCourts = [...new Set(conflicts.flatMap(r => 
                         [r.preferred_court_name_1, r.preferred_court_name_2, r.preferred_court_name_3]
                           .filter(Boolean)
                           .map(c => c.replace('Highbury Fields Tennis ', '').replace('Reservoir Open Water Swimming ', ''))
                       ))];
+                      if (overlapping.length > 0) {
+                        return (
+                          <div className="mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
+                            <p className="font-medium">🚨 Tope de canchas</p>
+                            <p className="mt-0.5 text-xs">
+                              {names.join(', ')} tiene{names.length === 1 ? '' : 'n'} reserva para el mismo día/hora con canchas que se solapan ({theirCourts.join(', ')}).
+                              Elige otras canchas para evitar conflictos.
+                            </p>
+                          </div>
+                        );
+                      }
                       return (
                         <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-                          <p className="font-medium">⚠️ Tope de preferencias</p>
+                          <p className="font-medium">⚠️ Mismo horario</p>
                           <p className="mt-0.5 text-xs">
-                            {names.join(', ')} ya tiene{names.length === 1 ? '' : 'n'} reserva para el mismo día/hora con canchas que se solapan ({theirCourts.join(', ')}).
-                            Se recomienda elegir otras para evitar conflictos.
+                            {names.join(', ')} también {names.length === 1 ? 'tiene' : 'tienen'} reserva para el mismo día/hora. Sus preferencias: {theirCourts.join(', ') || '—'}.
                           </p>
                         </div>
                       );
@@ -6443,63 +6585,64 @@ const App = () => {
                       No hay reservas automáticas activas.
                     </p>
                   ) : (
-                    <div className="overflow-x-auto -mx-2 sm:mx-0">
-                      <table className="min-w-[640px] w-full text-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
                         <thead className="bg-green-50 text-gray-700">
                           <tr>
-                            <th className="px-3 py-2 text-left">Fecha</th>
-                            <th className="px-3 py-2 text-left">Hora</th>
-                            <th className="px-3 py-2 text-left">Cuenta</th>
-                            <th className="px-3 py-2 text-left">Canchas</th>
-                            <th className="px-3 py-2 text-left">Estado</th>
-                            <th className="px-3 py-2 text-left">Detalles</th>
-                            <th className="px-3 py-2 text-right">Acciones</th>
+                            <th className="px-2 py-2 text-center">Fecha</th>
+                            <th className="px-2 py-2 text-center">Cuenta</th>
+                            <th className="px-2 py-2 text-center">Hora</th>
+                            <th className="px-2 py-2 text-center">Preferencias</th>
+                            <th className="px-2 py-2 text-center">Estado</th>
+                            <th className="px-2 py-2 text-center">Info</th>
+                            <th className="px-2 py-2 text-center">Acciones</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {visibleActiveRequests.map((req) => {
+                          {[...visibleActiveRequests].sort((a, b) => {
+                            const dateComp = (a.target_date || '').localeCompare(b.target_date || '');
+                            if (dateComp !== 0) return dateComp;
+                            const accA = bookingAccounts.find(x => x.id === a.better_account_id)?.label || '';
+                            const accB = bookingAccounts.find(x => x.id === b.better_account_id)?.label || '';
+                            const playerComp = accA.localeCompare(accB);
+                            if (playerComp !== 0) return playerComp;
+                            return (a.target_start_time || '').localeCompare(b.target_start_time || '');
+                          }).map((req) => {
                             const account = bookingAccounts.find(a => a.id === req.better_account_id);
-                            const courts = [req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
-                              .filter(Boolean)
-                              .join(' · ') || '—';
+                            const canCancel = isBookingAdmin || account?.owner_profile_id === currentUser?.id;
                             return (
-                              <tr key={req.id} className="bg-white">
-                                <td className="px-3 py-2 whitespace-nowrap">{tituloFechaEs(req.target_date)}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">{formatTimeRange(req)}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">{account?.label ?? '—'}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">
+                              <tr key={req.id} className="bg-white hover:bg-gray-50">
+                                <td className="px-2 py-2 whitespace-nowrap text-center font-medium">{tituloFechaEs(req.target_date)}</td>
+                                <td className="px-2 py-2 whitespace-nowrap text-center">{account?.label?.split(' ')[0] ?? '—'}</td>
+                                <td className="px-2 py-2 whitespace-nowrap text-center">{req.target_start_time?.slice(0, 5) ?? '—'}</td>
+                                <td className="px-2 py-2 whitespace-nowrap text-center">
                                   {joinCourtsShort(req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3)}
                                 </td>
-
-                                <td className="px-3 py-2 whitespace-nowrap">
+                                <td className="px-2 py-2 whitespace-nowrap text-center">
                                   {shortStatus(req.status)}
                                 </td>
-
-                                <td className="px-3 py-2">
-                                  <details>
-                                    <summary className="cursor-pointer select-none text-xs text-gray-600">ver</summary>
-                                    <div className="mt-2 text-xs text-gray-600 space-y-1">
-                                      {req.last_error && <div>Último: {req.last_error}</div>}
-                                      {req.booked_court_name && <div>Reservado: {req.booked_court_name}</div>}
-                                      {req.booked_slot_start && <div>Inicio: {req.booked_slot_start}</div>}
-                                      {req.booked_slot_end && <div>Fin: {req.booked_slot_end}</div>}
-                                      <div>Preferidas: {[req.preferred_court_name_1, req.preferred_court_name_2, req.preferred_court_name_3]
-                                        .filter(Boolean).join(' · ') || '—'}
+                                <td className="px-2 py-2 text-center">
+                                  {(req.last_error || req.booked_court_name) ? (
+                                    <details>
+                                      <summary className="cursor-pointer select-none text-blue-600 hover:text-blue-800">ver</summary>
+                                      <div className="mt-1 text-gray-600 text-left space-y-0.5">
+                                        {req.last_error && <div>⚠️ {req.last_error}</div>}
+                                        {req.booked_court_name && <div>✅ {req.booked_court_name}</div>}
                                       </div>
-                                    </div>
-                                  </details>
+                                    </details>
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
                                 </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-right">
-                                  <div className="inline-flex gap-2">
-                                    {/* Si ya tienes botón Modificar en otra parte, pon aquí tu handler de edición */}
-                                    {/* <button onClick={() => TU_HANDLER_DE_EDITAR(req)} className="text-xs px-2 py-1 rounded-md border border-gray-200 hover:bg-gray-50">Modificar</button> */}
+                                <td className="px-2 py-2 whitespace-nowrap text-center">
+                                  {canCancel && (
                                     <button
                                       onClick={() => handleCancelBooking(req)}
-                                      className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                                      className="text-xs px-2 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition"
                                     >
                                       Cancelar
                                     </button>
-                                  </div>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -6518,6 +6661,18 @@ const App = () => {
                 </h3>
 
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                  <select
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    value={bookingHistoryPlayerFilter}
+                    onChange={(e) => setBookingHistoryPlayerFilter(e.target.value)}
+                  >
+                    <option value="mine">Mis bookings</option>
+                    <option value="all">Todos</option>
+                    {bookingAccounts.filter(a => a.owner_profile_id !== currentUser?.id).map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.label}</option>
+                    ))}
+                  </select>
+
                   <select
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     value={bookingHistoryStatusFilter}
@@ -6556,8 +6711,8 @@ const App = () => {
                   Aún no hay historial de reservas.
                 </p>
               ) : (
-                <div className="overflow-x-auto -mx-2 sm:mx-0">
-                  <table className="min-w-[640px] w-full text-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-gray-700">
                       <tr>
                         <th className="px-3 py-2 text-left">Fecha</th>
@@ -6614,6 +6769,98 @@ const App = () => {
             </div>
           </div>
           )}
+
+            {/* TAB: Disponibilidad */}
+            {bookingPanelTab === 'stats' && (
+              <div>
+                <div className="mb-4">
+                  <h2 className="text-xl font-bold text-gray-800">📊 Disponibilidad de canchas</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Probabilidad de que cada cancha esté disponible al momento del release (22:00), basado en datos históricos.
+                  </p>
+                </div>
+
+                {courtStats.length === 0 ? (
+                  <p className="text-sm text-gray-600 py-8 text-center">Cargando datos de disponibilidad...</p>
+                ) : (
+                  <div className="space-y-6">
+                    {[1, 2, 3, 4, 5, 6, 0].map(dow => {
+                      const dayNames: Record<number, string> = { 0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado' };
+                      const dayStats = courtStats.filter(s => s.day_of_week === dow).sort((a, b) => b.pct - a.pct);
+                      if (dayStats.length === 0) return null;
+
+                      const recommended = dayStats.filter(s => s.pct >= 70);
+                      const possible = dayStats.filter(s => s.pct >= 30 && s.pct < 70);
+                      const difficult = dayStats.filter(s => s.pct > 0 && s.pct < 30);
+                      const classes = dayStats.filter(s => s.pct === 0);
+
+                      return (
+                        <div key={dow} className="border border-gray-200 rounded-xl overflow-hidden">
+                          <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
+                            <h3 className="font-semibold text-gray-800">{dayNames[dow]}</h3>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            {recommended.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-green-700 mb-1">✅ Recomendada (&gt;70%)</p>
+                                <div className="space-y-1">
+                                  {recommended.map(s => (
+                                    <div key={s.court_number} className="flex items-center justify-between text-xs bg-green-50 rounded px-2 py-1">
+                                      <span>Court {s.court_number}</span>
+                                      <span className="font-bold text-green-700">{s.pct}%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {possible.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-amber-700 mb-1">⚠️ Posible (30-70%)</p>
+                                <div className="space-y-1">
+                                  {possible.map(s => (
+                                    <div key={s.court_number} className="flex items-center justify-between text-xs bg-amber-50 rounded px-2 py-1">
+                                      <span>Court {s.court_number}</span>
+                                      <span className="font-bold text-amber-700">{s.pct}%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {difficult.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-red-700 mb-1">❌ Difícil (&lt;30%)</p>
+                                <div className="space-y-1">
+                                  {difficult.map(s => (
+                                    <div key={s.court_number} className="flex items-center justify-between text-xs bg-red-50 rounded px-2 py-1">
+                                      <span>Court {s.court_number}</span>
+                                      <span className="font-bold text-red-700">{s.pct}%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {classes.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 mb-1">🚫 Clases (0%)</p>
+                                <div className="space-y-1">
+                                  {classes.map(s => (
+                                    <div key={s.court_number} className="flex items-center justify-between text-xs bg-gray-100 rounded px-2 py-1">
+                                      <span>Court {s.court_number}</span>
+                                      <span className="font-bold text-gray-500">0%</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
           </section>
         </div>
 

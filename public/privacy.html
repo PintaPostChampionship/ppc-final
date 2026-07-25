@@ -1,8 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-export default function handler(_req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.status(200).send(`<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -42,5 +38,4 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
   <h2>Contact</h2>
   <p>For privacy questions, contact: pintapostchampionship@gmail.com</p>
 </body>
-</html>`);
-}
+</html>

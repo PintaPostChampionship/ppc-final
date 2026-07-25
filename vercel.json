@@ -1,4 +1,7 @@
 {
+  "rewrites": [
+    { "source": "/api/privacy", "destination": "/privacy.html" }
+  ],
   "crons": [
     {
       "path": "/api/cron/daily-reminders",
