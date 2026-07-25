@@ -28,6 +28,7 @@ import { PlayerShowcaseCard } from './components/PlayerShowcaseCard';
 import { BracketView, advanceWinner } from './components/BracketView';
 import { NavPlayerSearch } from './components/NavPlayerSearch';
 import { NavTournamentsSection } from './components/NavTournamentsSection';
+import { PhotoCarousel3D } from './components/PhotoCarousel3D';
 import { buildMatchScheduledPayload, buildResultLoadedPayload, determineRecipient } from './lib/notificationUtils';
 
 
@@ -260,8 +261,6 @@ const App = () => {
 
   const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
 
-  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-
   // Sub Fase de Grupos (Placement) – UI state (Edición 3)
   const [placementGroup, setPlacementGroup] = useState<'A' | 'B' | 'C' | 'D'>('A');
   // Switch de vistas para Edición 3 (escalable a futuras fases)
@@ -271,18 +270,6 @@ const App = () => {
     setPlacementGroup('A');
     setE3View('main');
   }, [selectedTournament?.id]);
-
-  const goToNextPhoto = () => {
-    if (highlightPhotos.length === 0) return;
-    setCurrentPhotoIndex((prev) => (prev + 1) % highlightPhotos.length);
-  };
-
-  const goToPrevPhoto = () => {
-    if (highlightPhotos.length === 0) return;
-    setCurrentPhotoIndex((prev) =>
-      (prev - 1 + highlightPhotos.length) % highlightPhotos.length
-    );
-  };
 
   // -------- Helpers: resolve player from profiles OR historic_players --------
 
@@ -435,14 +422,6 @@ const App = () => {
     if (r.historic_player_id) return getAnyPlayerAvatarUrl(r.historic_player_id);
     return null;
   };
-
-  // Auto-play del carrusel cada 5s
-  useEffect(() => {
-    if (highlightPhotos.length <= 1) return;
-
-    const interval = setInterval(goToNextPhoto, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const timeSlots = ['Morning (07:00-12:00)', 'Afternoon (12:00-18:00)', 'Evening (18:00-22:00)'];
@@ -3100,7 +3079,15 @@ const App = () => {
           </div>
 
           {/* Menu items */}
-          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 text-white">
+          <nav
+            className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5 text-white relative"
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
+              const hint = el.parentElement?.querySelector('[data-scroll-hint]') as HTMLElement | null;
+              if (hint) hint.style.opacity = atBottom ? '0' : '1';
+            }}
+          >
 
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="12" cy="7" r="4"/><path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeLinecap="round"/></svg>,
@@ -3221,11 +3208,13 @@ const App = () => {
 
           </nav>
 
-          {/* Scroll hint for mobile — fades out when scrolled to bottom */}
-          <div className="pointer-events-none absolute bottom-[140px] left-0 right-0 h-8 bg-gradient-to-t from-emerald-900/90 to-transparent lg:hidden flex items-end justify-center pb-1">
-            <svg className="w-4 h-4 text-white/40 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/>
-            </svg>
+          {/* Scroll hint — hides when scrolled to bottom */}
+          <div data-scroll-hint className="lg:hidden pointer-events-none px-3 py-1 flex justify-center border-t border-white/5 bg-gradient-to-t from-emerald-900 to-transparent transition-opacity duration-300">
+            <span className="text-[10px] text-white/40 flex items-center gap-1">
+              <svg className="w-3 h-3 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+              desliza para ver más
+              <svg className="w-3 h-3 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </span>
           </div>
 
           {/* Join at bottom */}
@@ -7476,89 +7465,9 @@ const App = () => {
           </div>
           
 
-          {/* Carrusel de fotos de torneos anteriores */}
+          {/* Carrusel 3D de fotos de torneos anteriores */}
           {highlightPhotos.length > 0 && (
-            <div className="mb-10">
-              <h3 className="text-2xl font-bold text-white mb-4 text-center">
-                Fotos de torneos anteriores
-              </h3>
-
-              <div className="relative max-w-4xl mx-auto rounded-2xl overflow-hidden shadow-2xl bg-black/40">
-                {/* Slides */}
-                <div className="relative w-full aspect-[16/9]">
-                  {highlightPhotos.map((photo, index) => (
-                    <div
-                      key={photo.src}
-                      className={`
-                        absolute inset-0
-                        transition-transform duration-700 ease-out
-                        ${index === 0 ? '' : ''}
-                      `}
-                      style={{
-                        transform: `translateX(${(index - currentPhotoIndex) * 100}%)`,
-                      }}
-                    >
-                      <img
-                        src={photo.src}
-                        alt={photo.alt}
-                        className="w-full h-full object-cover"
-                      />
-                      {/* Degradado para texto */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                      {/* Texto sobre la foto */}
-                      <div className="absolute bottom-4 left-4 right-4 md:left-6 md:bottom-6">
-                        <p className="text-sm md:text-base text-gray-100 font-medium drop-shadow">
-                          {photo.caption}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Flechas de navegación */}
-                {highlightPhotos.length > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={goToPrevPhoto}
-                      className="absolute inset-y-0 left-0 flex items-center px-3 md:px-4
-                                 text-white/80 hover:text-white focus:outline-none"
-                      aria-label="Foto anterior"
-                    >
-                      <span className="text-2xl md:text-3xl">‹</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={goToNextPhoto}
-                      className="absolute inset-y-0 right-0 flex items-center px-3 md:px-4
-                                 text-white/80 hover:text-white focus:outline-none"
-                      aria-label="Foto siguiente"
-                    >
-                      <span className="text-2xl md:text-3xl">›</span>
-                    </button>
-                  </>
-                )}
-
-                {/* Dots inferiores */}
-                {highlightPhotos.length > 1 && (
-                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
-                    {highlightPhotos.map((_, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => setCurrentPhotoIndex(index)}
-                        className={`
-                          h-2.5 w-2.5 rounded-full border border-white/70
-                          transition-all duration-200
-                          ${index === currentPhotoIndex ? 'bg-white scale-110' : 'bg-white/20'}
-                        `}
-                        aria-label={`Ir a la foto ${index + 1}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <PhotoCarousel3D photos={highlightPhotos} />
           )}
 
 
