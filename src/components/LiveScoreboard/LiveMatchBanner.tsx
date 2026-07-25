@@ -22,6 +22,7 @@ interface LiveMatchInfo {
   away_player_id: string | null;
   home_historic_player_id?: string | null;
   away_historic_player_id?: string | null;
+  status: string;
   p1Name: string;
   p2Name: string;
   p1Avatar?: string;
@@ -42,8 +43,8 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
   async function loadLiveMatches() {
     const { data: matches } = await supabase
       .from('matches')
-      .select('id, home_player_id, away_player_id, home_historic_player_id, away_historic_player_id')
-      .eq('status', 'live');
+      .select('id, home_player_id, away_player_id, home_historic_player_id, away_historic_player_id, status')
+      .in('status', ['live', 'paused']);
 
     if (!matches || matches.length === 0) {
       setLiveMatches([]);
@@ -59,6 +60,7 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
           away_player_id: m.away_player_id,
           home_historic_player_id: m.home_historic_player_id,
           away_historic_player_id: m.away_historic_player_id,
+          status: (m as any).status || 'live',
           p1Name: 'Jugador 1',
           p2Name: 'Jugador 2',
         };
@@ -176,8 +178,8 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
           <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-red-400">
             <span className="animate-pulse">●</span>
             {liveMatches.length === 1
-              ? 'Partido en vivo'
-              : `${liveMatches.length} partidos en vivo`}
+              ? (liveMatches[0].status === 'paused' ? '⏸ Partido pausado' : 'Partido en vivo')
+              : `${liveMatches.length} partidos`}
           </span>
         </div>
 
@@ -204,19 +206,54 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
                     {m.p1Name} vs {m.p2Name}
                   </span>
                 )}
+                {m.status === 'paused' && (
+                  <span className="text-[10px] text-yellow-300 font-medium ml-2">⏸ Pausado</span>
+                )}
               </div>
 
-              {/* Enlace */}
-              <a
-                href={`#live/match/${m.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.location.hash = `live/match/${m.id}`;
-                }}
-                className="shrink-0 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-red-500"
-              >
-                Ver →
-              </a>
+              {/* Actions */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {m.status === 'live' && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm('¿Pausar este partido?')) return;
+                      await fetch('/api/live-score', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
+                        body: JSON.stringify({ action: 'pause', match_id: m.id }),
+                      });
+                      loadLiveMatches();
+                    }}
+                    className="rounded-lg bg-yellow-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-yellow-500"
+                  >
+                    ⏸
+                  </button>
+                )}
+                <button
+                  onClick={async () => {
+                    if (!confirm('¿Cerrar este partido? Se restaurará el estado anterior.')) return;
+                    await fetch('/api/live-score', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
+                      body: JSON.stringify({ action: 'close', match_id: m.id }),
+                    });
+                    loadLiveMatches();
+                  }}
+                  className="rounded-lg bg-gray-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-gray-500"
+                >
+                  ✕
+                </button>
+                <a
+                  href={`#live/match/${m.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.location.hash = `live/match/${m.id}`;
+                  }}
+                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white transition-all hover:bg-red-500"
+                >
+                  Ver →
+                </a>
+              </div>
             </div>
           ))}
         </div>

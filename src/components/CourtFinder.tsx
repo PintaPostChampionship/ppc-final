@@ -65,11 +65,11 @@ const NON_TENNIS_KEYWORDS = ["cricket", "netball", "football", "muga", "astro", 
 
 // All configured venues (always shown even with 0 availability)
 const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; postcode: string; lat: number; lng: number; floodlit: boolean | null }> = [
-  { name: "Highbury Fields", slug: "islington-tennis-centre", platform: "better", postcode: "N5 1AR", lat: 51.552, lng: -0.098, floodlit: true },
-  { name: "Islington Tennis Centre (Outdoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113, floodlit: true },
-  { name: "Islington Tennis Centre (Indoor)", slug: "islington-tennis-centre", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113, floodlit: true },
-  { name: "Tufnell Park", slug: "islington-tennis-centre", platform: "better", postcode: "N7 0PG", lat: 51.553, lng: -0.134, floodlit: true },
-  { name: "Rosemary Gardens", slug: "islington-tennis-centre", platform: "better", postcode: "N1 2DT", lat: 51.540, lng: -0.095, floodlit: true },
+  { name: "Highbury Fields", slug: "highbury-fields", platform: "better", postcode: "N5 1AR", lat: 51.552, lng: -0.098, floodlit: true },
+  { name: "Islington Tennis Centre (Outdoor)", slug: "islington-tc-outdoor", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113, floodlit: true },
+  { name: "Islington Tennis Centre (Indoor)", slug: "islington-tc-indoor", platform: "better", postcode: "N7 9LN", lat: 51.555, lng: -0.113, floodlit: true },
+  { name: "Tufnell Park", slug: "tufnell-park", platform: "better", postcode: "N7 0PG", lat: 51.553, lng: -0.134, floodlit: true },
+  { name: "Rosemary Gardens", slug: "rosemary-gardens", platform: "better", postcode: "N1 2DT", lat: 51.540, lng: -0.095, floodlit: true },
   { name: "Kennington Park", slug: "kenningtonpark", platform: "clubspark", postcode: "SE11 4BE", lat: 51.480, lng: -0.106, floodlit: null },
   { name: "Archbishops Park", slug: "archbishopsparklambethnorth", platform: "clubspark", postcode: "SE1 7LE", lat: 51.498, lng: -0.115, floodlit: null },
   { name: "Burgess Park", slug: "BurgessParkSouthwark", platform: "clubspark", postcode: "SE5 0RJ", lat: 51.483, lng: -0.082, floodlit: null },

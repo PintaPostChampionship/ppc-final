@@ -264,6 +264,16 @@ async function handlePost(
     return handleSync(res, supabase, match_id, state);
   }
 
+  // ── Action: pause — Pausar un partido desde la web ──
+  if (action === 'pause') {
+    return handlePause(res, supabase, match_id);
+  }
+
+  // ── Action: close — Cerrar un partido incompleto desde la web ──
+  if (action === 'close') {
+    return handleClose(res, supabase, match_id);
+  }
+
   // ── Action: point — Registrar un punto ──
   if (action === 'point' || !action) {
     return handlePoint(res, supabase, match_id, player);
@@ -429,13 +439,21 @@ async function handleSync(
     return res.status(500).json({ error: 'Failed to sync state', detail: error.message });
   }
 
-  // Ensure match status is 'live' (fallback in case initMatch didn't set it)
+  // If match paused, update matches table to reflect paused state
+  if (updatePayload.status === 'paused') {
+    await supabase
+      .from('matches')
+      .update({ status: 'paused' } as any)
+      .eq('id', matchId);
+  }
+
+  // If match resumed (going back to live from paused)
   if (updatePayload.status === 'live') {
     await supabase
       .from('matches')
       .update({ status: 'live' } as any)
       .eq('id', matchId)
-      .in('status', ['scheduled', 'pending']);
+      .in('status', ['scheduled', 'pending', 'paused']);
   }
 
   // If match finished, also update the matches table
@@ -467,6 +485,49 @@ async function handleSync(
       await supabase.from('match_sets').insert(setsToInsert as any);
     }
   }
+
+  return res.status(200).json({ ok: true });
+}
+
+// ─── Pause: pause a live match from web ──────────────────────────────────────
+
+async function handlePause(res: VercelResponse, supabase: Supabase, matchId: string) {
+  await supabase
+    .from('live_score_state')
+    .update({ status: 'paused' } as any)
+    .eq('match_id', matchId);
+
+  await supabase
+    .from('matches')
+    .update({ status: 'paused' } as any)
+    .eq('id', matchId);
+
+  return res.status(200).json({ ok: true });
+}
+
+// ─── Close: close an orphaned/incomplete match from web ──────────────────────
+
+async function handleClose(res: VercelResponse, supabase: Supabase, matchId: string) {
+  // Get current live state to retrieve previous match status
+  const { data: liveState } = await supabase
+    .from('live_score_state')
+    .select('previous_match_status')
+    .eq('match_id', matchId)
+    .maybeSingle();
+
+  const prevStatus = (liveState as any)?.previous_match_status ?? 'scheduled';
+
+  // Delete the live state
+  await supabase
+    .from('live_score_state')
+    .delete()
+    .eq('match_id', matchId);
+
+  // Restore match to previous status
+  await supabase
+    .from('matches')
+    .update({ status: prevStatus } as any)
+    .eq('id', matchId);
 
   return res.status(200).json({ ok: true });
 }

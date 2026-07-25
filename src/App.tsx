@@ -6021,23 +6021,20 @@ const App = () => {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h2 className="text-xl font-bold text-gray-800">Próximas reservas en Better</h2>
-                    <p className="mt-1 text-sm text-gray-500">Reservas confirmadas. Se sincroniza automáticamente 2 veces al día.</p>
+                    <p className="mt-1 text-sm text-gray-500">Reservas confirmadas de todos los jugadores. Se sincroniza 2 veces al día.</p>
                   </div>
                 </div>
 
                 {(() => {
-                  // Filter: admins see all, non-admins see only their accounts
-                  const visibleAccountIds = new Set(visibleBookingAccounts.map(a => a.id));
-                  const filteredBookings = isBookingAdmin
-                    ? betterBookings
-                    : betterBookings.filter(b => visibleAccountIds.has(b.booking_account_id));
+                  // Show all bookings (everyone can see all)
+                  const filteredBookings = betterBookings;
 
                   if (filteredBookings.length === 0) {
                     return <p className="text-sm text-gray-600 py-8 text-center">No hay reservas próximas.</p>;
                   }
 
-                  // Group bookings by date
-                  const grouped: Record<string, typeof filteredBookings> = {};
+                  // Group by date, then by player within each date
+                  const grouped: Record<string, Record<string, typeof filteredBookings>> = {};
                   for (const b of filteredBookings) {
                     const dateKey = new Date(b.starts_at).toLocaleDateString('es-CL', {
                       weekday: 'long',
@@ -6045,43 +6042,49 @@ const App = () => {
                       month: 'long',
                       timeZone: 'Europe/London',
                     });
-                    if (!grouped[dateKey]) grouped[dateKey] = [];
-                    grouped[dateKey].push(b);
+                    const account = bookingAccounts.find(a => a.id === b.booking_account_id);
+                    const playerName = account?.label || '—';
+                    if (!grouped[dateKey]) grouped[dateKey] = {};
+                    if (!grouped[dateKey][playerName]) grouped[dateKey][playerName] = [];
+                    grouped[dateKey][playerName].push(b);
                   }
 
                   return (
                     <div className="space-y-3">
-                      {Object.entries(grouped).map(([dateLabel, dayBookings]) => (
+                      {Object.entries(grouped).map(([dateLabel, players]) => (
                         <div key={dateLabel} className="border border-gray-200 rounded-xl overflow-hidden">
                           <div className="bg-green-50 px-4 py-2.5 border-b border-gray-200">
                             <h3 className="font-semibold text-gray-800 capitalize">{dateLabel}</h3>
                           </div>
                           <div className="divide-y divide-gray-100">
-                            {dayBookings.map((b) => {
-                              const startLocal = new Date(b.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
-                              const endLocal = new Date(b.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
-                              const account = bookingAccounts.find(a => a.id === b.booking_account_id);
-                              const courtShort = b.court_name
-                                .replace('Highbury Fields Tennis ', '')
-                                .replace('Highbury Fields ', '');
-                              return (
-                                <div key={b.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50">
-                                  <div className="flex items-center gap-4">
-                                    <div className="text-center min-w-[65px] bg-white border border-gray-200 rounded-lg px-2 py-1">
-                                      <div className="text-sm font-bold text-gray-800">{startLocal}</div>
-                                      <div className="text-xs text-gray-400">{endLocal}</div>
+                            {Object.entries(players).sort((a, b) => a[0].localeCompare(b[0])).map(([playerName, bookings]) => (
+                              <div key={playerName}>
+                                {bookings.sort((a, b) => a.starts_at.localeCompare(b.starts_at)).map((b, idx) => {
+                                  const startLocal = new Date(b.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+                                  const endLocal = new Date(b.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+                                  const courtShort = b.court_name
+                                    .replace('Highbury Fields Tennis ', '')
+                                    .replace('Highbury Fields ', '');
+                                  return (
+                                    <div key={b.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50">
+                                      <div className="flex items-center gap-4">
+                                        <div className="text-center min-w-[65px] bg-white border border-gray-200 rounded-lg px-2 py-1">
+                                          <div className="text-sm font-bold text-gray-800">{startLocal}</div>
+                                          <div className="text-xs text-gray-400">{endLocal}</div>
+                                        </div>
+                                        <div>
+                                          <div className="font-medium text-gray-800">{courtShort}</div>
+                                          <div className="text-xs text-gray-500">{playerName}</div>
+                                        </div>
+                                      </div>
+                                      {b.can_cancel && (
+                                        <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">Cancelable</span>
+                                      )}
                                     </div>
-                                    <div>
-                                      <div className="font-medium text-gray-800">{courtShort}</div>
-                                      <div className="text-xs text-gray-500">{account?.label || '—'}</div>
-                                    </div>
-                                  </div>
-                                  {b.can_cancel && (
-                                    <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">Cancelable</span>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                  );
+                                })}
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
@@ -6335,6 +6338,43 @@ const App = () => {
                     <p className="mt-1 text-xs text-gray-500">
                       Primero intenta la 1ª, luego 2ª y 3ª. Si no hay, el bot elige la mejor alternativa disponible.
                     </p>
+
+                    {/* Conflict detection: warn if another player has overlapping preferences */}
+                    {(() => {
+                      if (!newBooking.target_date || !newBooking.start_time) return null;
+                      const myPrefs = [newBooking.preferred_court_name_1, newBooking.preferred_court_name_2, newBooking.preferred_court_name_3].filter(Boolean);
+                      if (myPrefs.length === 0) return null;
+                      const conflicts = activeRequests.filter(r => 
+                        r.target_date === newBooking.target_date &&
+                        r.venue_slug === newBooking.venue_slug &&
+                        String(r.target_start_time).slice(0,5) === newBooking.start_time &&
+                        r.profile_id !== currentUser?.id
+                      );
+                      if (conflicts.length === 0) return null;
+                      const overlapping = conflicts.filter(r => {
+                        const theirPrefs = [r.preferred_court_name_1, r.preferred_court_name_2, r.preferred_court_name_3].filter(Boolean);
+                        return myPrefs.some(p => theirPrefs.includes(p));
+                      });
+                      if (overlapping.length === 0) return null;
+                      const names = overlapping.map(r => {
+                        const acc = bookingAccounts.find(a => a.id === r.better_account_id);
+                        return acc?.label || 'Otro jugador';
+                      });
+                      const theirCourts = [...new Set(overlapping.flatMap(r => 
+                        [r.preferred_court_name_1, r.preferred_court_name_2, r.preferred_court_name_3]
+                          .filter(Boolean)
+                          .map(c => c.replace('Highbury Fields Tennis ', '').replace('Reservoir Open Water Swimming ', ''))
+                      ))];
+                      return (
+                        <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                          <p className="font-medium">⚠️ Tope de preferencias</p>
+                          <p className="mt-0.5 text-xs">
+                            {names.join(', ')} ya tiene{names.length === 1 ? '' : 'n'} reserva para el mismo día/hora con canchas que se solapan ({theirCourts.join(', ')}).
+                            Se recomienda elegir otras para evitar conflictos.
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="pt-2">
