@@ -197,6 +197,7 @@ const App = () => {
 
   const [showBookingPanel, setShowBookingPanel] = useState(false);
   const [bookingPanelTab, setBookingPanelTab] = useState<'crear' | 'reservas'>('crear');
+  const [reservasFilter, setReservasFilter] = useState<string>('mine');
   const [betterBookings, setBetterBookings] = useState<Array<{
     id: string;
     starts_at: string;
@@ -6021,13 +6022,55 @@ const App = () => {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h2 className="text-xl font-bold text-gray-800">Próximas reservas en Better</h2>
-                    <p className="mt-1 text-sm text-gray-500">Reservas confirmadas de todos los jugadores. Se sincroniza 2 veces al día.</p>
+                    <p className="mt-1 text-sm text-gray-500">Reservas confirmadas. Se sincroniza 2 veces al día.</p>
                   </div>
                 </div>
 
+                {/* Filter buttons */}
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  <button
+                    onClick={() => setReservasFilter('mine')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-full transition ${
+                      reservasFilter === 'mine'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Mis reservas
+                  </button>
+                  <button
+                    onClick={() => setReservasFilter('all')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-full transition ${
+                      reservasFilter === 'all'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Todos
+                  </button>
+                  {bookingAccounts.filter(a => a.owner_profile_id !== currentUser?.id).map(acc => (
+                    <button
+                      key={acc.id}
+                      onClick={() => setReservasFilter(acc.id)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition ${
+                        reservasFilter === acc.id
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {acc.label?.split(' ')[0] || '?'}
+                    </button>
+                  ))}
+                </div>
+
                 {(() => {
-                  // Show all bookings (everyone can see all)
-                  const filteredBookings = betterBookings;
+                  // Filter bookings based on selected filter
+                  const myAccountIds = new Set(visibleBookingAccounts.map(a => a.id));
+                  const filteredBookings = reservasFilter === 'all'
+                    ? betterBookings
+                    : reservasFilter === 'mine'
+                      ? betterBookings.filter(b => myAccountIds.has(b.booking_account_id))
+                      : betterBookings.filter(b => b.booking_account_id === reservasFilter);
 
                   if (filteredBookings.length === 0) {
                     return <p className="text-sm text-gray-600 py-8 text-center">No hay reservas próximas.</p>;
