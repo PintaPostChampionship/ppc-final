@@ -237,9 +237,9 @@ const App = () => {
     activity_slug: BOOKING_VENUES.highbury.activity_slug,
     target_date: '',
     start_time: '19:00',
-    preferred_court_name_1: BOOKING_VENUES.highbury.defaultPreferences[0],
-    preferred_court_name_2: BOOKING_VENUES.highbury.defaultPreferences[1],
-    preferred_court_name_3: BOOKING_VENUES.highbury.defaultPreferences[2],
+    preferred_court_name_1: '',
+    preferred_court_name_2: '',
+    preferred_court_name_3: '',
   });
 
   const [editingRequestId, setEditingRequestId] = useState<string | null>(null);
@@ -253,9 +253,9 @@ const App = () => {
       ...prev,
       venue_slug: cfg.venue_slug,
       activity_slug: cfg.activity_slug,
-      preferred_court_name_1: cfg.defaultPreferences[0] || '',
-      preferred_court_name_2: cfg.defaultPreferences[1] || '',
-      preferred_court_name_3: cfg.defaultPreferences[2] || '',
+      preferred_court_name_1: '',
+      preferred_court_name_2: '',
+      preferred_court_name_3: '',
     }));
   };  
 
@@ -6457,53 +6457,68 @@ const App = () => {
                   {/* Cancha preferida */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {selectedBookingVenue.key === 'swimming' ? 'Lanes preferidas' : 'Canchas preferidas'}
+                      {selectedBookingVenue.key === 'swimming' ? 'Lanes preferidas' : 'Canchas preferidas (máx 2)'}
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <select
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        value={newBooking.preferred_court_name_1}
-                        onChange={(e) => setNewBooking({
-                          ...newBooking,
-                          preferred_court_name_1: e.target.value,
-                        })}
-                      >
-                        {courtNames.map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
+                    {(() => {
+                      // Calculate blocked courts (already taken by others for same date/time)
+                      const blockedCourts = new Set<string>();
+                      if (newBooking.target_date && newBooking.start_time) {
+                        activeRequests
+                          .filter(r =>
+                            r.target_date === newBooking.target_date &&
+                            r.venue_slug === newBooking.venue_slug &&
+                            String(r.target_start_time).slice(0, 5) === newBooking.start_time &&
+                            r.better_account_id !== newBooking.better_account_id
+                          )
+                          .forEach(r => {
+                            if (r.preferred_court_name_1) blockedCourts.add(r.preferred_court_name_1.replace('Highbury Fields Tennis ', ''));
+                            if (r.preferred_court_name_2) blockedCourts.add(r.preferred_court_name_2.replace('Highbury Fields Tennis ', ''));
+                          });
+                      }
+                      const availableCourts = courtNames.filter(c => !blockedCourts.has(c));
 
-                      <select
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        value={newBooking.preferred_court_name_2}
-                        onChange={(e) => setNewBooking({
-                          ...newBooking,
-                          preferred_court_name_2: e.target.value,
-                        })}
-                      >
-                        <option value="">—</option>
-                        {courtNames.map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
+                      return (
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <select
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                              value={newBooking.preferred_court_name_1}
+                              onChange={(e) => setNewBooking({
+                                ...newBooking,
+                                preferred_court_name_1: e.target.value,
+                              })}
+                            >
+                              <option value="">Elegir 1ª preferencia</option>
+                              {availableCourts.map((name) => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
 
-                      <select
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                        value={newBooking.preferred_court_name_3}
-                        onChange={(e) => setNewBooking({
-                          ...newBooking,
-                          preferred_court_name_3: e.target.value,
-                        })}
-                      >
-                        <option value="">—</option>
-                        {courtNames.map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Primero intenta la 1ª, luego 2ª y 3ª. Si no hay, el bot elige la mejor alternativa disponible.
-                    </p>
+                            <select
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                              value={newBooking.preferred_court_name_2}
+                              onChange={(e) => setNewBooking({
+                                ...newBooking,
+                                preferred_court_name_2: e.target.value,
+                              })}
+                            >
+                              <option value="">Elegir 2ª preferencia</option>
+                              {availableCourts.filter(c => c !== newBooking.preferred_court_name_1).map((name) => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          {blockedCourts.size > 0 && (
+                            <p className="mt-1 text-xs text-amber-700">
+                              🔒 Bloqueadas por otros: {[...blockedCourts].join(', ')}
+                            </p>
+                          )}
+                          <p className="mt-1 text-xs text-gray-500">
+                            Intenta las 2 preferidas primero. Si no hay, el bot toma cualquier cancha disponible.
+                          </p>
+                        </>
+                      );
+                    })()}
 
                     {/* Conflict detection: warn if another player has same date/time/venue */}
                     {(() => {
