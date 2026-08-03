@@ -30,13 +30,23 @@ async function betterLogin(username: string, password: string): Promise<string |
   try {
     const res = await fetch('https://better-admin.org.uk/api/auth/customer/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Origin': 'https://bookings.better.org.uk',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0',
+      },
       body: JSON.stringify({ username, password }),
     });
-    if (!res.ok) return null;
+    console.log('[cancel-booking] Login response status:', res.status);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[cancel-booking] Login failed:', res.status, text.slice(0, 200));
+      return null;
+    }
     const json = await res.json();
     return json.token || null;
-  } catch {
+  } catch (err: any) {
+    console.error('[cancel-booking] Login error:', err?.message);
     return null;
   }
 }
@@ -57,6 +67,8 @@ async function cancelBetterBooking(token: string, betterBookingId: number): Prom
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'Origin': 'https://bookings.better.org.uk',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0',
       },
       body: JSON.stringify(payload),
     });
