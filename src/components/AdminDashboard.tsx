@@ -67,6 +67,8 @@ export function AdminDashboard({
     return leagueTournaments.find(t => t.status === 'active')?.id || leagueTournaments[0]?.id || '';
   });
 
+  const [dashboardTab, setDashboardTab] = useState<'progress' | 'settings'>('progress');
+
   // Persist selection
   useEffect(() => {
     try { sessionStorage.setItem('ppc_admin_dashboard_tournament', selectedTournamentId); } catch {}
@@ -246,6 +248,31 @@ export function AdminDashboard({
           </select>
         </div>
 
+        {/* Tabs */}
+        <div className="flex mb-6 bg-slate-800 rounded-lg p-1 border border-slate-700">
+          <button
+            onClick={() => setDashboardTab('progress')}
+            className={`flex-1 py-2 text-sm font-semibold rounded-md transition ${
+              dashboardTab === 'progress'
+                ? 'bg-slate-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            📈 Progreso
+          </button>
+          <button
+            onClick={() => setDashboardTab('settings')}
+            className={`flex-1 py-2 text-sm font-semibold rounded-md transition ${
+              dashboardTab === 'settings'
+                ? 'bg-slate-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            ⚙️ Ajustes Divisiones
+          </button>
+        </div>
+
+        {dashboardTab === 'progress' && (<>
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
           <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
@@ -456,6 +483,191 @@ export function AdminDashboard({
           registrations={registrations}
           profiles={profiles}
         />
+        </>)}
+
+        {dashboardTab === 'settings' && (
+          <DivisionSettings
+            tournaments={tournaments}
+            divisions={divisions}
+            registrations={registrations}
+            profiles={profiles}
+            selectedTournamentId={selectedTournamentId}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// --- Division Settings Tab ---
+function DivisionSettings({
+  tournaments,
+  divisions,
+  registrations,
+  profiles,
+  selectedTournamentId,
+}: {
+  tournaments: Tournament[];
+  divisions: Division[];
+  registrations: Registration[];
+  profiles: Profile[];
+  selectedTournamentId: string;
+}) {
+  const [divisionFilter, setDivisionFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'retired'>('all');
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [localOverrides, setLocalOverrides] = useState<Record<string, string>>({});
+
+  // Division rank for sorting (same order as tournament view)
+  const divRank = (name?: string | null) => {
+    const n = (name || '').trim().toLowerCase();
+    if (n === 'oro') return 1;
+    if (n === 'plata') return 2;
+    if (n === 'bronce') return 3;
+    if (n === 'cobre') return 4;
+    if (n === 'diamante') return 5;
+    if (n === 'hierro') return 6;
+    return 99;
+  };
+
+  const tournamentDivisions = divisions
+    .filter(d => d.tournament_id === selectedTournamentId)
+    .sort((a, b) => divRank(a.name) - divRank(b.name));
+
+  const filteredRegs = registrations
+    .filter(r => r.tournament_id === selectedTournamentId)
+    .filter(r => divisionFilter === 'all' || r.division_id === divisionFilter)
+    .filter(r => {
+      if (statusFilter === 'all') return true;
+      const s = localOverrides[r.id] || r.status || 'active';
+      return s === statusFilter;
+    })
+    .sort((a, b) => {
+      // Sort by division rank first
+      const divA = divisions.find(d => d.id === a.division_id);
+      const divB = divisions.find(d => d.id === b.division_id);
+      const dr = divRank(divA?.name) - divRank(divB?.name);
+      if (dr !== 0) return dr;
+      // Then active first
+      const statusA = localOverrides[a.id] || a.status || 'active';
+      const statusB = localOverrides[b.id] || b.status || 'active';
+      const statusOrder = (s: string) => s === 'retired' ? 1 : 0;
+      const sd = statusOrder(statusA) - statusOrder(statusB);
+      if (sd !== 0) return sd;
+      // Then by name
+      const nameA = profiles.find(p => p.id === a.profile_id)?.name || '';
+      const nameB = profiles.find(p => p.id === b.profile_id)?.name || '';
+      return nameA.localeCompare(nameB, 'es');
+    });
+
+  const handleToggleStatus = async (reg: Registration) => {
+    const currentStatus = localOverrides[reg.id] || reg.status || 'active';
+    const newStatus = currentStatus === 'retired' ? 'active' : 'retired';
+    const playerName = profiles.find(p => p.id === reg.profile_id)?.name || 'Jugador';
+    const action = newStatus === 'retired' ? 'retirar' : 'reactivar';
+
+    if (!window.confirm(`¿${action.charAt(0).toUpperCase() + action.slice(1)} a ${playerName}?`)) return;
+
+    setUpdating(reg.id);
+    try {
+      const { error } = await supabase
+        .from('tournament_registrations')
+        .update({ status: newStatus })
+        .eq('id', reg.id);
+      if (error) throw error;
+
+      setLocalOverrides(prev => ({ ...prev, [reg.id]: newStatus }));
+      setUpdating(null);
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+      setUpdating(null);
+    }
+  };
+
+  const selectedTournament = tournaments.find(t => t.id === selectedTournamentId);
+
+  return (
+    <div>
+      <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+            Jugadores — {selectedTournament?.name || 'Torneo'}
+          </h2>
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as any)}
+              className="appearance-none bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 pr-7 text-sm text-white bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%239ca3af%22%20d%3D%22M2%204l4%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat"
+            >
+              <option value="all">Todos</option>
+              <option value="active">Activos</option>
+              <option value="retired">Retirados</option>
+            </select>
+            <select
+              value={divisionFilter}
+              onChange={e => setDivisionFilter(e.target.value)}
+              className="appearance-none bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 pr-7 text-sm text-white bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%239ca3af%22%20d%3D%22M2%204l4%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat"
+            >
+              <option value="all">Todas las divisiones</option>
+              {tournamentDivisions.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {filteredRegs.length === 0 ? (
+          <p className="text-sm text-slate-500 italic">No hay jugadores registrados.</p>
+        ) : (
+          <div className="space-y-1">
+            {/* Header */}
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 text-[10px] text-slate-500 uppercase tracking-wider border-b border-slate-700">
+              <span>Jugador</span>
+              <span className="w-20 text-center">División</span>
+              <span className="w-24 text-center">Estado</span>
+            </div>
+
+            {filteredRegs.map(reg => {
+              const player = profiles.find(p => p.id === reg.profile_id);
+              const div = divisions.find(d => d.id === reg.division_id);
+              const effectiveStatus = localOverrides[reg.id] || reg.status || 'active';
+              const isRetired = effectiveStatus === 'retired';
+              const isUpdating = updating === reg.id;
+
+              return (
+                <div
+                  key={reg.id}
+                  className={`grid grid-cols-[1fr_auto_auto] gap-2 items-center px-3 py-2 rounded-lg ${
+                    isRetired ? 'bg-slate-800/50 opacity-60' : 'bg-slate-700/30'
+                  }`}
+                >
+                  <span className={`text-sm font-medium truncate ${isRetired ? 'text-slate-400 line-through' : 'text-white'}`}>
+                    {player?.name || '—'}
+                  </span>
+                  <span className="w-20 text-center text-xs text-slate-400">
+                    {div?.name || '—'}
+                  </span>
+                  <button
+                    onClick={() => handleToggleStatus(reg)}
+                    disabled={isUpdating}
+                    className={`w-24 text-center text-xs font-semibold py-1.5 rounded-lg transition ${
+                      isRetired
+                        ? 'bg-slate-600 text-slate-300 hover:bg-emerald-700 hover:text-white'
+                        : 'bg-emerald-600/20 text-emerald-400 hover:bg-rose-700 hover:text-white'
+                    } ${isUpdating ? 'opacity-50 cursor-wait' : ''}`}
+                  >
+                    {isUpdating ? '...' : isRetired ? 'Reactivar' : 'Activo ✓'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mt-4 text-[10px] text-slate-500">
+          Click en el estado para cambiar entre Activo y Retirado. Los jugadores retirados no cuentan para la tabla de posiciones.
+        </div>
       </div>
     </div>
   );
