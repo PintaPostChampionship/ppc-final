@@ -228,17 +228,17 @@ export function AdminDashboard({
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
       <div className="max-w-6xl mx-auto px-4 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="text-slate-400 hover:text-white transition">
               ← Volver
             </button>
-            <h1 className="text-xl sm:text-2xl font-bold">📊 Dashboard Admin</h1>
+            <h1 className="text-lg sm:text-2xl font-bold">📊 Dashboard Admin</h1>
           </div>
           <select
             value={selectedTournamentId}
             onChange={e => setSelectedTournamentId(e.target.value)}
-            className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white"
+            className="w-full sm:w-auto bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
           >
             {leagueTournaments.map(t => (
               <option key={t.id} value={t.id}>
