@@ -63,7 +63,7 @@ async function cancelBetterBooking(token: string, betterBookingId: number): Prom
     console.log('[cancel-booking] Sending to Better:', JSON.stringify(payload));
     
     const res = await fetch('https://better-admin.org.uk/api/v1/activities/bookings', {
-      method: 'POST',
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
