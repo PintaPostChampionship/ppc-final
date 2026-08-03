@@ -1673,7 +1673,7 @@ const App = () => {
     setCourtRequests((data as CourtBookingRequest[]) || []);
   }
 
-  async function handleCancelBooking(booking: { id: string; better_booking_id: number; booking_account_id: string }) {
+  async function handleCancelBetterBooking(booking: { id: string; better_booking_id: number; booking_account_id: string }) {
     if (!confirm('¿Seguro que quieres cancelar esta reserva? Se liberará la cancha en Better.')) return;
 
     setCancellingBookingId(booking.id);
@@ -6219,7 +6219,7 @@ const App = () => {
                                   </div>
                                   {canCancelThis && (
                                     <button
-                                      onClick={() => handleCancelBooking({ id: b.id, better_booking_id: b.better_booking_id, booking_account_id: b.booking_account_id })}
+                                      onClick={() => handleCancelBetterBooking({ id: b.id, better_booking_id: b.better_booking_id, booking_account_id: b.booking_account_id })}
                                       disabled={cancellingBookingId === b.id}
                                       className="text-xs text-red-600 border border-red-200 px-2 py-1 rounded-md hover:bg-red-50 transition-colors disabled:opacity-50 shrink-0"
                                     >
