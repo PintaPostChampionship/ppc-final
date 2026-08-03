@@ -43,24 +43,42 @@ async function betterLogin(username: string, password: string): Promise<string |
 
 async function cancelBetterBooking(token: string, betterBookingId: number): Promise<{ ok: boolean; error?: string }> {
   try {
+    const payload = {
+      data: {
+        cancellation_source: 'my-account',
+        update_type: 'cancellation',
+        booking_ids: [String(betterBookingId)],
+      },
+    };
+    console.log('[cancel-booking] Sending to Better:', JSON.stringify(payload));
+    
     const res = await fetch('https://better-admin.org.uk/api/v1/activities/bookings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        data: {
-          cancellation_source: 'my-account',
-          update_type: 'cancellation',
-          booking_ids: [betterBookingId],
-        },
-      }),
+      body: JSON.stringify(payload),
     });
 
+    const text = await res.text();
+    console.log('[cancel-booking] Better response:', res.status, text.slice(0, 500));
+
     if (!res.ok) {
-      const text = await res.text();
       return { ok: false, error: `Better API ${res.status}: ${text.slice(0, 200)}` };
+    }
+
+    // Check if the response indicates actual cancellation
+    try {
+      const json = JSON.parse(text);
+      if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+        const booking = json.data[0];
+        if (booking.status === 'cancelled' || booking.update_type === 'cancellation') {
+          return { ok: true };
+        }
+      }
+    } catch {
+      // If we can't parse, but status was 200, consider it ok
     }
 
     return { ok: true };
@@ -111,14 +129,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Get Better credentials for the account
   const creds = await getAccountCredentials(booking_account_id);
   if (!creds) {
+    console.error('[cancel-booking] No credentials found for account:', booking_account_id);
     return res.status(500).json({ error: 'No se encontraron credenciales para esta cuenta Better' });
   }
+  console.log('[cancel-booking] Got credentials for:', creds.username);
 
   // Login to Better
   const token = await betterLogin(creds.username, creds.password);
   if (!token) {
+    console.error('[cancel-booking] Login failed for:', creds.username);
     return res.status(502).json({ error: 'Error al autenticarse en Better' });
   }
+  console.log('[cancel-booking] Login OK, cancelling booking_id:', better_booking_id);
 
   // Cancel the booking
   const result = await cancelBetterBooking(token, better_booking_id);
