@@ -2854,7 +2854,9 @@ const App = () => {
       console.log('Onboarding completado correctamente.');
     } catch (err) {
       console.error('Error completando onboarding:', err);
-      alert(`No pudimos finalizar la configuración de tu perfil. Error: ${String(err)}`);
+      // Non-blocking: clear pending data so user isn't stuck in a loop
+      sessionStorage.removeItem(PENDING_KEY);
+      localStorage.removeItem(PENDING_KEY);
     } finally {
       setLoading(false);
     }
