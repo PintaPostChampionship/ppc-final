@@ -4141,13 +4141,22 @@ const App = () => {
       return;
     }
 
-    // Asegura que existan en la división actual
+    // Asegura que existan en la división actual (o cross-division para calibraciones)
     const playersInDiv = getDivisionPlayers(selectedDivision!.id, selectedTournament!.id);
     const isValidP1 = playersInDiv.some(p => p.id === player1Id);
     const isValidP2 = playersInDiv.some(p => p.id === player2Id);
-    if (!isValidP1 || !isValidP2) {
-      alert('Jugadores no se encuentran dentro de la división/torneo seleccionados.');
-      return;
+
+    if (crossDivisionMode && isCalibrationTournamentByName(selectedTournament!.name)) {
+      // In cross-division calibration: at least P1 must be in the calibration division
+      if (!isValidP1 && !isValidP2) {
+        alert('Al menos uno de los jugadores debe pertenecer a la división de calibración.');
+        return;
+      }
+    } else {
+      if (!isValidP1 || !isValidP2) {
+        alert('Jugadores no se encuentran dentro de la división/torneo seleccionados.');
+        return;
+      }
     }
 
     // 3) IDs de torneo/división desde la vista actual (no por nombre)
@@ -4784,27 +4793,18 @@ const App = () => {
     // 1) Puntos
     if (b.points !== a.points) return b.points - a.points;
 
-    // 3) Ratio de sets
-    const aSetsTotal = a.sets_won + a.sets_lost;
-    const bSetsTotal = b.sets_won + b.sets_lost;
-    const aSetRatio = aSetsTotal > 0 ? a.sets_won / aSetsTotal : 0;
-    const bSetRatio = bSetsTotal > 0 ? b.sets_won / bSetsTotal : 0;
-    if (bSetRatio !== aSetRatio) return bSetRatio - aSetRatio;
+    // 2) Diferencia de sets (DS)
+    const aSetDiff = a.sets_won - a.sets_lost;
+    const bSetDiff = b.sets_won - b.sets_lost;
+    if (bSetDiff !== aSetDiff) return bSetDiff - aSetDiff;
 
-    // 4) Ratio de games
-    //const aGamesTotal = a.games_won + a.games_lost;
-    //const bGamesTotal = b.games_won + b.games_lost;
-    //const aGameRatio = aGamesTotal > 0 ? a.games_won / aGamesTotal : 0;
-    //const bGameRatio = bGamesTotal > 0 ? b.games_won / bGamesTotal : 0;
-    //if (bGameRatio !== aGameRatio) return bGameRatio - aGameRatio;
-
-    // 2) Head-to-Head (si hay al menos un partido entre ellos)
+    // 3) Head-to-Head (si hay al menos un partido entre ellos)
     const h2h = getHeadToHeadResult(divisionId, tournamentId, a.profile_id, b.profile_id);
     if (h2h && h2h.playerAWins !== h2h.playerBWins) {
       return h2h.winner === a.profile_id ? -1 : 1;
     }
 
-    // 5) Nombre (estable)
+    // 4) Nombre (estable)
     const aName = profiles.find(p => p.id === a.profile_id)?.name || '';
     const bName = profiles.find(p => p.id === b.profile_id)?.name || '';
     return aName.localeCompare(bName);
@@ -8907,7 +8907,12 @@ const App = () => {
         m.division_id === selectedDivision.id &&
         m.status === 'played' &&
         !isPlayoffsMatch(m) &&
-        isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id)
+        (isCalibrationTournament
+          // Calibrations: count match if at least ONE player is active in division
+          ? (isPlayerActiveInDivision(selectedTournament.id, selectedDivision.id, getMatchHomeId(m) || '') ||
+             isPlayerActiveInDivision(selectedTournament.id, selectedDivision.id, getMatchAwayId(m) || ''))
+          // Regular: both players must be active in division
+          : isMatchBetweenActivePlayers(m, selectedTournament.id, selectedDivision.id))
     );
 
     const divisionStatsBase = computeStandingsFromPlayedMatches(
@@ -10989,17 +10994,19 @@ const App = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2</label>
                     <select
-                      value={newMatch.player2} // Ahora guardará el ID del jugador
+                      value={newMatch.player2}
                       onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
-                      disabled={!newMatch.player1} // Se deshabilita si no se ha elegido Jugador 1
+                      disabled={!newMatch.player1}
                     >
                       <option value="">Seleccionar Jugador</option>
-                      {/* El filtro ahora compara por ID, que es más seguro y correcto */}
-                      {players.filter(p => p.id !== newMatch.player1).map(player => (
-                        <option key={player.id} value={player.id}>{uiName(player.name)}</option>
-                      ))}
+                      {(crossDivisionMode && isCalibrationTournament ? p2Pool : players)
+                        .filter(p => p.id !== newMatch.player1)
+                        .map(player => (
+                          <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                        ))
+                      }
                     </select>
                   </div>
                 </div>
