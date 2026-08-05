@@ -10975,17 +10975,40 @@ const App = () => {
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Agregar Resultado del Partido</h3>
               <form onSubmit={handleAddMatch} className="space-y-4">
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Cross-division toggle for calibrations */}
+                {isCalibrationTournament && (
+                  <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        id="crossDivResult"
+                        checked={crossDivisionMode}
+                        onChange={(e) => {
+                          setCrossDivisionMode(e.target.checked);
+                          setCrossDivisionSearch('');
+                          setNewMatch(prev => ({ ...prev, player2: '' }));
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                    <span className="text-sm font-medium text-purple-800">
+                      🔀 Jugar con jugador de otra división
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 1</label>
                     <select
-                      value={newMatch.player1} // Ahora guardará el ID del jugador
-                      onChange={(e) => setNewMatch({...newMatch, player1: e.target.value, player2: ''})} // Reseteamos player2 al cambiar player1
+                      value={newMatch.player1}
+                      onChange={(e) => setNewMatch({...newMatch, player1: e.target.value, player2: ''})}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       required
                     >
                       <option value="">Seleccionar Jugador</option>
-                      {players.map(player => (
+                      {[...players].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es')).map(player => (
                         <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                       ))}
                     </select>
@@ -10993,21 +11016,111 @@ const App = () => {
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2</label>
-                    <select
-                      value={newMatch.player2}
-                      onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      required
-                      disabled={!newMatch.player1}
-                    >
-                      <option value="">Seleccionar Jugador</option>
-                      {(crossDivisionMode && isCalibrationTournament ? p2Pool : players)
-                        .filter(p => p.id !== newMatch.player1)
-                        .map(player => (
-                          <option key={player.id} value={player.id}>{uiName(player.name)}</option>
-                        ))
-                      }
-                    </select>
+                    {crossDivisionMode && isCalibrationTournament ? (
+                      <div className="relative">
+                        <div className="relative">
+                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="11" cy="11" r="8"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35"/>
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Buscar jugador por nombre..."
+                            value={crossDivisionSearch}
+                            onChange={(e) => setCrossDivisionSearch(e.target.value)}
+                            className="w-full pl-9 pr-8 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                          />
+                          {crossDivisionSearch && (
+                            <button type="button" onClick={() => setCrossDivisionSearch('')}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                          )}
+                        </div>
+                        {/* Selected player badge */}
+                        {newMatch.player2 && (() => {
+                          const selected = p2Pool.find(p => p.id === newMatch.player2);
+                          if (!selected) return null;
+                          const isLocal = activePlayers.some(ap => ap.id === selected.id);
+                          const divName = isLocal ? selectedDivision.name : (() => {
+                            const reg = registrations.find(r =>
+                              (r.profile_id === selected.id) &&
+                              tournaments.some(t => t.id === r.tournament_id && t.status === 'active' && t.format !== 'knockout' && !isCalibrationTournamentByName(t.name))
+                            );
+                            return reg ? (divisions.find(d => d.id === reg.division_id)?.name || '') : '';
+                          })();
+                          return (
+                            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg">
+                              <img src={selected.avatar_url || '/default-avatar.png'} alt="" className="w-8 h-8 rounded-full object-cover ring-1 ring-purple-200" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-gray-800 truncate">{uiName(selected.name)}</p>
+                                {divName && <p className="text-xs text-purple-600">{divName}</p>}
+                              </div>
+                              <button type="button" onClick={() => setNewMatch(prev => ({ ...prev, player2: '' }))}
+                                className="text-gray-400 hover:text-red-500 shrink-0">
+                                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                              </button>
+                            </div>
+                          );
+                        })()}
+                        {/* Search results */}
+                        {crossDivisionSearch.trim().length >= 2 && !newMatch.player2 && (() => {
+                          const q = crossDivisionSearch.trim().toLowerCase();
+                          const results = p2Pool
+                            .filter(p => p.id !== newMatch.player1 && (p.name?.toLowerCase().includes(q)))
+                            .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es'))
+                            .slice(0, 8);
+
+                          const getResultDivName = (playerId: string): string => {
+                            if (activePlayers.some(ap => ap.id === playerId)) return selectedDivision.name;
+                            const reg = registrations
+                              .filter(r => r.profile_id === playerId || r.historic_player_id === playerId)
+                              .find(r => {
+                                const t = tournaments.find(tt => tt.id === r.tournament_id);
+                                return t && t.status === 'active' && t.format !== 'knockout' && !isCalibrationTournamentByName(t.name);
+                              });
+                            return reg ? (divisions.find(d => d.id === reg.division_id)?.name || '') : '';
+                          };
+
+                          return (
+                            <div className="mt-1 border border-gray-200 rounded-lg bg-white shadow-lg max-h-60 overflow-y-auto">
+                              {results.length > 0 ? results.map(player => {
+                                const divName = getResultDivName(player.id);
+                                return (
+                                  <button key={player.id} type="button"
+                                    onClick={() => { setNewMatch(prev => ({ ...prev, player2: player.id })); setCrossDivisionSearch(''); }}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition text-left border-b border-gray-100 last:border-b-0">
+                                    <img src={player.avatar_url || '/default-avatar.png'} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-gray-200" />
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium text-gray-800 truncate">{uiName(player.name)}</p>
+                                      {divName && <p className="text-xs text-gray-500">{divName}</p>}
+                                    </div>
+                                  </button>
+                                );
+                              }) : (
+                                <p className="text-gray-400 text-sm px-3 py-3">Sin resultados</p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <select
+                        value={newMatch.player2}
+                        onChange={(e) => setNewMatch({...newMatch, player2: e.target.value})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        required
+                        disabled={!newMatch.player1}
+                      >
+                        <option value="">Seleccionar Jugador</option>
+                        {players
+                          .filter(p => p.id !== newMatch.player1)
+                          .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es'))
+                          .map(player => (
+                            <option key={player.id} value={player.id}>{uiName(player.name)}</option>
+                          ))
+                        }
+                      </select>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -11194,7 +11307,7 @@ const App = () => {
                     required
                   >
                     <option value="">Seleccionar jugador</option>
-                    {eligibleP1Options.map((player) => (
+                    {[...eligibleP1Options].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es')).map((player) => (
                       <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                     ))}
                   </select>
@@ -11330,9 +11443,6 @@ const App = () => {
                                     <p className="text-sm font-medium text-gray-800 truncate">{uiName(player.name)}</p>
                                     <p className="text-xs text-gray-500 truncate">{divName}</p>
                                   </div>
-                                  {!isFromCurrentDiv && (
-                                    <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full shrink-0">otra div.</span>
-                                  )}
                                 </button>
                               );
                             }) : (
@@ -11350,7 +11460,7 @@ const App = () => {
                       disabled={!newMatch.player1}
                     >
                       <option value={PENDING_ID}>— Rival pendiente (publicar aviso) —</option>
-                      {eligibleP2Options.map((player) => (
+                      {[...eligibleP2Options].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es')).map((player) => (
                         <option key={player.id} value={player.id}>{uiName(player.name)}</option>
                       ))}
                     </select>
