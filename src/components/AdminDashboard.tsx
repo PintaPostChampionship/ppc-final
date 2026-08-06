@@ -84,13 +84,16 @@ export function AdminDashboard({
     return tournamentDivisions.map(div => {
       const divRegs = tournamentRegs.filter(r => r.division_id === div.id);
       const activeRegs = divRegs.filter(r => r.status !== 'retired');
+      const activeIds = new Set(activeRegs.map(r => r.profile_id).filter(Boolean));
       const n = activeRegs.length;
       const expected = (n * (n - 1)) / 2;
-      // Only count league matches (not playoffs)
+      // Only count league matches between ACTIVE players
       const played = tournamentMatches.filter(m =>
         m.division_id === div.id &&
         m.status === 'played' &&
-        !m.phase
+        !m.phase &&
+        activeIds.has(m.home_player_id) &&
+        activeIds.has(m.away_player_id)
       ).length;
       const percent = expected > 0 ? Math.round((played / expected) * 100) : 0;
 
@@ -483,6 +486,15 @@ export function AdminDashboard({
           registrations={registrations}
           profiles={profiles}
         />
+
+        {/* Top 10 Pintas */}
+        <PintsRanking
+          tournaments={tournaments}
+          divisions={divisions}
+          matches={matches}
+          registrations={registrations}
+          profiles={profiles}
+        />
         </>)}
 
         {dashboardTab === 'settings' && (
@@ -667,6 +679,103 @@ function DivisionSettings({
 
         <div className="mt-4 text-[10px] text-slate-500">
           Click en el estado para cambiar entre Activo y Retirado. Los jugadores retirados no cuentan para la tabla de posiciones.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// --- Pints Ranking ---
+function PintsRanking({
+  tournaments,
+  divisions,
+  matches,
+  registrations,
+  profiles,
+}: {
+  tournaments: Tournament[];
+  divisions: Division[];
+  matches: Match[];
+  registrations: Registration[];
+  profiles: Profile[];
+}) {
+  const [onlyMen, setOnlyMen] = useState(false);
+
+  const data = useMemo(() => {
+    let activeTournaments = tournaments.filter(t =>
+      t.status === 'active' &&
+      (t.format === 'league' || !t.format) &&
+      (/^(PPC|WPPC) Edición/i.test(t.name || ''))
+    );
+
+    if (onlyMen) {
+      activeTournaments = activeTournaments.filter(t => /^PPC /i.test(t.name || ''));
+    }
+
+    if (activeTournaments.length === 0) return [];
+
+    type PintRow = { id: string; name: string; division: string; pints: number };
+    const rows: PintRow[] = [];
+
+    for (const t of activeTournaments) {
+      const tDivs = divisions.filter(d => d.tournament_id === t.id);
+      const tRegs = registrations.filter(r => r.tournament_id === t.id && r.status !== 'retired');
+      const tMatches = matches.filter(m => m.tournament_id === t.id && m.status === 'played' && !m.phase);
+
+      for (const reg of tRegs) {
+        const pid = reg.profile_id;
+        if (!pid) continue;
+        const profile = profiles.find(p => p.id === pid);
+        if (!profile) continue;
+        const div = tDivs.find(d => d.id === reg.division_id);
+
+        let pints = 0;
+        tMatches.forEach(m => {
+          if (m.home_player_id === pid) pints += m.player1_pints || 0;
+          if (m.away_player_id === pid) pints += m.player2_pints || 0;
+        });
+
+        if (pints > 0) {
+          rows.push({ id: pid, name: profile.name || '—', division: div?.name || '—', pints });
+        }
+      }
+    }
+
+    return rows.sort((a, b) => b.pints - a.pints).slice(0, 10);
+  }, [tournaments, divisions, matches, registrations, profiles, onlyMen]);
+
+  if (data.length === 0) return null;
+
+  return (
+    <div className="mt-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+        <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+          🍻 Top 10 — Más Pintas
+        </h2>
+        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={onlyMen}
+            onChange={e => setOnlyMen(e.target.checked)}
+            className="rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500 w-3.5 h-3.5"
+          />
+          Solo Hombres
+        </label>
+      </div>
+
+      <div className="bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-700">
+        <div className="space-y-1.5">
+          {data.map((p, i) => (
+            <div key={p.id} className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-slate-500 w-4 text-right text-[11px] shrink-0">{i + 1}.</span>
+                <span className="text-white text-xs sm:text-sm font-medium truncate">{p.name}</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-500 shrink-0">({p.division})</span>
+              </div>
+              <span className="text-amber-400 font-bold text-sm ml-2 shrink-0">🍻 {p.pints}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

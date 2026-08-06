@@ -1514,6 +1514,17 @@ const App = () => {
       tournaments.some(t => t.id === d.tournament_id && t.status === 'active')
     );
 
+  // On desktop (lg+), offset main content when nav is open
+  // Applied via a class on <body> to avoid touching every view
+  useEffect(() => {
+    if (showNavMenu && currentUser) {
+      document.body.classList.add('nav-open');
+    } else {
+      document.body.classList.remove('nav-open');
+    }
+    return () => document.body.classList.remove('nav-open');
+  }, [showNavMenu, currentUser]);
+
   const visibleBookingAccounts: BookingAccount[] = isBookingAdmin
     ? bookingAccounts
     : bookingAccounts.filter(

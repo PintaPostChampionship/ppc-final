@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Desktop: push content when nav sidebar is open */
+@media (min-width: 1024px) {
+  body.nav-open > #root > div {
+    margin-left: 18rem; /* w-72 = 18rem */
+    transition: margin-left 0.3s ease;
+  }
+  body > #root > div {
+    transition: margin-left 0.3s ease;
+  }
+}
+
 
 /* Evita auto-zoom en inputs/textarea en iOS (Safari) */
 @supports (-webkit-touch-callout: none) {
