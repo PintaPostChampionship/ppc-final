@@ -701,6 +701,7 @@ function PintsRanking({
   profiles: Profile[];
 }) {
   const [onlyMen, setOnlyMen] = useState(false);
+  const [showRatio, setShowRatio] = useState(false);
 
   const data = useMemo(() => {
     let activeTournaments = tournaments.filter(t =>
@@ -713,15 +714,19 @@ function PintsRanking({
       activeTournaments = activeTournaments.filter(t => /^PPC /i.test(t.name || ''));
     }
 
-    if (activeTournaments.length === 0) return [];
+    if (activeTournaments.length === 0) return { byTotal: [], byRatio: [] };
 
-    type PintRow = { id: string; name: string; division: string; pints: number };
+    type PintRow = { id: string; name: string; division: string; pints: number; played: number; ratio: number };
     const rows: PintRow[] = [];
 
     for (const t of activeTournaments) {
       const tDivs = divisions.filter(d => d.tournament_id === t.id);
       const tRegs = registrations.filter(r => r.tournament_id === t.id && r.status !== 'retired');
-      const tMatches = matches.filter(m => m.tournament_id === t.id && m.status === 'played' && !m.phase);
+      const activeIds = new Set(tRegs.map(r => r.profile_id).filter(Boolean));
+      const tMatches = matches.filter(m =>
+        m.tournament_id === t.id && m.status === 'played' && !m.phase &&
+        activeIds.has(m.home_player_id) && activeIds.has(m.away_player_id)
+      );
 
       for (const reg of tRegs) {
         const pid = reg.profile_id;
@@ -731,51 +736,156 @@ function PintsRanking({
         const div = tDivs.find(d => d.id === reg.division_id);
 
         let pints = 0;
+        let played = 0;
         tMatches.forEach(m => {
-          if (m.home_player_id === pid) pints += m.player1_pints || 0;
-          if (m.away_player_id === pid) pints += m.player2_pints || 0;
+          if (m.home_player_id === pid) { pints += m.player1_pints || 0; played++; }
+          else if (m.away_player_id === pid) { pints += m.player2_pints || 0; played++; }
         });
 
         if (pints > 0) {
-          rows.push({ id: pid, name: profile.name || '—', division: div?.name || '—', pints });
+          rows.push({ id: pid, name: profile.name || '—', division: div?.name || '—', pints, played, ratio: played > 0 ? pints / played : 0 });
         }
       }
     }
 
-    return rows.sort((a, b) => b.pints - a.pints).slice(0, 10);
+    const byTotal = [...rows].sort((a, b) => b.pints - a.pints).slice(0, 10);
+    const byRatio = [...rows].filter(r => r.played >= 2).sort((a, b) => b.ratio - a.ratio).slice(0, 10);
+
+    return { byTotal, byRatio };
   }, [tournaments, divisions, matches, registrations, profiles, onlyMen]);
 
-  if (data.length === 0) return null;
+  if (data.byTotal.length === 0) return null;
+
+  const displayData = showRatio ? data.byRatio : data.byTotal;
 
   return (
     <div className="mt-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
         <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider">
-          🍻 Top 10 — Más Pintas
+          🍻 Top 10 — {showRatio ? 'Mejor Ratio Pintas/Partido' : 'Más Pintas'}
         </h2>
-        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={onlyMen}
-            onChange={e => setOnlyMen(e.target.checked)}
-            className="rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500 w-3.5 h-3.5"
-          />
-          Solo Hombres
-        </label>
+        <div className="flex items-center gap-4 text-xs">
+          <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={onlyMen}
+              onChange={e => setOnlyMen(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500 w-3.5 h-3.5"
+            />
+            Solo Hombres
+          </label>
+          <label className="flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showRatio}
+              onChange={e => setShowRatio(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-700 text-amber-500 focus:ring-amber-500 w-3.5 h-3.5"
+            />
+            Ratio por partido
+          </label>
+        </div>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-700">
         <div className="space-y-1.5">
-          {data.map((p, i) => (
+          {displayData.map((p, i) => (
             <div key={p.id} className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="text-slate-500 w-4 text-right text-[11px] shrink-0">{i + 1}.</span>
                 <span className="text-white text-xs sm:text-sm font-medium truncate">{p.name}</span>
                 <span className="text-[9px] sm:text-[10px] text-slate-500 shrink-0">({p.division})</span>
               </div>
-              <span className="text-amber-400 font-bold text-sm ml-2 shrink-0">🍻 {p.pints}</span>
+              <span className="text-amber-400 font-bold text-sm ml-2 shrink-0">
+                {showRatio
+                  ? `${p.ratio.toFixed(2)} (${p.pints}/${p.played})`
+                  : `🍻 ${p.pints}`
+                }
+              </span>
             </div>
           ))}
+        </div>
+        {showRatio && (
+          <p className="text-[10px] text-slate-500 mt-3">Mínimo 2 partidos jugados para aparecer en el ratio.</p>
+        )}
+      </div>
+
+      {/* Top 1 por división */}
+      <div className="bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-700 mt-4">
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+          🏆 Líder por División — {showRatio ? 'Ratio' : 'Total Pintas'}
+        </h3>
+        <div className="space-y-1.5">
+          {(() => {
+            let activeTournaments = tournaments.filter(t =>
+              t.status === 'active' &&
+              (t.format === 'league' || !t.format) &&
+              (/^(PPC|WPPC) Edición/i.test(t.name || ''))
+            );
+            if (onlyMen) {
+              activeTournaments = activeTournaments.filter(t => /^PPC /i.test(t.name || ''));
+            }
+
+            const divRank = (name?: string | null) => {
+              const n = (name || '').trim().toLowerCase();
+              if (n === 'oro') return 1; if (n === 'plata') return 2; if (n === 'bronce') return 3;
+              if (n === 'cobre') return 4; if (n === 'diamante') return 5; if (n === 'hierro') return 6;
+              return 99;
+            };
+
+            type DivLeader = { divName: string; tournament: string; name: string; pints: number; played: number; ratio: number };
+            const leaders: DivLeader[] = [];
+
+            for (const t of activeTournaments) {
+              const tDivs = divisions.filter(d => d.tournament_id === t.id).sort((a, b) => divRank(a.name) - divRank(b.name));
+              const tRegs = registrations.filter(r => r.tournament_id === t.id && r.status !== 'retired');
+              const activeIds = new Set(tRegs.map(r => r.profile_id).filter(Boolean));
+              const tMatches = matches.filter(m =>
+                m.tournament_id === t.id && m.status === 'played' && !m.phase &&
+                activeIds.has(m.home_player_id) && activeIds.has(m.away_player_id)
+              );
+
+              for (const div of tDivs) {
+                const divRegs = tRegs.filter(r => r.division_id === div.id);
+                let best: { name: string; pints: number; played: number; ratio: number } | null = null;
+
+                for (const reg of divRegs) {
+                  const pid = reg.profile_id;
+                  if (!pid) continue;
+                  const profile = profiles.find(p => p.id === pid);
+                  if (!profile) continue;
+
+                  let pints = 0; let played = 0;
+                  tMatches.forEach(m => {
+                    if (m.home_player_id === pid) { pints += m.player1_pints || 0; played++; }
+                    else if (m.away_player_id === pid) { pints += m.player2_pints || 0; played++; }
+                  });
+
+                  if (pints === 0) continue;
+                  const ratio = played > 0 ? pints / played : 0;
+                  const isBetter = showRatio
+                    ? (played >= 2 && (!best || ratio > best.ratio))
+                    : (!best || pints > best.pints);
+                  if (isBetter) best = { name: profile.name || '—', pints, played, ratio };
+                }
+
+                if (best) {
+                  leaders.push({ divName: div.name || '—', tournament: t.name.replace(/\s*\(.*\)/, ''), ...best });
+                }
+              }
+            }
+
+            return leaders.map((l, i) => (
+              <div key={`${l.divName}-${l.tournament}-${i}`} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-white text-xs sm:text-sm font-medium truncate">{l.name}</span>
+                  <span className="text-[9px] sm:text-[10px] text-slate-500 shrink-0">({l.divName})</span>
+                </div>
+                <span className="text-amber-400 font-bold text-sm ml-2 shrink-0">
+                  {showRatio ? `${l.ratio.toFixed(2)} (${l.pints}/${l.played})` : `🍻 ${l.pints}`}
+                </span>
+              </div>
+            ));
+          })()}
         </div>
       </div>
     </div>
