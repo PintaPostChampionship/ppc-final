@@ -8019,7 +8019,7 @@ const App = () => {
                                 </span>
                               </span>
                               <span className="text-sm text-gray-600">
-                                Líder: {d.leader ? uiName(d.leader.name) : 'N/A'}
+                                {d.leader ? uiName(d.leader.name) : 'N/A'}
                               </span>
                             </div>
                           </div>
