@@ -33,6 +33,63 @@ const RECONNECT_DELAY_MS = 2000;
 // Máximo de estados en el historial de undo (en memoria)
 const MAX_UNDO_HISTORY = 20;
 
+// ── Build point_log from undo history ─────────────────────────────────────────
+// Each entry in undoHistory is the state BEFORE a point was added.
+// By comparing consecutive states, we can infer who scored each point.
+function buildPointLogFromHistory(
+  history: LiveScoreState[],
+  finalState: LiveScoreState
+): Array<{ p: 1 | 2; ts: number }> {
+  const allStates = [...history, finalState];
+  const log: Array<{ p: 1 | 2; ts: number }> = [];
+  const startTime = Date.now() - (history.length * 30000); // approximate timestamps
+
+  for (let i = 0; i < allStates.length - 1; i++) {
+    const before = allStates[i];
+    const after = allStates[i + 1];
+
+    // Determine who scored by comparing total points/games/sets
+    // Simple heuristic: if p1's score increased in any dimension, p1 scored
+    const p1ScoreBefore = before.p1_sets * 10000 + before.p1_games * 100 + before.p1_points;
+    const p1ScoreAfter = after.p1_sets * 10000 + after.p1_games * 100 + after.p1_points;
+    const p2ScoreBefore = before.p2_sets * 10000 + before.p2_games * 100 + before.p2_points;
+    const p2ScoreAfter = after.p2_sets * 10000 + after.p2_games * 100 + after.p2_points;
+
+    // When a new set starts, games reset — so we use completed_sets to detect set wins
+    const p1SetsGained = after.p1_sets - before.p1_sets;
+    const p2SetsGained = after.p2_sets - before.p2_sets;
+
+    let scorer: 1 | 2;
+    if (p1SetsGained > 0) {
+      scorer = 1;
+    } else if (p2SetsGained > 0) {
+      scorer = 2;
+    } else if (after.p1_games > before.p1_games) {
+      scorer = 1;
+    } else if (after.p2_games > before.p2_games) {
+      scorer = 2;
+    } else if (p1ScoreAfter > p1ScoreBefore) {
+      scorer = 1;
+    } else if (p2ScoreAfter > p2ScoreBefore) {
+      scorer = 2;
+    } else {
+      // Deuce situation (both went from 4 to 3): the non-advantage player scored
+      // If points went down (deuce reset), the OTHER player scored
+      if (before.p1_points === 4 && after.p1_points === 3) {
+        scorer = 2;
+      } else if (before.p2_points === 4 && after.p2_points === 3) {
+        scorer = 1;
+      } else {
+        scorer = 1; // fallback
+      }
+    }
+
+    log.push({ p: scorer, ts: startTime + i * 30000 });
+  }
+
+  return log;
+}
+
 export function useLiveScore(
   matchId: string,
   currentUserId: string | null | undefined
@@ -345,8 +402,37 @@ export function useLiveScore(
         .from('live_score_state')
         .update({ status: 'finished' })
         .eq('match_id', matchId);
+
+      // ── Save point_log from undo history (web-originated matches) ──
+      // Build point_log: each entry in undo history is a state BEFORE a point was scored.
+      // The sequence of states lets us reconstruct who scored each point.
+      if (undoHistoryRef.current.length > 0 && currentUserId) {
+        try {
+          const pointLog = buildPointLogFromHistory(undoHistoryRef.current, finishedState);
+          const resultStr = `${finishedState.p1_sets}-${finishedState.p2_sets}`;
+          const setScores = finishedState.completed_sets.map(s => `${s.p1}-${s.p2}`).join(', ');
+
+          await fetch('/api/live-score', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Player-Id': currentUserId,
+            },
+            body: JSON.stringify({
+              action: 'save_log',
+              match_id: matchId,
+              format: finishedState.format,
+              result: `${resultStr} (${setScores})`,
+              point_log: pointLog,
+              source: 'web',
+            }),
+          });
+        } catch (e) {
+          console.error('[useLiveScore] Failed to save point_log:', e);
+        }
+      }
     },
-    [matchId]
+    [matchId, currentUserId]
   );
 
   const finalizeMatch = useCallback(async () => {

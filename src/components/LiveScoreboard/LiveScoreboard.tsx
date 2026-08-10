@@ -715,14 +715,48 @@ function ShareButton({
 
 function TwitchEmbed() {
   const [expanded, setExpanded] = React.useState(() => window.innerWidth >= 1024);
+  const [isLive, setIsLive] = React.useState(false);
+
+  // Check Twitch live status
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function checkLive() {
+      try {
+        const resp = await fetch('/api/twitch-status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!cancelled) {
+          setIsLive(data.live === true);
+          // Auto-expand when live
+          if (data.live === true) setExpanded(true);
+        }
+      } catch { /* ignore */ }
+    }
+
+    checkLive();
+    const interval = setInterval(checkLive, 60_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <div className="mt-5">
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold text-purple-700 bg-purple-50 border border-purple-200 transition-all hover:bg-purple-100"
+        className={`w-full flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
+          isLive
+            ? 'text-red-700 bg-red-50 border border-red-200 hover:bg-red-100'
+            : 'text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100'
+        }`}
       >
-        <span>📺 Twitch — PintaPost TV</span>
+        <span className="flex items-center gap-2">
+          {isLive && <span className="animate-pulse text-red-500">●</span>}
+          📺 {isLive ? '🔴 LIVE — PintaPost TV' : 'Twitch — PintaPost TV'}
+        </span>
         <span className={`text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}>▼</span>
       </button>
 

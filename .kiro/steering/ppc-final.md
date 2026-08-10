@@ -326,3 +326,41 @@ Sistema de notificaciones push implementado con Web Push API (VAPID):
 - **Onboarding**: Flujo de registro con pasos (nombre, avatar, disponibilidad, torneo, división).
 - **Booking venues**: Highbury Fields (11 canchas) y Rosemary Gardens (2 canchas) están hardcodeados en App.tsx.
 - **Garmin app**: Código en `garmin-scoreboard/`, compila con SDK 9.1.0 + Java 21. Ver steering `garmin-scoreboard.md` para detalles.
+
+---
+
+## Cambios importantes (agosto 2026)
+
+### Bugs corregidos
+- **Matches >1000 filas**: Supabase devolvía máx 1000 matches. Fix: `fetchAllRows<Match>('matches')` con paginación. Aplicado en `fetchData` y `loadInitialData`.
+- **Criterio de tabla**: Cambiado de ratio de sets → **diferencia de sets** (SG - SP). Orden: Puntos → DS → H2H → Nombre.
+- **Admin no podía confirmar pagos de otros**: `api/sheets-update.ts` ahora permite UPDATE si `role === 'admin'`. Error traducido al español.
+- **Foto de perfil se perdía entre browsers**: Ahora se sube a Storage como `pending_<userId>.jpg` durante el registro. `ensurePendingOnboarding` busca ese archivo como fallback.
+- **Nicknames formateados en WhatsApp shares**: `displayNameForShare` ya no aplica `toTitleCase` al nickname — lo deja tal cual.
+
+### Features nuevos
+- **Google OAuth**: Botón "Continuar con Google" en login. Identity linking automático por email. Usuarios nuevos ven modal de "Unirse a Torneo" obligatorio.
+- **Login/Registro con tabs**: Layout unificado (Google arriba, tabs "Iniciar Sesión" / "Crear Cuenta" abajo).
+- **Confirmación de contraseña**: Campo "Confirmar Contraseña" con validación visual en tiempo real.
+- **Límite de imagen 10MB**: Check antes de leer archivo en memoria.
+- **Dashboard Admin**:
+  - Tab "Ajustes Divisiones": cambiar estado Activo/Retirado de jugadores por división.
+  - Top 10 más/menos activos con filtros (Solo Hombres, Incluir agendados).
+  - Top 10 Pintas + ratio por partido + líder por división.
+  - Acceso para capitanes de división (columna `captain_profile_id` en `divisions`).
+- **Open Water Swimming**: Venue para Dominga (West Reservoir Centre), slots cada 10min, solo visible para ella y admins.
+- **Cross-division en "Agregar Resultado"**: Para calibraciones, mismo buscador que "Programar Partido".
+- **Columna DS movida**: Ahora entre PJ y G en ambas tablas.
+- **Nav empuja contenido en desktop**: `body.nav-open` aplica `margin-left: 18rem` en `lg:`.
+
+### Base de datos
+- **Columna `captain_profile_id`** en `divisions` (FK → profiles). Capitanes asignados para PPC 5 y WPPC 2.
+- **RLS policy `update_registration_admin_or_captain`**: Permite UPDATE en `tournament_registrations` a admins y capitanes.
+- **Booking account `Dominga Prieto`**: Agregada con `open-water-swimming` como actividad.
+- **Partidos de 1 set ajustados**: Todos los matches con 1 solo set en PPC 5 / WPPC 2 recibieron set 2 de 7-0 (marcador de ajuste admin).
+
+### Booking venues configurados
+- `highbury`: Islington Tennis Centre (11 canchas)
+- `rosemary`: Rosemary Gardens (2 canchas)
+- `swimming`: West Reservoir Centre (6 lanes, 07:00-19:30 cada 10min) — solo Dominga + admins
+

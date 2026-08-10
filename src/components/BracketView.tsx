@@ -144,6 +144,7 @@ type BracketViewProps = {
   onEditSchedule: (m: Match) => void;
   onEditResult: (m: Match) => void;
   canEditSchedule: (m: Match) => boolean;
+  onStartLive?: (matchId: string) => void;
 };
 
 type BracketPlayerSlotProps = {
@@ -277,6 +278,7 @@ export function BracketView({
   onEditSchedule,
   onEditResult,
   canEditSchedule,
+  onStartLive,
 }: BracketViewProps) {
 
   const getPlayer = (id?: string | null): BracketAnyPlayer | null => {
@@ -655,6 +657,14 @@ export function BracketView({
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-1.5 justify-end">
+                                {canEditSchedule(m) && m.status !== 'played' && m.home_player_id && m.away_player_id && onStartLive && (
+                                  <button
+                                    onClick={() => onStartLive(m.id)}
+                                    className="px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-[11px] font-medium transition-colors"
+                                  >
+                                    🔴 En Vivo
+                                  </button>
+                                )}
                                 {canEditSchedule(m) && (
                                   <button
                                     onClick={() => onEditSchedule(m)}
@@ -744,6 +754,14 @@ export function BracketView({
 
                           {canEditSchedule(m) && (
                             <div className="flex gap-1.5">
+                              {m.status !== 'played' && m.home_player_id && m.away_player_id && onStartLive && (
+                                <button
+                                  onClick={() => onStartLive(m.id)}
+                                  className="px-2 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 text-[10px] font-medium"
+                                >
+                                  🔴
+                                </button>
+                              )}
                               <button
                                 onClick={() => onEditSchedule(m)}
                                 className="px-2 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-medium"

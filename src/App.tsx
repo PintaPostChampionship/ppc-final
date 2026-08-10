@@ -29,6 +29,7 @@ import { BracketView, advanceWinner } from './components/BracketView';
 import { NavPlayerSearch } from './components/NavPlayerSearch';
 import { NavTournamentsSection } from './components/NavTournamentsSection';
 import { PhotoCarousel3D } from './components/PhotoCarousel3D';
+import FinalsPreview from './components/FinalsPreview';
 import { buildMatchScheduledPayload, buildResultLoadedPayload, determineRecipient } from './lib/notificationUtils';
 
 
@@ -111,7 +112,9 @@ const App = () => {
   const [showMarcador, setShowMarcador] = useState(false);
   const [marcadorTab, setMarcadorTab] = useState("live");
   const [showTwitch, setShowTwitch] = useState(true);
+  const [twitchLive, setTwitchLive] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showFinalsPreview, setShowFinalsPreview] = useState(false);
   const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
     // Inicializar desde el hash actual al cargar la página
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -265,6 +268,22 @@ const App = () => {
   const [placementGroup, setPlacementGroup] = useState<'A' | 'B' | 'C' | 'D'>('A');
   // Switch de vistas para Edición 3 (escalable a futuras fases)
   const [e3View, setE3View] = useState<'main' | 'groups'>('main');
+
+  // ── Twitch live detection polling ──
+  useEffect(() => {
+    let cancelled = false;
+    async function checkTwitch() {
+      try {
+        const resp = await fetch('/api/twitch-status');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!cancelled) setTwitchLive(data.live === true);
+      } catch { /* ignore */ }
+    }
+    checkTwitch();
+    const interval = setInterval(checkTwitch, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   useEffect(() => {
     setPlacementGroup('A');
@@ -1311,6 +1330,14 @@ const App = () => {
         return;
       }
 
+      // Finals preview route
+      if (hash === 'finals-preview') {
+        setShowFinalsPreview(true);
+        return;
+      } else {
+        setShowFinalsPreview(false);
+      }
+
       // Division route (from push notifications)
       const divRoute = hash.match(/^division\/([a-f0-9-]+)$/i);
       if (divRoute) {
@@ -2276,8 +2303,8 @@ const App = () => {
         .single();
       if (upErr) throw upErr;
 
-      // 🔹 SOLO PARA KO: avanzar ganador ANTES del fetchData
-      if (selectedTournament?.format === 'knockout') {
+      // 🔹 Avanzar ganador en brackets (knockout tournaments OR playoff matches in league)
+      if (selectedTournament?.format === 'knockout' || editingMatch.phase === 'finals_main') {
         await advanceWinner(
           {
             ...editingMatch,
@@ -4045,6 +4072,7 @@ const App = () => {
         .filter(m =>
           m.tournament_id === t.id &&
           m.status === 'scheduled' &&
+          m.home_player_id && m.away_player_id &&
           isTodayOrFuture(m.date)
         )
         .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
@@ -4071,7 +4099,11 @@ const App = () => {
           const icon = divisionIcon(divName);
 
           const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
-          msg += `• ${p1} vs ${p2} (${w}-${l}) ${icon}\n`;
+          const playoffLabel = m.phase === 'finals_main' && m.knockout_round === 'SF' ? ' [Semi]'
+            : m.phase === 'finals_main' && m.knockout_round === 'F' ? ' [Final]'
+            : m.phase === 'finals_repechage' ? ' [Repechaje]'
+            : '';
+          msg += `• ${p1} vs ${p2} (${w}-${l}) ${icon}${playoffLabel}\n`;
         });
         msg += '\n';
       });
@@ -4095,6 +4127,7 @@ const App = () => {
         .filter(m =>
           m.tournament_id === selectedTournament.id &&
           m.status === 'scheduled' &&
+          m.home_player_id && m.away_player_id &&
           isTodayOrFuture(m.date)
         )
         .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
@@ -4118,7 +4151,11 @@ const App = () => {
         const divName = divisions.find(d => d.id === m.division_id)?.name || '';
         const icon = divisionIcon(divName);
         const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
-        message += `• ${p1} vs ${p2} (${w}-${l}) ${icon}\n`;
+        const playoffLabel = m.phase === 'finals_main' && m.knockout_round === 'SF' ? ' [Semi]'
+          : m.phase === 'finals_main' && m.knockout_round === 'F' ? ' [Final]'
+          : m.phase === 'finals_repechage' ? ' [Repechaje]'
+          : '';
+        message += `• ${p1} vs ${p2} (${w}-${l}) ${icon}${playoffLabel}\n`;
       });
       message += '\n';
     });
@@ -6886,6 +6923,18 @@ const App = () => {
     );
   }
 
+  // 🏆 Finals Preview — accesible via /#finals-preview (solo admin)
+  if (showFinalsPreview && currentUser?.role === 'admin') {
+    return (
+      <FinalsPreview
+        onBack={() => {
+          window.location.hash = '';
+          setShowFinalsPreview(false);
+        }}
+      />
+    );
+  }
+
   // 🎾 Live Scoreboard — accesible via /#live/match/:id
   if (liveMatchId && currentUser) {
     return (
@@ -6982,12 +7031,17 @@ const App = () => {
               return (
                 <div className="space-y-4">
                   <LiveMatchBanner currentProfile={currentUser} />
-                  <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden">
+                  <div className={`backdrop-blur-sm rounded-2xl border overflow-hidden ${twitchLive ? 'bg-red-900/20 border-red-500/40' : 'bg-white/10 border-white/20'}`}>
                     <button
                       onClick={() => setShowTwitch(!showTwitch)}
                       className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition"
                     >
-                      <span className="text-white/80 text-sm font-semibold">📺 PintaPost TV</span>
+                      <span className="flex items-center gap-2">
+                        {twitchLive && <span className="animate-pulse text-red-400">●</span>}
+                        <span className={`text-sm font-semibold ${twitchLive ? 'text-red-300' : 'text-white/80'}`}>
+                          {twitchLive ? '🔴 LIVE — PintaPost TV' : '📺 PintaPost TV'}
+                        </span>
+                      </span>
                       <div className="flex items-center gap-2">
                         <a
                           href="https://twitch.tv/pintaposttv"
@@ -7047,13 +7101,18 @@ const App = () => {
             {marcadorTab === "live" && (
               <div className="space-y-3">
                 <LiveMatchBanner currentProfile={currentUser} />
-                {/* Twitch embed — collapsible */}
-                <div className="bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 overflow-hidden">
+                {/* Twitch embed — collapsible, auto-shows when live */}
+                <div className={`backdrop-blur-sm rounded-2xl border overflow-hidden ${twitchLive ? 'bg-red-900/20 border-red-500/40' : 'bg-white/10 border-white/20'}`}>
                   <button
                     onClick={() => setShowTwitch(!showTwitch)}
                     className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition"
                   >
-                    <span className="text-white/80 text-sm font-semibold">📺 PintaPost TV</span>
+                    <span className="flex items-center gap-2">
+                      {twitchLive && <span className="animate-pulse text-red-400">●</span>}
+                      <span className={`text-sm font-semibold ${twitchLive ? 'text-red-300' : 'text-white/80'}`}>
+                        {twitchLive ? '🔴 LIVE — PintaPost TV' : '📺 PintaPost TV'}
+                      </span>
+                    </span>
                     <div className="flex items-center gap-2">
                       <a
                         href="https://twitch.tv/pintaposttv"
@@ -7652,6 +7711,10 @@ const App = () => {
           onEditSchedule={openEditSchedule}
           onEditResult={openEditResult}
           canEditSchedule={canEditSchedule}
+          onStartLive={(matchId) => {
+            window.location.hash = `live/match/${matchId}`;
+            setLiveMatchId(matchId);
+          }}
         />
 
         {/* Botón de compartir tabla de partidos de este torneo */}
@@ -7692,6 +7755,9 @@ const App = () => {
     const divisionsData = tournamentDivisions.map(division => {
       const players = getDivisionPlayers(division.id, selectedTournament.id) || [];
       const activePlayers = getActiveDivisionPlayers(division.id, selectedTournament.id) || [];
+
+      // Hide divisions with 0 registered players (e.g. playoff-only divisions)
+      if (players.length === 0) return null;
 
       const perOpp =
         selectedTournament.id === '3c57c9af-57b8-476c-9923-54d36d4f7b8a' && division.name === 'Diamante'
@@ -7798,7 +7864,7 @@ const App = () => {
         // Si quieres ver el panel “actividad” ordenado igual, deja 'sortedForLeader'; si no, usa 'playerRows'
         playerStats: sortedForLeader,
       };
-    });
+    }).filter(d => d !== null);
 
     // ---- Sub Fase de Grupos (Placement) dentro de Edición 3 ----
     const EDICION_3_ID = '3c57c9af-57b8-476c-9923-54d36d4f7b8a';
@@ -8238,6 +8304,16 @@ const App = () => {
                         const homeId = m.home_player_id ?? (m as any).home_historic_player_id ?? null;
                         const awayId = m.away_player_id ?? (m as any).away_historic_player_id ?? null;
 
+                        // Hide card if no players assigned yet
+                        if (!homeId && !awayId) {
+                          return (
+                            <div className="border border-dashed rounded-xl p-4 bg-gray-50 text-gray-400">
+                              <div className="text-xs font-semibold uppercase tracking-wider mb-1">{title}</div>
+                              <div className="text-sm italic">Esperando semifinales</div>
+                            </div>
+                          );
+                        }
+
                         const p1 = getAnyPlayerById(homeId);
                         const p2 = getAnyPlayerById(awayId);
 
@@ -8246,6 +8322,12 @@ const App = () => {
                         const p2IsWinner = !!wId && wId === m.away_player_id;
 
                         const score = scoreLineForMatch(m);
+
+                        // Show date instead of status
+                        const matchDateText = m.date
+                          ? formatDateLocal(m.date)
+                          : '';
+                        const statusDisplay = matchDateText || 'Pendiente';
 
                         const rowClass = (isWinner: boolean) =>
                           `flex items-center justify-between gap-3 rounded-lg px-3 py-2 ` +
@@ -8262,20 +8344,22 @@ const App = () => {
                             <div className="space-y-1">
                               <div className={rowClass(p1IsWinner)}>
                                 <div className={`text-sm truncate ${p1IsWinner ? 'font-bold' : 'font-medium'}`}>
-                                  {uiName(p1?.name)}
+                                  {p1 ? uiName(p1.name) : <span className="italic text-slate-400">Por definir</span>}
                                 </div>
                               </div>
 
                               <div className={rowClass(p2IsWinner)}>
                                 <div className={`text-sm truncate ${p2IsWinner ? 'font-bold' : 'font-medium'}`}>
-                                  {uiName(p2?.name)}
+                                  {p2 ? uiName(p2.name) : <span className="italic text-slate-400">Por definir</span>}
                                 </div>
                               </div>
                             </div>
 
                             <div className="mt-2 flex items-center justify-between">
-                              <div className="text-xs text-gray-500">{m.status}</div>
-                              <div className="text-sm font-semibold text-slate-700 tracking-wide">{score}</div>
+                              <div className="text-xs text-gray-500">{statusDisplay}</div>
+                              {m.status === 'played' && score && (
+                                <div className="text-sm font-semibold text-slate-700 tracking-wide">{score}</div>
+                              )}
                             </div>
                           </div>
                         );
@@ -8359,7 +8443,7 @@ const App = () => {
                                             {scoreLineForMatch(m)}
                                           </div>
                                         ) : (
-                                          <span className="text-[11px] text-gray-400">{m.status}</span>
+                                          <span className="text-[11px] text-gray-400">Pendiente</span>
                                         )}
                                       </div>
                                     </div>
@@ -8394,7 +8478,8 @@ const App = () => {
                         {matches
                           .filter(match =>
                             match.tournament_id === selectedTournament.id &&
-                            isPlayoffsMatch(match)
+                            isPlayoffsMatch(match) &&
+                            (match.home_player_id || match.away_player_id)
                           )
                           .sort((a, b) => {
                             const roundDiff = playoffRoundRank(a) - playoffRoundRank(b);
@@ -8654,6 +8739,7 @@ const App = () => {
                     .filter(match => 
                       match.tournament_id === selectedTournament.id && 
                       match.status === 'scheduled' &&
+                      match.home_player_id && match.away_player_id &&
                       isTodayOrFuture(match.date)
                     )
                     .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime())
@@ -8813,6 +8899,10 @@ const App = () => {
         onEditSchedule={openEditSchedule}
         onEditResult={openEditResult}
         canEditSchedule={canEditSchedule}
+        onStartLive={(matchId) => {
+          window.location.hash = `live/match/${matchId}`;
+          setLiveMatchId(matchId);
+        }}
       />
     );
   }

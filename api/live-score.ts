@@ -230,12 +230,12 @@ async function handlePost(
   supabase: Supabase,
   playerId: string
 ) {
-  const { action, match_id, player, format, first_server, state, point_log, duration_secs, avg_hr, max_hr, calories, result } = req.body ?? {};
+  const { action, match_id, player, format, first_server, state, point_log, duration_secs, avg_hr, max_hr, calories, result, source } = req.body ?? {};
 
   // ── Action: save_log — Save point-by-point analytics (no match_id required) ──
   if (action === 'save_log') {
     return handleSaveLog(res, supabase, playerId, {
-      match_id, format, result, point_log, duration_secs, avg_hr, max_hr, calories
+      match_id, format, result, point_log, duration_secs, avg_hr, max_hr, calories, source
     });
   }
 
@@ -615,6 +615,7 @@ async function handleSaveLog(
     avg_hr?: number;
     max_hr?: number;
     calories?: number;
+    source?: string;
   }
 ) {
   if (!data.point_log || !Array.isArray(data.point_log) || data.point_log.length === 0) {
@@ -631,7 +632,7 @@ async function handleSaveLog(
     avg_hr: data.avg_hr || null,
     max_hr: data.max_hr || null,
     calories: data.calories || null,
-    source: 'garmin',
+    source: data.source || 'garmin',
   };
 
   const { error } = await supabase
