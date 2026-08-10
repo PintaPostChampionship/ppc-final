@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getServiceSupabase, configureWebPush } from '../lib/pushUtils.js';
+import { getServiceSupabase, configureWebPush } from '../_lib/pushUtils.js';
 
 /**
  * Cron: Send push notifications 24h before a Better court booking.

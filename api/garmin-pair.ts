@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { verifyAuth } from './lib/verifyAuth.js';
+import { verifyAuth } from './_lib/verifyAuth.js';
 
 /**
  * /api/garmin-pair — Endpoint para vincular un reloj Garmin con una cuenta PPC

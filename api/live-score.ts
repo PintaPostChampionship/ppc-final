@@ -1,8 +1,8 @@
 // Force rebuild: 639183420577820217
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { verifyAuth } from './lib/verifyAuth.js';
-import { configureWebPush } from './lib/pushUtils.js';
+import { verifyAuth } from './_lib/verifyAuth.js';
+import { configureWebPush } from './_lib/pushUtils.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Supabase = SupabaseClient<any, any, any>;
