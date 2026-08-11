@@ -1774,6 +1774,10 @@ const App = () => {
       setBookingError('Selecciona la fecha en que quieres jugar.');
       return;
     }
+    if (!newBooking.preferred_court_name_1 && selectedBookingVenue.key !== 'swimming') {
+      setBookingError('Selecciona al menos una cancha preferida.');
+      return;
+    }
 
     try {
       setSavingBooking(true);
