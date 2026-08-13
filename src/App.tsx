@@ -23,13 +23,15 @@ import { getPlayerStatsSummaryAll, getLeagueRegistrationsForPlayer, getLastLeagu
 import { toTitleCase, uiName, capitaliseFirst, divisionLogoSrc, divisionColors, divisionIcon, tournamentLogoSrc } from './lib/displayUtils';
 import { dataURItoBlob, dataURLtoFile, resizeImage, avatarSrc, hasExplicitAvatar } from './lib/imageUtils';
 import { compressAvailability, decompressAvailability, savePending, loadPending, clearPending, migrateLocalToSession, PENDING_KEY } from './lib/onboardingUtils';
-import { BUSCAR_CLASES_ALLOWED_ID, DASHBOARD_ALLOWED_IDS, PHOTOS_BASE_PATH, highlightPhotos, BOOKING_VENUES } from './lib/constants';
+import { BUSCAR_CLASES_ALLOWED_ID, DASHBOARD_ALLOWED_IDS, PHOTOS_BASE_PATH, highlightPhotos, BOOKING_VENUES, HIDDEN_TOURNAMENT_IDS } from './lib/constants';
 import { PlayerShowcaseCard } from './components/PlayerShowcaseCard';
 import { BracketView, advanceWinner } from './components/BracketView';
 import { NavPlayerSearch } from './components/NavPlayerSearch';
 import { NavTournamentsSection } from './components/NavTournamentsSection';
 import { PhotoCarousel3D } from './components/PhotoCarousel3D';
+import { GoatRegistration } from './components/GoatRegistration';
 import FinalsPreview from './components/FinalsPreview';
+import LiveOverlay from './components/LiveScoreboard/LiveOverlay';
 import { buildMatchScheduledPayload, buildResultLoadedPayload, determineRecipient } from './lib/notificationUtils';
 
 
@@ -115,6 +117,26 @@ const App = () => {
   const [twitchLive, setTwitchLive] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showFinalsPreview, setShowFinalsPreview] = useState(false);
+  const [showGoatPage, setShowGoatPage] = useState(() => {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    return hash === 'registro-1-punto';
+  });
+  const [overlayMatchId, setOverlayMatchId] = useState<string | null>(() => {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    const m = hash.match(/^overlay\/match\/([a-f0-9-]+)/i);
+    if (m) return m[1];
+    if (/^overlay\/latest/i.test(hash)) return 'latest';
+    return null;
+  });
+  const [overlayTheme, setOverlayTheme] = useState<string>(() => {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    const m = hash.match(/^overlay\/(?:match\/[a-f0-9-]+|latest)\?(.+)$/i);
+    if (m) {
+      const params = new URLSearchParams(m[1]);
+      return params.get('theme') || 'auto';
+    }
+    return 'auto';
+  });
   const [liveMatchId, setLiveMatchId] = useState<string | null>(() => {
     // Inicializar desde el hash actual al cargar la página
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -1330,12 +1352,39 @@ const App = () => {
         return;
       }
 
+      // Overlay route (for OBS Browser Source)
+      const overlayMatch = hash.match(/^overlay\/match\/([a-f0-9-]+)(?:\?(.*))?$/i);
+      if (overlayMatch) {
+        setOverlayMatchId(overlayMatch[1]);
+        const params = new URLSearchParams(overlayMatch[2] || '');
+        setOverlayTheme(params.get('theme') || 'auto');
+        return;
+      }
+      // Overlay latest (auto-detects featured match)
+      const overlayLatest = hash.match(/^overlay\/latest(?:\?(.*))?$/i);
+      if (overlayLatest) {
+        setOverlayMatchId('latest');
+        const params = new URLSearchParams(overlayLatest[1] || '');
+        setOverlayTheme(params.get('theme') || 'auto');
+        return;
+      }
+      setOverlayMatchId(null);
+
       // Finals preview route
       if (hash === 'finals-preview') {
         setShowFinalsPreview(true);
+        setShowGoatPage(false);
         return;
       } else {
         setShowFinalsPreview(false);
+      }
+
+      // GOAT registration route
+      if (hash === 'registro-1-punto') {
+        setShowGoatPage(true);
+        return;
+      } else {
+        setShowGoatPage(false);
       }
 
       // Division route (from push notifications)
@@ -4055,8 +4104,8 @@ const App = () => {
 
 
   const shareAllScheduledMatches = () => {
-    // 1) Torneos activos
-    const active = tournaments.filter(t => t.status === 'active');
+    // 1) Torneos activos (excluir calibraciones y torneos upcoming)
+    const active = tournaments.filter(t => t.status === 'active' && !isCalibrationTournamentByName(t.name));
 
     // 2) Orden WPPC → PPC → PPC Cup (por nombre)
     const orderTournament = (t: Tournament) => {
@@ -4126,45 +4175,66 @@ const App = () => {
 
 
   const copyTableToClipboard = () => {
-    if (!selectedTournament) return alert('Primero elige un torneo');
-      const allScheduled = matches
+    // Same logic as shareAllScheduledMatches but copies to clipboard
+    const active = tournaments.filter(t => t.status === 'active' && !isCalibrationTournamentByName(t.name));
+
+    const orderTournament = (t: Tournament) => {
+      const n = (t.name || '').toLowerCase();
+      if (n.includes('wppc')) return 0;
+      if (n.includes('ppc cup')) return 2;
+      return 1;
+    };
+
+    const ordered = [...active].sort((a, b) => orderTournament(a) - orderTournament(b));
+
+    const blocks: string[] = [];
+
+    ordered.forEach(t => {
+      const all = matches
         .filter(m =>
-          m.tournament_id === selectedTournament.id &&
+          m.tournament_id === t.id &&
           m.status === 'scheduled' &&
           m.home_player_id && m.away_player_id &&
           isTodayOrFuture(m.date)
         )
         .sort((a, b) => parseYMDLocal(a.date).getTime() - parseYMDLocal(b.date).getTime());
 
-    if (allScheduled.length === 0) return alert('No hay partidos programados para copiar');
+      if (all.length === 0) return;
 
-    // FORMATO SIMPLIFICADO IGUAL A WHATSAPP
-    let message = `*${selectedTournament.name} - Partidos Programados*\n\n`;
+      const grouped = all.reduce((acc, match) => {
+        const key = dateKey(match.date);
+        (acc[key] ||= []).push(match);
+        return acc;
+      }, {} as Record<string, Match[]>);
 
-    const grouped = allScheduled.reduce((acc, match) => {
-      const key = dateKey(match.date);
-      (acc[key] ||= []).push(match);
-      return acc;
-    }, {} as Record<string, Match[]>);
+      let msg = `*${t.name}*\n\n`;
 
-    Object.keys(grouped).sort().forEach(date => {
-      message += `*${tituloFechaEs(date)}*\n`;
-      grouped[date].forEach(m => {
-        const p1 = displayNameForShare(m.home_player_id);
-        const p2 = displayNameForShare(m.away_player_id!);
-        const divName = divisions.find(d => d.id === m.division_id)?.name || '';
-        const icon = divisionIcon(divName);
-        const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
-        const playoffLabel = m.phase === 'finals_main' && m.knockout_round === 'SF' ? ' [Semi]'
-          : m.phase === 'finals_main' && m.knockout_round === 'F' ? ' [Final]'
-          : m.phase === 'finals_repechage' ? ' [Repechaje]'
-          : '';
-        message += `• ${p1} vs ${p2} (${w}-${l}) ${icon}${playoffLabel}\n`;
+      Object.keys(grouped).sort().forEach(date => {
+        msg += `*${tituloFechaEs(date)}*\n`;
+        grouped[date].forEach(m => {
+          const p1 = displayNameForShare(m.home_player_id);
+          const p2 = displayNameForShare(m.away_player_id ?? '');
+          const divName = divisions.find(d => d.id === m.division_id)?.name || '';
+          const icon = divisionIcon(divName);
+          const { w, l } = h2hWL(m.home_player_id, m.away_player_id ?? '');
+          const playoffLabel = m.phase === 'finals_main' && m.knockout_round === 'SF' ? ' [Semi]'
+            : m.phase === 'finals_main' && m.knockout_round === 'F' ? ' [Final]'
+            : m.phase === 'finals_repechage' ? ' [Repechaje]'
+            : '';
+          msg += `• ${p1} vs ${p2} (${w}-${l}) ${icon}${playoffLabel}\n`;
+        });
+        msg += '\n';
       });
-      message += '\n';
+
+      blocks.push(msg.trimEnd());
     });
 
-    navigator.clipboard.writeText(message.trim()).then(() => {
+    if (blocks.length === 0) return alert('No hay partidos programados para copiar');
+
+    const siteUrl = window.location.origin;
+    const finalMsg = blocks.join('\n\n') + `\n\n${siteUrl}`;
+
+    navigator.clipboard.writeText(finalMsg).then(() => {
       alert('Lista de partidos copiada al portapapeles!');
     }).catch(err => {
       console.error('Failed to copy text: ', err);
@@ -4374,6 +4444,21 @@ const App = () => {
         time: ''
       }));
       setSelectedMatchForResult(null);
+
+      // 🔹 Advance winner in brackets if this is a playoff or knockout match
+      const playedMatch = existing || matches.find(m => m.id === matchId);
+      if (playedMatch && (selectedTournament?.format === 'knockout' || playedMatch.phase === 'finals_main')) {
+        await advanceWinner(
+          {
+            ...playedMatch,
+            status: 'played',
+            player1_sets_won: existing ? (existing.home_player_id === player1Id ? p1SetsWon : p2SetsWon) : p1SetsWon,
+            player2_sets_won: existing ? (existing.home_player_id === player1Id ? p2SetsWon : p1SetsWon) : p2SetsWon,
+          } as Match,
+          supabase
+        );
+      }
+
       alert('Match result added successfully!');
 
       // Fire-and-forget push notification for result loaded
@@ -5030,7 +5115,7 @@ const App = () => {
 
   const visibleTournaments = [...tournaments]
     // 🔹 mostrar solo torneos vivos (por ahora: activos o próximos)
-    .filter(t => t.status === 'active' || t.status === 'upcoming')
+    .filter(t => (t.status === 'active' || t.status === 'upcoming') && !HIDDEN_TOURNAMENT_IDS.includes(t.id))
     .sort((a, b) => {
       // 0 arriba, 999 abajo (Calibraciones queda último)
       const soA = a.sort_order ?? 0;
@@ -6927,6 +7012,11 @@ const App = () => {
     );
   }
 
+  // 📺 OBS Overlay — accesible via /#overlay/match/:id?theme=forest (público, sin auth)
+  if (overlayMatchId) {
+    return <LiveOverlay matchId={overlayMatchId} theme={overlayTheme} />;
+  }
+
   // 🏆 Finals Preview — accesible via /#finals-preview (solo admin)
   if (showFinalsPreview && currentUser?.role === 'admin') {
     return (
@@ -6934,6 +7024,19 @@ const App = () => {
         onBack={() => {
           window.location.hash = '';
           setShowFinalsPreview(false);
+        }}
+      />
+    );
+  }
+
+  // 🐐 GOAT Registration — accesible via /#goat
+  if (showGoatPage) {
+    return (
+      <GoatRegistration
+        currentUser={currentUser}
+        onBack={() => {
+          window.location.hash = '';
+          setShowGoatPage(false);
         }}
       />
     );

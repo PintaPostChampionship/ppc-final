@@ -256,7 +256,8 @@ async function handlePost(
 
   // ── Action: init — Iniciar partido desde Garmin ──
   if (action === 'init') {
-    return handleInit(res, supabase, match_id, format, first_server, playerId);
+    const silent = req.body?.silent === true;
+    return handleInit(res, supabase, match_id, format, first_server, playerId, silent);
   }
 
   // ── Action: sync — Sincronizar estado completo desde Garmin ──
@@ -267,6 +268,11 @@ async function handlePost(
   // ── Action: pause — Pausar un partido desde la web ──
   if (action === 'pause') {
     return handlePause(res, supabase, match_id);
+  }
+
+  // ── Action: set_featured — Marcar partido como el del stream ──
+  if (action === 'set_featured') {
+    return handleSetFeatured(res, supabase, match_id);
   }
 
   // ── Action: close — Cerrar un partido incompleto desde la web ──
@@ -335,7 +341,8 @@ async function handleInit(
   matchId: string,
   format: string | undefined,
   firstServer: number | undefined,
-  playerId: string
+  playerId: string,
+  silent: boolean = false
 ) {
   const fmt = format || 'standard';
   const srv = firstServer || 1;
@@ -360,6 +367,14 @@ async function handleInit(
 
   const previousStatus = (matchData as any)?.status ?? 'scheduled';
 
+  // Check if there are any other live matches — if not, this one is auto-featured
+  const { data: otherLive } = await supabase
+    .from('live_score_state')
+    .select('match_id')
+    .eq('status', 'live')
+    .limit(1);
+  const isOnlyLive = !otherLive || otherLive.length === 0;
+
   const initState = {
     match_id: matchId,
     p1_sets: 0,
@@ -378,6 +393,7 @@ async function handleInit(
     editor_ids: [playerId],
     status: 'live',
     previous_match_status: previousStatus,
+    is_featured: isOnlyLive,
   };
 
   const { error: insertErr } = await supabase
@@ -395,9 +411,11 @@ async function handleInit(
     .eq('id', matchId);
 
   // ── Notify all subscribed users that a match is live ──
-  notifyMatchLive(supabase, matchId).catch(err =>
-    console.error('[live-score] Push notification error:', err?.message || err)
-  );
+  if (!silent) {
+    notifyMatchLive(supabase, matchId).catch(err =>
+      console.error('[live-score] Push notification error:', err?.message || err)
+    );
+  }
 
   return res.status(201).json({ ok: true });
 }
@@ -501,6 +519,24 @@ async function handlePause(res: VercelResponse, supabase: Supabase, matchId: str
     .from('matches')
     .update({ status: 'paused' } as any)
     .eq('id', matchId);
+
+  return res.status(200).json({ ok: true });
+}
+
+// ─── Set Featured: mark a match as the one shown on stream overlay ───────────
+
+async function handleSetFeatured(res: VercelResponse, supabase: Supabase, matchId: string) {
+  // Unmark all others
+  await supabase
+    .from('live_score_state')
+    .update({ is_featured: false } as any)
+    .neq('match_id', matchId);
+
+  // Mark this one
+  await supabase
+    .from('live_score_state')
+    .update({ is_featured: true } as any)
+    .eq('match_id', matchId);
 
   return res.status(200).json({ ok: true });
 }

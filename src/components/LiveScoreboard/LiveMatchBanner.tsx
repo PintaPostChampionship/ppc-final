@@ -213,6 +213,25 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
 
               {/* Actions */}
               <div className="flex items-center gap-1.5 shrink-0">
+                {/* Featured toggle (stream) */}
+                <button
+                  onClick={async () => {
+                    await fetch('/api/live-score', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
+                      body: JSON.stringify({ action: 'set_featured', match_id: m.id }),
+                    });
+                    loadLiveMatches();
+                  }}
+                  className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-all ${
+                    (m.liveState as any)?.is_featured
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-purple-900/50 text-purple-300 hover:bg-purple-700'
+                  }`}
+                  title={`${(m.liveState as any)?.is_featured ? 'En stream' : 'Poner en stream'}`}
+                >
+                  📺
+                </button>
                 {m.status === 'live' && (
                   <button
                     onClick={async () => {

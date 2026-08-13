@@ -22,7 +22,7 @@ export interface UseLiveScoreReturn {
   addPoint: (player: 1 | 2) => Promise<void>;
   undo: () => Promise<void>;
   addEditor: (userId: string) => Promise<void>;
-  initMatch: (format: MatchFormat, firstServer: 1 | 2) => Promise<void>;
+  initMatch: (format: MatchFormat, firstServer: 1 | 2, silent?: boolean) => Promise<void>;
   finalizeMatch: () => Promise<void>;
   cancelMatch: () => Promise<boolean>;
   resetMatch: () => Promise<boolean>;
@@ -315,7 +315,7 @@ export function useLiveScore(
   // ── initMatch ──────────────────────────────────────────────────────────────
 
   const initMatch = useCallback(
-    async (format: MatchFormat, firstServer: 1 | 2) => {
+    async (format: MatchFormat, firstServer: 1 | 2, silent?: boolean) => {
       // Leer el status actual del partido antes de cambiarlo a 'live'
       const { data: matchData } = await supabase
         .from('matches')
@@ -357,7 +357,7 @@ export function useLiveScore(
       undoHistoryRef.current = [];
       setUndoCount(0);
     },
-    [matchId]
+    [matchId, currentUserId]
   );
 
   // ── finalizeMatch ──────────────────────────────────────────────────────────

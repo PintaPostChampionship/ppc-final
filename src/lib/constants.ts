@@ -3,6 +3,11 @@ import type { BookingVenueKey } from '../types';
 // Profile ID autorizado para ver "Buscar clases"
 export const BUSCAR_CLASES_ALLOWED_ID = "fb045715-86c6-48fc-88dc-c784fa5ed2bc";
 
+// Tournament IDs ocultos de la home (accesibles solo por link directo)
+export const HIDDEN_TOURNAMENT_IDS: string[] = [
+  "2606f3ec-6145-47b0-9536-3e91ac04b02d", // The G.O.A.T. (torneo 1 punto, 22 agosto)
+];
+
 // Profile IDs autorizados para ver el Dashboard Admin (además de role === 'admin' y capitanes)
 export const DASHBOARD_ALLOWED_IDS: string[] = [
   "63423627-6cac-4876-b6eb-6a39440a45dd", // Patrick Kohler
