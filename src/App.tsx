@@ -4104,8 +4104,8 @@ const App = () => {
 
 
   const shareAllScheduledMatches = () => {
-    // 1) Torneos activos (excluir calibraciones y torneos upcoming)
-    const active = tournaments.filter(t => t.status === 'active' && !isCalibrationTournamentByName(t.name));
+    // 1) Torneos activos
+    const active = tournaments.filter(t => t.status === 'active');
 
     // 2) Orden WPPC → PPC → PPC Cup (por nombre)
     const orderTournament = (t: Tournament) => {
@@ -4176,7 +4176,7 @@ const App = () => {
 
   const copyTableToClipboard = () => {
     // Same logic as shareAllScheduledMatches but copies to clipboard
-    const active = tournaments.filter(t => t.status === 'active' && !isCalibrationTournamentByName(t.name));
+    const active = tournaments.filter(t => t.status === 'active');
 
     const orderTournament = (t: Tournament) => {
       const n = (t.name || '').toLowerCase();
@@ -8645,7 +8645,7 @@ const App = () => {
                                         onClick={() => openEditResult(match)}
                                         className="text-green-600 hover:text-green-800 underline"
                                       >
-                                        {match.status === 'played' ? 'Edit Result' : 'Add Result'}
+                                        {match.status === 'played' ? 'Editar Resultado' : 'Agregar Resultado'}
                                       </button>
                                     )}
                                   </div>
@@ -8777,7 +8777,7 @@ const App = () => {
                                   onClick={() => openEditResult(match)}
                                   className="text-blue-600 hover:text-blue-800 underline"
                                 >
-                                  Edit Result
+                                  Editar Resultado
                                 </button>
                               )
                             ) : (
@@ -8786,7 +8786,7 @@ const App = () => {
                                   onClick={() => openEditSchedule(match)}
                                   className="text-blue-600 hover:text-blue-800 underline"
                                 >
-                                  Edit Schedule
+                                  Editar Horario
                                 </button>
                               )
                             )}

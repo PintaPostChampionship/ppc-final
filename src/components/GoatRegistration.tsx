@@ -8,6 +8,11 @@ const GOAT_TOURNAMENT_ID = '2606f3ec-6145-47b0-9536-3e91ac04b02d';
 const GOAT_DIVISION_ID = '3fa1f7f3-d557-42d4-b7c5-9424f6672b38';
 const MAX_PLAYERS = 32;
 
+// Profile IDs that can send alerts (admins + designated organizers)
+const ALERT_ALLOWED_IDS = [
+  'fb045715-86c6-48fc-88dc-c784fa5ed2bc', // Javier
+];
+
 interface GoatRegistrationProps {
   currentUser: Profile | null;
   onBack: () => void;
@@ -28,6 +33,38 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [alertingId, setAlertingId] = useState<string | null>(null);
+  const [alertSentId, setAlertSentId] = useState<string | null>(null);
+
+  const canSendAlerts = currentUser?.role === 'admin' || ALERT_ALLOWED_IDS.includes(currentUser?.id ?? '');
+
+  const sendAlert = async (targetProfileId: string, targetName: string) => {
+    if (!currentUser) return;
+    setAlertingId(targetProfileId);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const resp = await fetch('/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetUserId: targetProfileId,
+          title: '🐐 Te toca jugar!',
+          body: 'Tu partido en The G.O.A.T. comienza pronto. ¡Acércate a la cancha!',
+          url: `${window.location.origin}/#registro-1-punto`,
+        }),
+      });
+      if (resp.ok) {
+        setAlertSentId(targetProfileId);
+        setTimeout(() => setAlertSentId(null), 2000);
+      } else {
+        alert(`No se pudo enviar la notificación a ${uiName(targetName)}. ¿Tiene notificaciones activadas?`);
+      }
+    } catch (err) {
+      alert('Error enviando notificación.');
+    } finally {
+      setAlertingId(null);
+    }
+  };
 
   const fetchParticipants = async () => {
     const { data, error } = await supabase
@@ -186,7 +223,7 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
 
           {/* Action button */}
           {currentUser ? (
-            <div className="flex justify-center">
+            <div className="flex flex-col items-center gap-4">
               {!isRegistered ? (
                 <button
                   onClick={handleJoin}
@@ -209,6 +246,16 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
                   </button>
                 </div>
               )}
+
+              {/* Push notification reminder */}
+              <div className="mt-2 px-4 py-3 rounded-xl bg-amber-900/30 border border-amber-700/40 max-w-sm text-center">
+                <p className="text-amber-300 text-xs font-medium">
+                  🔔 Activa las notificaciones para recibir avisos cuando te toque jugar.
+                </p>
+                <p className="text-amber-400/70 text-[10px] mt-1">
+                  Menú → Activar notificaciones
+                </p>
+              </div>
             </div>
           ) : (
             <div className="text-center">
@@ -253,7 +300,21 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
                         className="w-9 h-9 rounded-full object-cover ring-1 ring-gray-600"
                         onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
                       />
-                      <span className="text-white font-medium text-sm truncate">{uiName(p.name)}</span>
+                      <span className="text-white font-medium text-sm truncate flex-1">{uiName(p.name)}</span>
+                      {canSendAlerts && (
+                        <button
+                          onClick={() => sendAlert(p.profile_id, p.name)}
+                          disabled={alertingId === p.profile_id}
+                          className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-semibold transition ${
+                            alertSentId === p.profile_id
+                              ? 'bg-green-900/50 text-green-400 border border-green-700/40'
+                              : 'bg-amber-900/40 text-amber-300 border border-amber-700/40 hover:bg-amber-800/50 active:scale-95'
+                          } disabled:opacity-50`}
+                          title={`Enviar notificación a ${uiName(p.name)}`}
+                        >
+                          {alertingId === p.profile_id ? '...' : alertSentId === p.profile_id ? '✓' : '🔔'}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
