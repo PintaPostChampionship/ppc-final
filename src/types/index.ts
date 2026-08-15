@@ -123,6 +123,7 @@ export interface Match {
   phase?: string | null;
   group_code?: string | null;
   anecdote?: string | null;
+  match_type?: 'official' | 'friendly';
 }
 
 export interface MatchSet {

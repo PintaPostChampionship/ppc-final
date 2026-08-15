@@ -63,6 +63,7 @@ const App = () => {
   const [selectedPlayer, setSelectedPlayer] = useState<Profile | null>(null);
   const [playerCards, setPlayerCards] = useState<PlayerCard[]>([]);
   const [playerProfileTab, setPlayerProfileTab] = useState<'overview' | 'ficha' | 'stats'>('overview');
+  const [matchHistoryFilter, setMatchHistoryFilter] = useState<'official' | 'friendly'>('official');
   const [editingPlayerCard, setEditingPlayerCard] = useState<boolean>(false);
   const [playerCardForm, setPlayerCardForm] = useState<Partial<PlayerCard>>({});
   const [savingPlayerCard, setSavingPlayerCard] = useState<boolean>(false);
@@ -106,6 +107,7 @@ const App = () => {
   });
   const [showMap, setShowMap] = useState(false);
   const [crossDivisionMode, setCrossDivisionMode] = useState(false);
+  const [friendlyMode, setFriendlyMode] = useState(false);
   const [crossDivisionSearch, setCrossDivisionSearch] = useState('');
   const [showBuscarClases, setShowBuscarClases] = useState(false);
   const [showCourtFinder, setShowCourtFinder] = useState(false);
@@ -113,6 +115,8 @@ const App = () => {
   const [showMonitorTips, setShowMonitorTips] = useState(false);
   const [showMarcador, setShowMarcador] = useState(false);
   const [marcadorTab, setMarcadorTab] = useState("live");
+  const [showMatchForms, setShowMatchForms] = useState(false);
+  const [matchFormsTab, setMatchFormsTab] = useState<'schedule' | 'result'>('schedule');
   const [showTwitch, setShowTwitch] = useState(true);
   const [twitchLive, setTwitchLive] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
@@ -157,7 +161,7 @@ const App = () => {
   const [pickedTournamentId, setPickedTournamentId] = useState<string>('');
   const [pickedDivisionId, setPickedDivisionId] = useState<string>('');
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
-  const [tournamentTab, setTournamentTab] = useState<'overview' | 'playoffs'>('overview');
+  const [tournamentTab, setTournamentTab] = useState<'overview' | 'playoffs' | 'play'>('overview');
   const [playoffsDivisionFilter, setPlayoffsDivisionFilter] = useState<string>('all');
 
   // Payment status from Google Sheets
@@ -3104,6 +3108,7 @@ const App = () => {
       setShowMonitor(false);
       setShowMonitorTips(false);
       setShowMarcador(false);
+      setShowMatchForms(false);
       setCameFromHistoric(false);
       setShowNavMenu(false);
       window.scrollTo(0, 0);
@@ -3192,6 +3197,18 @@ const App = () => {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M10 3v18M14 3v18" opacity="0.4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>,
               'Ir a mi División',
               goToMyDivision
+            )}
+
+            {hasActiveDivision && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>,
+              'Agendar Partido',
+              () => { goToMyDivision(); setShowMatchForms(true); setMatchFormsTab('schedule'); setShowNavMenu(false); }
+            )}
+
+            {hasActiveDivision && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>,
+              'Agregar Resultado',
+              () => { goToMyDivision(); setShowMatchForms(true); setMatchFormsTab('result'); setShowNavMenu(false); }
             )}
 
             {divider()}
@@ -4073,6 +4090,7 @@ const App = () => {
     const playedBetween = matches.filter(m =>
       isOfficialMatchByTournamentId(m, tournaments) &&
       m.status === 'played' &&
+      m.match_type !== 'friendly' &&
       (
         (m.home_player_id === playerAId && m.away_player_id === playerBId) ||
         (m.home_player_id === playerBId && m.away_player_id === playerAId)
@@ -4125,6 +4143,7 @@ const App = () => {
         .filter(m =>
           m.tournament_id === t.id &&
           m.status === 'scheduled' &&
+          m.match_type !== 'friendly' &&
           m.home_player_id && m.away_player_id &&
           isTodayOrFuture(m.date)
         )
@@ -4175,7 +4194,6 @@ const App = () => {
 
 
   const copyTableToClipboard = () => {
-    // Same logic as shareAllScheduledMatches but copies to clipboard
     const active = tournaments.filter(t => t.status === 'active');
 
     const orderTournament = (t: Tournament) => {
@@ -4186,7 +4204,6 @@ const App = () => {
     };
 
     const ordered = [...active].sort((a, b) => orderTournament(a) - orderTournament(b));
-
     const blocks: string[] = [];
 
     ordered.forEach(t => {
@@ -4194,6 +4211,7 @@ const App = () => {
         .filter(m =>
           m.tournament_id === t.id &&
           m.status === 'scheduled' &&
+          m.match_type !== 'friendly' &&
           m.home_player_id && m.away_player_id &&
           isTodayOrFuture(m.date)
         )
@@ -4308,7 +4326,7 @@ const App = () => {
     setLoading(true);
     try {
 
-      const dup = await alreadyPlayedBetween(tournamentId, divisionId, player1Id, player2Id);
+      const dup = !friendlyMode && await alreadyPlayedBetween(tournamentId, divisionId, player1Id, player2Id);
       if (dup) {
         alert('Ya existe un resultado entre estos dos jugadores en esta división/torneo. Edita el existente en lugar de crear uno nuevo.');
         setLoading(false);
@@ -4408,7 +4426,8 @@ const App = () => {
             player1_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
             player2_pints: newMatch.hadPint ? Number(newMatch.pintsCount) : 0,
             created_by: session?.user.id,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            match_type: friendlyMode ? 'friendly' : 'official',
           })
           .select()
           .single();
@@ -4554,6 +4573,7 @@ const App = () => {
         home_player_id: newMatch.player1,
         away_player_id: newMatch.player2 || null,
         created_by: session?.user.id,
+        match_type: friendlyMode ? 'friendly' : 'official',
       });
       if (error) throw error;
 
@@ -9063,7 +9083,7 @@ const App = () => {
   })();
 
   // Pool de jugadores para P2 según modo
-  const p2Pool = crossDivisionMode && isCalibrationTournament
+  const p2Pool = (crossDivisionMode && isCalibrationTournament) || friendlyMode
     ? [...activePlayers, ...crossDivisionPlayers]
     : activePlayers;
 
@@ -9114,6 +9134,7 @@ const App = () => {
         m.tournament_id === selectedTournament.id &&
         m.division_id === selectedDivision.id &&
         m.status === 'played' &&
+        m.match_type !== 'friendly' &&
         !isPlayoffsMatch(m) &&
         (isCalibrationTournament
           // Calibrations: count match if at least ONE player is active in division
@@ -9593,9 +9614,42 @@ const App = () => {
 
                 {/* Match History */}
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-                  <h2 className="text-2xl font-bold text-gray-800 mb-6">Historial de Partidos</h2>
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold text-gray-800">Historial de Partidos</h2>
+                    <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                      <button
+                        onClick={() => setMatchHistoryFilter('official')}
+                        className={`px-3 py-1.5 text-xs font-medium transition ${
+                          matchHistoryFilter === 'official'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Oficiales
+                      </button>
+                      <button
+                        onClick={() => setMatchHistoryFilter('friendly')}
+                        className={`px-3 py-1.5 text-xs font-medium transition ${
+                          matchHistoryFilter === 'friendly'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Amistosos
+                      </button>
+                    </div>
+                  </div>
                   
-                  {playerMatches.played.length > 0 ? (
+                  {(() => {
+                    const filteredPlayed = matchHistoryFilter === 'friendly'
+                      ? matches.filter(m =>
+                          m.match_type === 'friendly' &&
+                          m.status === 'played' &&
+                          (getMatchHomeId(m) === selectedPlayer.id || getMatchAwayId(m) === selectedPlayer.id)
+                        )
+                      : playerMatches.played.filter(m => m.match_type !== 'friendly');
+
+                    return filteredPlayed.length > 0 ? (
                     <div className="space-y-4">
                       {playerMatches.played.map((match, index) => {
                         const selectedIsHome = getMatchHomeId(match) === selectedPlayer.id;
@@ -9676,8 +9730,9 @@ const App = () => {
                       })}
                     </div>
                   ) : (
-                    <p className="text-gray-500">Sin historial de partidos todavía.</p>
-                  )}
+                    <p className="text-gray-500">{matchHistoryFilter === 'friendly' ? 'Sin partidos amistosos.' : 'Sin historial de partidos todavía.'}</p>
+                  );
+                  })()}
                 </div>
 
                 {playerMatches.scheduled.length > 0 && (
@@ -10600,11 +10655,13 @@ const App = () => {
                   if (!selectedPlayer || !selectedTournament || !selectedDivision) return null;
 
                   // Todos los partidos agendados del jugador (scheduled o pending), sin importar si son pasados o futuros
+                  // Excluir partidos de playoffs que aún no tienen ambos jugadores definidos
                   const myScheduled = matches
                     .filter(m =>
                       m.tournament_id === selectedTournament.id &&
                       (m.status === 'scheduled' || m.status === 'pending') &&
-                      (m.home_player_id === selectedPlayer.id || m.away_player_id === selectedPlayer.id || m.created_by === selectedPlayer.id)
+                      (m.home_player_id === selectedPlayer.id || m.away_player_id === selectedPlayer.id || m.created_by === selectedPlayer.id) &&
+                      !(m.phase === 'finals_main' && (!m.home_player_id || !m.away_player_id))
                     )
                     .sort((a,b) =>
                       (a.date || '').localeCompare(b.date || '') ||
@@ -10718,14 +10775,22 @@ const App = () => {
                 <div className="ml-2">
                   <button
                     onClick={() => {
-                      setSelectedDivision(null);
-                      setSelectedPlayer(null); 
+                      if (showMatchForms) {
+                        setShowMatchForms(false);
+                      } else {
+                        setSelectedDivision(null);
+                        setSelectedPlayer(null);
+                      }
                     }}
                     className="text-green-600 hover:text-green-800 font-semibold text-sm mb-0.5 flex items-center gap-1"
                   >
-                    ← Volver a {selectedTournament.name}
+                    {showMatchForms ? `← Volver a ${selectedDivision.name}` : `← Volver a ${selectedTournament.name}`}
                   </button>
-                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">División {selectedDivision.name}</h1>
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
+                    {showMatchForms
+                      ? (matchFormsTab === 'schedule' ? 'Agendar Partido' : 'Agregar Resultado')
+                      : `División ${selectedDivision.name}`}
+                  </h1>
                 </div>
               </div>
 
@@ -10765,6 +10830,8 @@ const App = () => {
         {renderNavMenu()}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+          {!showMatchForms && (<>
           <div className="text-center mb-8">
             {/* LOGO DE DIVISIÓN: centrado y responsive */}
             <img
@@ -10787,7 +10854,8 @@ const App = () => {
                   .filter(m =>
                     m.tournament_id === selectedTournament.id &&
                     m.division_id === selectedDivision.id &&
-                    m.status === 'pending'
+                    m.status === 'pending' &&
+                    !m.phase && !m.knockout_round
                   )
                   .map(m => (
                     <div key={m.id} className="flex items-center justify-between text-sm">
@@ -10808,7 +10876,8 @@ const App = () => {
                 {matches.filter(m =>
                   m.tournament_id === selectedTournament.id &&
                   m.division_id === selectedDivision.id &&
-                  m.status === 'pending'
+                  m.status === 'pending' &&
+                  !m.phase && !m.knockout_round
                 ).length === 0 && (
                   <div className="text-gray-600 text-sm">No quedan pendientes.</div>
                 )}
@@ -10816,7 +10885,7 @@ const App = () => {
             </div>
           )}
 
-          <div className="mb-6 flex justify-center">
+          <div className="mb-6 flex flex-wrap justify-center gap-2">
             <button
               type="button"
               onClick={() => setShowAvailability(prev => !prev)}
@@ -10824,6 +10893,14 @@ const App = () => {
             >
               <span>📅</span>
               <span>Ver disponibilidad de los jugadores</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowMatchForms(true); setMatchFormsTab('schedule'); }}
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow border border-emerald-200 hover:bg-emerald-50 transition"
+            >
+              <span>🎾</span>
+              <span>Agendar / Resultado</span>
             </button>
           </div>
 
@@ -11166,6 +11243,7 @@ const App = () => {
               </div>
             </div>
           </div>
+          </>)}
 
           {/* Payment confirmation modal */}
           <PaymentModal
@@ -11176,32 +11254,83 @@ const App = () => {
             error={reportError}
           />
 
-          {/* Create Match Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            {/* Add Match Result */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
+          {/* Create Match Section — shown as independent view */}
+          {showMatchForms && selectedDivision && (
+          <div className="mb-8">
+            {/* Sub-tabs */}
+            <div className="flex gap-2 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setMatchFormsTab('schedule')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${
+                    matchFormsTab === 'schedule'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  📅 Agendar Partido
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatchFormsTab('result')}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${
+                    matchFormsTab === 'result'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  ✏️ Agregar Resultado
+                </button>
+            </div>
+
+            {/* Agregar Resultado form */}
+            {matchFormsTab === 'result' && (
+            <div id="add-result-form" className="bg-white rounded-xl shadow-lg p-6 max-w-2xl mx-auto">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Agregar Resultado del Partido</h3>
               <form onSubmit={handleAddMatch} className="space-y-4">
 
-                {/* Cross-division toggle for calibrations */}
-                {isCalibrationTournament && (
+                {/* Toggle amistoso */}
+                <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={friendlyMode}
+                      onChange={(e) => {
+                        setFriendlyMode(e.target.checked);
+                        setCrossDivisionSearch('');
+                        setNewMatch(prev => ({ ...prev, player2: '' }));
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                  <span className="text-sm font-medium text-blue-800">
+                    {'\u{1F91D}'} Partido amistoso <span className="text-xs text-blue-600 font-normal">(no cuenta para la tabla)</span>
+                  </span>
+                </div>
+
+                {/* Cross-division toggle for calibrations or friendly */}
+                {(isCalibrationTournament || friendlyMode) && (
                   <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
                         id="crossDivResult"
-                        checked={crossDivisionMode}
+                        checked={crossDivisionMode || friendlyMode}
                         onChange={(e) => {
-                          setCrossDivisionMode(e.target.checked);
+                          if (!friendlyMode) {
+                            setCrossDivisionMode(e.target.checked);
+                          }
                           setCrossDivisionSearch('');
                           setNewMatch(prev => ({ ...prev, player2: '' }));
                         }}
+                        disabled={friendlyMode}
                         className="sr-only peer"
                       />
                       <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
                     </label>
                     <span className="text-sm font-medium text-purple-800">
-                      🔀 Jugar con jugador de otra división
+                      {'\u{1F500}'} Jugar con jugador de otra divisi{'\u00F3'}n
                     </span>
                   </div>
                 )}
@@ -11224,7 +11353,7 @@ const App = () => {
                   
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2</label>
-                    {crossDivisionMode && isCalibrationTournament ? (
+                    {(crossDivisionMode && isCalibrationTournament) || friendlyMode ? (
                       <div className="relative">
                         <div className="relative">
                           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -11477,30 +11606,54 @@ const App = () => {
                 </button>
               </form>
             </div>
+            )}
 
             {/* Schedule Match */}
-            <div ref={scheduleFormRef} id="schedule-match-form" className="bg-white rounded-xl shadow-lg p-6">
+            {matchFormsTab === 'schedule' && (
+            <div ref={scheduleFormRef} id="schedule-match-form" className="bg-white rounded-xl shadow-lg p-6 max-w-2xl mx-auto">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Programar un Partido</h3>
               <form onSubmit={handleScheduleMatch} className="space-y-4">
-                {/* Toggle cross-division (solo visible en calibraciones) */}
-                {isCalibrationTournament && (
+                {/* Toggle amistoso */}
+                <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={friendlyMode}
+                      onChange={(e) => {
+                        setFriendlyMode(e.target.checked);
+                        setCrossDivisionSearch('');
+                        setNewMatch(prev => ({ ...prev, player2: '' }));
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                  <span className="text-sm font-medium text-blue-800">
+                    {'\u{1F91D}'} Partido amistoso <span className="text-xs text-blue-600 font-normal">(no cuenta para la tabla)</span>
+                  </span>
+                </div>
+
+                {/* Toggle cross-division (solo visible en calibraciones o amistosos) */}
+                {(isCalibrationTournament || friendlyMode) && (
                   <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={crossDivisionMode}
+                        checked={crossDivisionMode || friendlyMode}
                         onChange={(e) => {
-                          setCrossDivisionMode(e.target.checked);
+                          if (!friendlyMode) {
+                            setCrossDivisionMode(e.target.checked);
+                          }
                           setCrossDivisionSearch('');
-                          // Reset player 2 al cambiar de modo
                           setNewMatch(prev => ({ ...prev, player2: '' }));
                         }}
+                        disabled={friendlyMode}
                         className="sr-only peer"
                       />
                       <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
                     </label>
                     <span className="text-sm font-medium text-purple-800">
-                      🔀 Jugar con jugador de otra división
+                      {'\u{1F500}'} Jugar con jugador de otra divisi{'\u00F3'}n
                     </span>
                   </div>
                 )}
@@ -11523,8 +11676,8 @@ const App = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Jugador 2 (Opcional)</label>
-                  {/* En cross-division: buscador estilo NavPlayerSearch */}
-                  {crossDivisionMode && isCalibrationTournament ? (
+                  {/* En cross-division o amistoso: buscador estilo NavPlayerSearch */}
+                  {(crossDivisionMode && isCalibrationTournament) || friendlyMode ? (
                     <div className="relative">
                       <div className="relative">
                         <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -11735,10 +11888,12 @@ const App = () => {
                 </button>
               </form>
             </div>
+            )}
           </div>
+          )}
 
           {/* Pending Matches */}
-          {pendingMatches.length > 0 && (
+          {!showMatchForms && pendingMatches.length > 0 && (
             <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Partidos Pendientes</h3>
               <p className="text-gray-600 mb-4">These matches are waiting for a second player to join. Click "Join Match" to participate.</p>
@@ -11847,6 +12002,7 @@ const App = () => {
           )}
 
           {/* All Upcoming Matches Section - Now at the bottom of the page */}
+          {!showMatchForms && (
           <div className="bg-white rounded-xl shadow-lg p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold text-gray-800">Todos los Partidos Programados</h3>
@@ -11987,6 +12143,7 @@ const App = () => {
 
 
           </div>
+          )}
         </div>
         {renderNotifs()}
       </div>

@@ -64,14 +64,20 @@ export async function advanceWinner(match: Match, supabaseClient: any) {
 
   const { nextRound, nextPos } = meta;
 
-  // Buscar si ya existe el partido de la siguiente ronda
-  const { data: existing, error: existingErr } = await supabaseClient
+  // Buscar si ya existe el partido de la siguiente ronda (por division + round + position)
+  // Check both with and without phase to handle league playoffs (finals_main) and pure knockout
+  const { data: existingList, error: existingErr } = await supabaseClient
     .from('matches')
     .select('*')
     .eq('tournament_id', match.tournament_id)
+    .eq('division_id', match.division_id)
     .eq('knockout_round', nextRound)
-    .eq('bracket_position', nextPos)
-    .maybeSingle();
+    .eq('bracket_position', nextPos);
+
+  // Pick the match — prefer one with same phase, otherwise any match found
+  const existing = existingList?.find((m: any) => m.phase === match.phase) 
+    || existingList?.[0] 
+    || null;
 
   // 1) Si NO existe → crear el partido
   if (!existing) {
@@ -87,6 +93,7 @@ export async function advanceWinner(match: Match, supabaseClient: any) {
       division_id: match.division_id,
       knockout_round: nextRound,
       bracket_position: nextPos,
+      phase: match.phase || null,
       home_player_id: isOddPosition ? winner : null,
       away_player_id: isOddPosition ? null : winner,
       date: defaultDate,
