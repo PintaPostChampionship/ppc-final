@@ -325,9 +325,16 @@ export function useLiveScore(
 
       const previousMatchStatus = matchData?.status ?? 'scheduled';
 
+      // Unmark any other featured match, then mark this one
+      await supabase
+        .from('live_score_state')
+        .update({ is_featured: false })
+        .eq('is_featured', true);
+
       const init = {
         ...initialState(matchId, format, firstServer),
         previous_match_status: previousMatchStatus,
+        is_featured: true,
       };
 
       const { data: inserted, error: insertErr } = await supabase

@@ -213,18 +213,18 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
           }
         }
 
-        // Player names
+        // Player names (full name for professional look)
         if ((match as any).home_player_id) {
           const { data: p1 } = await supabase
             .from('profiles').select('name, nickname')
             .eq('id', (match as any).home_player_id).maybeSingle();
-          if (p1) setP1Name((p1 as any).nickname || (p1 as any).name?.split(' ')[0] || 'P1');
+          if (p1) setP1Name((p1 as any).name || (p1 as any).nickname || 'P1');
         }
         if ((match as any).away_player_id) {
           const { data: p2 } = await supabase
             .from('profiles').select('name, nickname')
             .eq('id', (match as any).away_player_id).maybeSingle();
-          if (p2) setP2Name((p2 as any).nickname || (p2 as any).name?.split(' ')[0] || 'P2');
+          if (p2) setP2Name((p2 as any).name || (p2 as any).nickname || 'P2');
         }
       }
     }
@@ -263,65 +263,58 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
   const p1Pts = fmtPoints(state.p1_points, state.in_tiebreak, state.in_super_tiebreak);
   const p2Pts = fmtPoints(state.p2_points, state.in_tiebreak, state.in_super_tiebreak);
 
-  // Layout: Logo PPC separado (esquina inferior izquierda) + Score Card (esquina superior derecha)
-  // In OBS these are separate layers the user can position freely.
-  // Here we render them together — OBS crops/positions as needed.
   return (
-    <div className="p-2 font-sans">
-      <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-sm overflow-hidden shadow-2xl`}
-        style={{ minWidth: '260px', maxWidth: '320px' }}>
+    <div className="fixed inset-0 pointer-events-none font-sans">
+      {/* Bottom bar: logo left, scoreboard right, vertically centered */}
+      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+        {/* Logo PPC — left */}
+        <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
 
-        {/* Player rows */}
-        <div className="divide-y divide-white/5">
-          {/* Player 1 */}
-          <div className="flex items-center px-3 py-2">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              {state.server === 1 && <span className="text-[10px] flex-shrink-0">🎾</span>}
-              {state.server !== 1 && <div className="w-[14px]" />}
-              <span className={`text-[13px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
+        {/* Score card — right */}
+        <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}
+          style={{ minWidth: '300px', maxWidth: '400px' }}>
+          <div className="divide-y divide-white/5">
+            {/* Player 1 */}
+            <div className="flex items-center px-4 py-2.5">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {state.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
+                {state.server !== 1 && <div className="w-4" />}
+                <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
+              </div>
+              <div className="flex items-center">
+                {state.completed_sets.map((s, i) => (
+                  <div key={i} className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{s.p1}</div>
+                ))}
+                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{state.p1_games}</div>
+              </div>
+              <div className={`w-10 text-center text-lg font-black ${t.pointsTxt}`}>{p1Pts}</div>
             </div>
-            {/* Sets */}
-            <div className="flex items-center">
-              {state.completed_sets.map((s, i) => (
-                <div key={i} className={`w-5 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{s.p1}</div>
-              ))}
-              <div className={`w-5 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{state.p1_games}</div>
+
+            {/* Player 2 */}
+            <div className="flex items-center px-4 py-2.5">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {state.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
+                {state.server !== 2 && <div className="w-4" />}
+                <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
+              </div>
+              <div className="flex items-center">
+                {state.completed_sets.map((s, i) => (
+                  <div key={i} className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{s.p2}</div>
+                ))}
+                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{state.p2_games}</div>
+              </div>
+              <div className={`w-10 text-center text-lg font-black ${t.pointsTxt}`}>{p2Pts}</div>
             </div>
-            {/* Points */}
-            <div className={`w-8 text-center text-[15px] font-black ${t.pointsTxt}`}>{p1Pts}</div>
           </div>
 
-          {/* Player 2 */}
-          <div className="flex items-center px-3 py-2">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              {state.server === 2 && <span className="text-[10px] flex-shrink-0">🎾</span>}
-              {state.server !== 2 && <div className="w-[14px]" />}
-              <span className={`text-[13px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
-            </div>
-            {/* Sets */}
-            <div className="flex items-center">
-              {state.completed_sets.map((s, i) => (
-                <div key={i} className={`w-5 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{s.p2}</div>
-              ))}
-              <div className={`w-5 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{state.p2_games}</div>
-            </div>
-            {/* Points */}
-            <div className={`w-8 text-center text-[15px] font-black ${t.pointsTxt}`}>{p2Pts}</div>
+          {/* Footer */}
+          <div className={`px-4 py-1.5 flex items-center justify-between border-t border-white/5`}>
+            <span className={`text-[9px] font-bold uppercase tracking-wider ${t.badgeTxt}`}>
+              {roundLabel ? `PPC ${roundLabel}${divisionLabel ? ' ' + divisionLabel : ''}` : 'PPC'}
+            </span>
+            <span className={`text-[8px] ${t.footerTxt}`}>ppctennis.vercel.app</span>
           </div>
         </div>
-
-        {/* Footer */}
-        <div className={`px-3 py-1 flex items-center justify-between border-t border-white/5`}>
-          <span className={`text-[8px] font-bold uppercase tracking-wider ${t.badgeTxt}`}>
-            {roundLabel ? `PPC ${roundLabel}${divisionLabel ? ' ' + divisionLabel : ''}` : 'PPC'}
-          </span>
-          <span className={`text-[7px] ${t.footerTxt}`}>ppctennis.vercel.app</span>
-        </div>
-      </div>
-
-      {/* PPC Logo — separate element, positioned bottom-left like keepthescore */}
-      <div className="fixed bottom-4 left-4">
-        <img src="/ppc-logo.png" alt="PPC" className="w-10 h-10 object-contain opacity-80 drop-shadow-lg" />
       </div>
     </div>
   );
