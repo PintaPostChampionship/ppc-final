@@ -215,16 +215,18 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
 
         // Player names (full name for professional look)
         if ((match as any).home_player_id) {
-          const { data: p1 } = await supabase
+          const { data: p1, error: p1Err } = await supabase
             .from('profiles').select('name, nickname')
             .eq('id', (match as any).home_player_id).maybeSingle();
           if (p1) setP1Name((p1 as any).name || (p1 as any).nickname || 'P1');
+          if (p1Err) console.error('[overlay] p1 name error:', p1Err.message);
         }
         if ((match as any).away_player_id) {
-          const { data: p2 } = await supabase
+          const { data: p2, error: p2Err } = await supabase
             .from('profiles').select('name, nickname')
             .eq('id', (match as any).away_player_id).maybeSingle();
           if (p2) setP2Name((p2 as any).name || (p2 as any).nickname || 'P2');
+          if (p2Err) console.error('[overlay] p2 name error:', p2Err.message);
         }
       }
     }
@@ -266,13 +268,13 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
   return (
     <div className="fixed inset-0 pointer-events-none font-sans">
       {/* Bottom bar: logo left, scoreboard right, vertically centered */}
-      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-        {/* Logo PPC — left */}
-        <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+      <div className="absolute bottom-4 left-12 right-4 flex items-center justify-between">
+        {/* Logo PPC — left, with more margin from edge */}
+        <img src="/ppc-cup-trophy-transparente.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
 
         {/* Score card — right */}
         <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}
-          style={{ minWidth: '300px', maxWidth: '400px' }}>
+          style={{ minWidth: '360px', maxWidth: '450px' }}>
           <div className="divide-y divide-white/5">
             {/* Player 1 */}
             <div className="flex items-center px-4 py-2.5">
