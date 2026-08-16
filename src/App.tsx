@@ -5363,6 +5363,11 @@ const App = () => {
     );
   }
 
+  // 📺 OBS Overlay — público, sin auth (necesario para PRISM/OBS)
+  if (overlayMatchId) {
+    return <LiveOverlay matchId={overlayMatchId} theme={overlayTheme} />;
+  }
+
   if (loginView) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700 flex items-center justify-center p-4">
@@ -7030,11 +7035,6 @@ const App = () => {
         {renderNotifs()}
       </div>
     );
-  }
-
-  // 📺 OBS Overlay — accesible via /#overlay/match/:id?theme=forest (público, sin auth)
-  if (overlayMatchId) {
-    return <LiveOverlay matchId={overlayMatchId} theme={overlayTheme} />;
   }
 
   // 🏆 Finals Preview — accesible via /#finals-preview (solo admin)
