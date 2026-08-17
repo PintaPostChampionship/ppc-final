@@ -34,6 +34,7 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
   const [leaving, setLeaving] = useState(false);
   const [alertingId, setAlertingId] = useState<string | null>(null);
   const [alertSentId, setAlertSentId] = useState<string | null>(null);
+  const [hasReadTribute, setHasReadTribute] = useState(false);
 
   const canSendAlerts = currentUser?.role === 'admin' || ALERT_ALLOWED_IDS.includes(currentUser?.id ?? '');
 
@@ -179,76 +180,218 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
       {/* Hero */}
       <div className="max-w-3xl mx-auto px-4 mb-8">
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          {/* Top accent */}
-          <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600" />
-
+          <div className="h-1.5 bg-gradient-to-r from-yellow-400 via-emerald-500 to-yellow-400" />
           <div className="px-6 sm:px-8 py-8 text-center">
             <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wider mb-2">
-              En memoria de
+              En memoria de Andrea Vivaldi
             </p>
             <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1">
-              Andrea Vivaldi
+              Copa Andrea Vivaldi
             </h1>
             <p className="text-xl sm:text-2xl font-semibold text-emerald-700 mb-4">
-              1 Point Slam
+              Golden Point Slam
             </p>
-            <p className="text-gray-500 text-sm">
-              Viernes 22 de Agosto, 2026 • Londres
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 border border-yellow-200 text-sm text-yellow-800 font-medium">
+              <span>📅</span>
+              <span>Sábado 22 de Agosto, 2026</span>
+              <span className="text-yellow-400">•</span>
+              <span>Finales PPC</span>
+            </div>
+            <p className="text-gray-400 text-xs mt-3">
+              Se invita a todos los participantes a vestir una prenda o accesorio amarillo 💛
             </p>
           </div>
         </div>
       </div>
 
-      {/* About section */}
+      {/* Andrea Vivaldi — Tribute section */}
       <div className="max-w-3xl mx-auto px-4 mb-8">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 sm:px-8 py-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-3">Sobre el torneo</h2>
-          <p className="text-gray-700 text-sm leading-relaxed mb-4">
-            Este torneo se juega en honor a la memoria de <strong>Andrea Vivaldi</strong>, profesor de tenis en Londres
-            y un referente para nuestra comunidad. El formato es simple y emocionante: <strong>32 jugadores</strong> compiten
-            en brackets eliminatorios donde <strong>cada partido se define en un solo punto</strong>. El que gana el punto
-            avanza a la siguiente ronda. La gran final se jugará en las canchas de pasto.
-          </p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* Hero photo */}
+          <div className="flex justify-center p-6 pb-0">
+            <div className="relative w-64 sm:w-72 aspect-[3/4] rounded-xl overflow-hidden shadow-md">
+              <img
+                src="/Andrea-Vivaldi/foto-1.jpeg"
+                alt="Andrea Vivaldi"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          </div>
 
-          <h3 className="text-sm font-bold text-gray-900 mb-2">Consideraciones</h3>
-          <ul className="text-sm text-gray-700 space-y-1.5">
-            <li className="flex items-start gap-2">
-              <span className="text-emerald-600 mt-0.5">•</span>
-              <span>Llevar zapatillas adecuadas para pasto</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-emerald-600 mt-0.5">•</span>
-              <span>Estar atento para cuando sea tu turno — los partidos van rápido</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-emerald-600 mt-0.5">•</span>
-              <span><strong>Activar notificaciones</strong> en la web para recibir el aviso cuando te toque</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-emerald-600 mt-0.5">•</span>
-              <span>Respetar los tiempos — si no estás presente, se avanza sin ti</span>
-            </li>
-          </ul>
+          <div className="px-6 sm:px-8 py-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">¿Por qué este torneo?</h2>
+            <div className="text-gray-700 text-sm leading-relaxed space-y-3">
+              <p>
+                La Copa Andrea Vivaldi se juega en honor al tenis y en memoria de un gran aficionado que nos
+                dejó a temprana edad este año.
+              </p>
+              <p>
+                Andrea fue un apasionado por el tenis. A pesar de tener dos masters en ingeniería espacial
+                de Imperial College y haber trabajado para la Agencia Espacial Europea, decidió dedicarse
+                100% al tenis por amor al juego.
+              </p>
+              <p>
+                Para Andrea, el tenis no era solo competir, sino <strong>conectar</strong> — compartiendo un
+                principio fundamental de la PPC. Fue profesor de algunos de los participantes del Pinta Post
+                Championship, viendo varios partidos a través del Twitch de la PPC e incluso tomando nota en
+                pequeños ajustes para aplicar en sus pupilos.
+              </p>
+              <p>
+                Aunque muchos no lo conocieron, probablemente él supo de varios dentro de esta comunidad como
+                un gran fanático del concepto PPC.
+              </p>
+              <p className="font-medium text-gray-900">
+                Este torneo va en su honor de la forma en que mejor sabemos: entre amigos y amigas, en un gran evento
+                y disfrutando de un tremendo día de tenis y competencia.
+              </p>
+            </div>
+
+            {/* Photo gallery */}
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              <div className="aspect-[3/4] rounded-lg overflow-hidden">
+                <img
+                  src="/Andrea-Vivaldi/foto-2.jpeg"
+                  alt="Andrea Vivaldi"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="aspect-[3/4] rounded-lg overflow-hidden">
+                <img
+                  src="/Andrea-Vivaldi/foto-3.jpeg"
+                  alt="Andrea Vivaldi"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="aspect-[3/4] rounded-lg overflow-hidden">
+                <img
+                  src="/Andrea-Vivaldi/foto-4.jpeg"
+                  alt="Andrea Vivaldi"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Andrea's story (placeholder) */}
+      {/* Bases del Torneo */}
       <div className="max-w-3xl mx-auto px-4 mb-8">
-        <div className="bg-emerald-50/60 rounded-2xl border border-emerald-100 px-6 sm:px-8 py-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-3">Andrea Vivaldi</h2>
-          <p className="text-gray-700 text-sm leading-relaxed italic">
-            Andrea fue profesor de tenis en Londres y dejó una huella profunda en todos los que tuvieron la suerte de
-            compartir cancha con él. Este torneo es un homenaje a su pasión por el deporte y a la comunidad que ayudó a construir.
-          </p>
-          <p className="text-gray-500 text-xs mt-3">
-            Más detalles sobre su historia próximamente.
-          </p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 sm:px-8 py-6">
+          <h2 className="text-lg font-bold text-gray-900 mb-5">Bases del Torneo</h2>
+
+          {/* Fecha y horario */}
+          <div className="mb-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">1</span>
+              Fecha y Horario
+            </h3>
+            <div className="text-sm text-gray-700 leading-relaxed space-y-2 ml-7">
+              <p>
+                Los partidos se jugarán el día de las Finales, <strong>sábado 22 de agosto</strong>, entre
+                los sets y post partido de las finales oficiales a jugarse ese día.
+              </p>
+              <p>
+                Quienes lleguen a fases avanzadas, jugarán su partido en el soñado <strong>pasto</strong>.
+              </p>
+              <p className="text-amber-700 font-medium">
+                ⚠️ El torneo comienza a las 11:00. Se pide puntualidad — si no estás presente, se avanza sin ti.
+              </p>
+              <p>
+                🔔 <strong>Activar notificaciones</strong> en la web para recibir el aviso cuando te toque jugar.
+              </p>
+            </div>
+          </div>
+
+          {/* Reglas */}
+          <div className="mb-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">2</span>
+              Reglas
+            </h3>
+            <div className="text-sm text-gray-700 leading-relaxed ml-7">
+              <p className="mb-2">El formato es directo y sin rodeos:</p>
+              <ul className="space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-600 mt-0.5">•</span>
+                  <span>Cada partido se decide a <strong>UN solo punto</strong></span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-600 mt-0.5">•</span>
+                  <span>Quien gana el punto, avanza a la siguiente ronda</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-600 mt-0.5">•</span>
+                  <span>Quien pierde el punto, queda eliminado y a disfrutar del evento!</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Inicio del partido */}
+          <div className="mb-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">3</span>
+              Inicio del Partido
+            </h3>
+            <div className="text-sm text-gray-700 leading-relaxed ml-7 space-y-2">
+              <p>
+                Antes de comenzar el punto, la elección del lado o del servicio se decide de forma rápida y tradicional:
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
+                <p><strong>Cachipún</strong> (Piedra, Papel o Tijera) — a la primera.</p>
+                <p><strong>La Elección:</strong> El ganador elige si desea sacar o recibir. Quien recibe elige lado.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Reglamento */}
+          <div className="mb-5">
+            <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">4</span>
+              Reglamento
+            </h3>
+            <div className="text-sm text-gray-700 leading-relaxed ml-7">
+              <p className="mb-2">El punto se juega bajo las reglas estándar del tenis:</p>
+              <ul className="space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-600 mt-0.5">•</span>
+                  <span><strong>Dos saques:</strong> El jugador que sirve dispone de primer y segundo servicio</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-emerald-600 mt-0.5">•</span>
+                  <span><strong>Let:</strong> Si el saque toca la red y entra en el cuadro, se repite ese servicio</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-red-500 mt-0.5">⚠️</span>
+                  <span><strong>Indumentaria:</strong> Uso de zapatillas de tenis es <strong>OBLIGATORIO</strong>. Quien no tenga zapatillas adecuadas, NO podrá jugar.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Trofeo y Fair Play */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">5</span>
+              Trofeo y Fair Play
+            </h3>
+            <div className="text-sm text-gray-700 leading-relaxed ml-7 space-y-1.5">
+              <p>🏆 El ganador será galardonado con un trofeo exclusivo y será parte de la premiación oficial PPC.</p>
+              <p>💛 Se invita a todos los participantes a vestir una prenda o accesorio amarillo en honor a Andrea.</p>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-5 border-t border-gray-100 text-center">
+            <p className="text-emerald-700 font-semibold text-sm">¡Que gane el mejor punto! 🎾✨</p>
+          </div>
         </div>
       </div>
 
       {/* Stats + Registration */}
       <div className="max-w-3xl mx-auto px-4 mb-8">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 sm:px-8 py-6">
+          <h2 className="text-lg font-bold text-gray-900 mb-4 text-center">Inscripción</h2>
+
           {/* Stats */}
           <div className="flex justify-center gap-8 mb-6">
             <div className="text-center">
@@ -285,13 +428,32 @@ export function GoatRegistration({ currentUser, onBack }: GoatRegistrationProps)
           {currentUser ? (
             <div className="flex flex-col items-center gap-3">
               {!isRegistered ? (
-                <button
-                  onClick={handleJoin}
-                  disabled={joining}
-                  className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-semibold shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition active:scale-[0.98]"
-                >
-                  {joining ? 'Inscribiendo...' : mainList.length >= MAX_PLAYERS ? '📋 Unirme a lista de espera' : '🎾 Participar en el torneo'}
-                </button>
+                <>
+                  {/* Acknowledgment checkbox */}
+                  <label className="flex items-start gap-3 p-4 rounded-xl border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition w-full max-w-sm">
+                    <input
+                      type="checkbox"
+                      checked={hasReadTribute}
+                      onChange={(e) => setHasReadTribute(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 shrink-0"
+                    />
+                    <span className="text-sm text-gray-700 leading-snug">
+                      He leído sobre Andrea y las bases del torneo. Confirmo mi participación en su honor.
+                    </span>
+                  </label>
+
+                  <button
+                    onClick={handleJoin}
+                    disabled={joining || !hasReadTribute}
+                    className={`px-6 py-3 rounded-xl font-semibold shadow-sm transition active:scale-[0.98] ${
+                      hasReadTribute
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    } disabled:opacity-50`}
+                  >
+                    {joining ? 'Inscribiendo...' : mainList.length >= MAX_PLAYERS ? '📋 Unirme a lista de espera' : '🎾 Confirmar participación'}
+                  </button>
+                </>
               ) : (
                 <>
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
