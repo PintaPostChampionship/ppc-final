@@ -290,6 +290,10 @@ const App = () => {
 
   const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
 
+  // Andrea Vivaldi tournament banner data
+  const [avTournamentCount, setAvTournamentCount] = useState(0);
+  const [avTournamentProfileIds, setAvTournamentProfileIds] = useState<string[]>([]);
+
   // Sub Fase de Grupos (Placement) – UI state (Edición 3)
   const [placementGroup, setPlacementGroup] = useState<'A' | 'B' | 'C' | 'D'>('A');
   // Switch de vistas para Edición 3 (escalable a futuras fases)
@@ -1128,7 +1132,8 @@ const App = () => {
       }
     } catch (err: any) {
       setError(`Failed to load data: ${err.message}`);
-      // después de setMatchSets(...) y availability, dentro de fetchData
+    } finally {
+      // Social events + AV count (always runs, regardless of main data success/failure)
       const todayYMD = (() => {
         const d = new Date();
         const y = d.getFullYear();
@@ -1145,7 +1150,18 @@ const App = () => {
         .order('date', { ascending: true })
         .limit(5);
       if (!evErr) setSocialEvents(ev || []);
-    } finally {
+
+      // Andrea Vivaldi tournament count
+      const { data: avRegs } = await supabase
+        .from('tournament_registrations')
+        .select('profile_id')
+        .eq('tournament_id', '2606f3ec-6145-47b0-9536-3e91ac04b02d')
+        .eq('status', 'active');
+      if (avRegs) {
+        setAvTournamentCount(avRegs.length);
+        setAvTournamentProfileIds(avRegs.map(r => r.profile_id));
+      }
+
       setLoading(false);
     }
   };
@@ -7607,6 +7623,38 @@ const App = () => {
             <h2 className="text-3xl font-bold text-white mb-4">Bienvenidos a la Pinta Post Championship</h2>
             <p className="text-white text-lg opacity-90">Selecciona un torneo para ver divisiones y detalles de jugadores</p>
           </div>
+
+            {/* Copa Andrea Vivaldi Banner */}
+            {(() => {
+              const avRemaining = Math.max(32 - avTournamentCount, 0);
+              const isUserRegisteredAV = currentUser
+                ? avTournamentProfileIds.includes(currentUser.id)
+                : false;
+              if (isUserRegisteredAV) return null;
+              return (
+                <div className="mb-6 mx-auto max-w-2xl">
+                  <div
+                    className="rounded-xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-emerald-50 p-4 shadow-sm cursor-pointer hover:shadow-md transition"
+                    onClick={() => { window.location.hash = '#registro-1-punto'; window.location.reload(); }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🏆</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-gray-900 text-sm">
+                          Copa Andrea Vivaldi — Golden Point Slam
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          {avRemaining > 0
+                            ? `Solo quedan ${avRemaining} cupos · Sábado 22 de agosto`
+                            : 'Cupos agotados — lista de espera disponible'}
+                        </div>
+                      </div>
+                      <span className="text-emerald-600 text-xs font-semibold whitespace-nowrap">Inscríbete →</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
