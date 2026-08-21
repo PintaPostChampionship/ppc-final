@@ -28,7 +28,7 @@ interface OverlayTheme {
 
 const THEMES: Record<string, OverlayTheme> = {
   forest: {
-    cardBg: 'bg-[#0d2818]/90',
+    cardBg: 'bg-[#0d2818]/70',
     border: 'border-[#2d6b45]/60',
     nameTxt: 'text-white',
     scoreTxt: 'text-white',
@@ -39,7 +39,7 @@ const THEMES: Record<string, OverlayTheme> = {
     badgeTxt: 'text-[#4ade80]',
   },
   oro: {
-    cardBg: 'bg-[#1a1005]/90',
+    cardBg: 'bg-[#1a1005]/70',
     border: 'border-[#d4a533]/40',
     nameTxt: 'text-white',
     scoreTxt: 'text-white',
@@ -50,7 +50,7 @@ const THEMES: Record<string, OverlayTheme> = {
     badgeTxt: 'text-[#fbbf24]',
   },
   plata: {
-    cardBg: 'bg-[#111318]/90',
+    cardBg: 'bg-[#111318]/70',
     border: 'border-slate-500/40',
     nameTxt: 'text-white',
     scoreTxt: 'text-white',
@@ -61,7 +61,7 @@ const THEMES: Record<string, OverlayTheme> = {
     badgeTxt: 'text-slate-300',
   },
   bronce: {
-    cardBg: 'bg-[#1a0f08]/90',
+    cardBg: 'bg-[#1a0f08]/70',
     border: 'border-[#cd7f32]/40',
     nameTxt: 'text-white',
     scoreTxt: 'text-white',
@@ -72,7 +72,7 @@ const THEMES: Record<string, OverlayTheme> = {
     badgeTxt: 'text-[#e8a055]',
   },
   wppc: {
-    cardBg: 'bg-[#1f0a1e]/90',
+    cardBg: 'bg-[#1f0a1e]/70',
     border: 'border-[#e040a0]/30',
     nameTxt: 'text-white',
     scoreTxt: 'text-white',
@@ -83,7 +83,7 @@ const THEMES: Record<string, OverlayTheme> = {
     badgeTxt: 'text-[#f472b6]',
   },
   broadcast: {
-    cardBg: 'bg-[#0f172a]/90',
+    cardBg: 'bg-[#0f172a]/70',
     border: 'border-slate-600/50',
     nameTxt: 'text-white',
     scoreTxt: 'text-white',
@@ -167,9 +167,9 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
     return (
       <div className="fixed inset-0 pointer-events-none font-sans">
         <div className="absolute bottom-4 left-6 right-4 flex items-center justify-between">
-          <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+          <img src="/ppc-logo.png" alt="PPC" className="w-16 h-16 object-contain drop-shadow-lg" />
           <div className={`rounded-xl ${dt.cardBg} border ${dt.border} backdrop-blur-md overflow-hidden shadow-2xl`}
-            style={{ minWidth: '380px', maxWidth: '480px' }}>
+            style={{ minWidth: '310px', maxWidth: '400px' }}>
             
             {/* Top bar */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
@@ -189,19 +189,19 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
             </div>
 
             <div className="divide-y divide-white/5">
-              <div className="flex items-center px-4 py-2.5">
+              <div className="flex items-center px-4 py-2">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className={`text-[15px] font-semibold ${dt.nameTxt}`}>Jugador 1</span>
+                  <span className={`text-[13px] font-semibold ${dt.nameTxt}`}>Jugador 1</span>
                 </div>
-                <div className={`w-6 text-center text-[15px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
-                <div className={`w-10 text-center text-lg font-black ${dt.pointsTxt}`}>0</div>
+                <div className={`w-6 text-center text-[13px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
+                <div className={`w-10 text-center text-base font-black ${dt.pointsTxt}`}>0</div>
               </div>
-              <div className="flex items-center px-4 py-2.5">
+              <div className="flex items-center px-4 py-2">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className={`text-[15px] font-semibold ${dt.nameTxt}`}>Jugador 2</span>
+                  <span className={`text-[13px] font-semibold ${dt.nameTxt}`}>Jugador 2</span>
                 </div>
-                <div className={`w-6 text-center text-[15px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
-                <div className={`w-10 text-center text-lg font-black ${dt.pointsTxt}`}>0</div>
+                <div className={`w-6 text-center text-[13px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
+                <div className={`w-10 text-center text-base font-black ${dt.pointsTxt}`}>0</div>
               </div>
             </div>
 
@@ -229,11 +229,11 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
       {/* Bottom bar: logo far left, scoreboard right */}
       <div className="absolute bottom-4 left-6 right-4 flex items-center justify-between">
         {/* Logo PPC — left */}
-        <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+        <img src="/ppc-logo.png" alt="PPC" className="w-16 h-16 object-contain drop-shadow-lg" />
 
         {/* Score card — right */}
         <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}
-          style={{ minWidth: '380px', maxWidth: '480px' }}>
+          style={{ minWidth: '310px', maxWidth: '400px' }}>
           
           {/* Top bar: round badge + tournament */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
@@ -259,39 +259,39 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
 
           <div className="divide-y divide-white/5">
             {/* Player 1 */}
-            <div className="relative flex items-center px-4 py-2.5">
+            <div className="relative flex items-center px-4 py-2">
               {score.server === 1 && (
                 <div className={`absolute left-0 top-1 bottom-1 w-1 rounded-full ${t.serveDot === 'text-[#4ade80]' ? 'bg-[#4ade80]' : t.serveDot === 'text-[#fbbf24]' ? 'bg-[#fbbf24]' : t.serveDot === 'text-[#f472b6]' ? 'bg-[#f472b6]' : t.serveDot === 'text-[#cd7f32]' ? 'bg-[#cd7f32]' : t.serveDot === 'text-sky-400' ? 'bg-sky-400' : 'bg-slate-300'}`} />
               )}
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
+                <span className={`text-[13px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
                 {score.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
               </div>
               <div className="flex items-center">
                 {score.completed_sets.map((s, i) => (
-                  <div key={i} className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{s.p1}</div>
+                  <div key={i} className={`w-6 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{s.p1}</div>
                 ))}
-                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{score.p1_games}</div>
+                <div className={`w-6 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{score.p1_games}</div>
               </div>
-              <div className={`w-10 text-center text-lg font-black ${t.pointsTxt}`}>{p1Pts}</div>
+              <div className={`w-10 text-center text-base font-black ${t.pointsTxt}`}>{p1Pts}</div>
             </div>
 
             {/* Player 2 */}
-            <div className="relative flex items-center px-4 py-2.5">
+            <div className="relative flex items-center px-4 py-2">
               {score.server === 2 && (
                 <div className={`absolute left-0 top-1 bottom-1 w-1 rounded-full ${t.serveDot === 'text-[#4ade80]' ? 'bg-[#4ade80]' : t.serveDot === 'text-[#fbbf24]' ? 'bg-[#fbbf24]' : t.serveDot === 'text-[#f472b6]' ? 'bg-[#f472b6]' : t.serveDot === 'text-[#cd7f32]' ? 'bg-[#cd7f32]' : t.serveDot === 'text-sky-400' ? 'bg-sky-400' : 'bg-slate-300'}`} />
               )}
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
+                <span className={`text-[13px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
                 {score.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
               </div>
               <div className="flex items-center">
                 {score.completed_sets.map((s, i) => (
-                  <div key={i} className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{s.p2}</div>
+                  <div key={i} className={`w-6 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{s.p2}</div>
                 ))}
-                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{score.p2_games}</div>
+                <div className={`w-6 text-center text-[13px] font-mono font-bold ${t.scoreTxt}`}>{score.p2_games}</div>
               </div>
-              <div className={`w-10 text-center text-lg font-black ${t.pointsTxt}`}>{p2Pts}</div>
+              <div className={`w-10 text-center text-base font-black ${t.pointsTxt}`}>{p2Pts}</div>
             </div>
           </div>
 
