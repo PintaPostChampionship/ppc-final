@@ -99,6 +99,11 @@ export default function LiveScoreboard({
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // Admin panel
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState('broadcast');
+  const [settingFeatured, setSettingFeatured] = useState(false);
+
   // ── Hook de live score ──────────────────────────────────────────────────────
   const {
     state,
@@ -179,9 +184,13 @@ export default function LiveScoreboard({
   }, [matchId]);
 
   // ── Permisos ────────────────────────────────────────────────────────────────
-  // Por ahora solo admin puede iniciar/editar el marcador.
-  // Cuando se abra a más usuarios, reemplazar por isEditor(...) completo.
-  const canEdit = currentProfile?.role === 'admin';
+  const canEdit = (() => {
+    if (!currentProfile) return false;
+    if (currentProfile.role === 'admin') return true;
+    if (match && (currentProfile.id === match.home_player_id || currentProfile.id === match.away_player_id)) return true;
+    if (state?.editor_ids?.includes(currentProfile.id)) return true;
+    return false;
+  })();
 
   // ── Toast helper ────────────────────────────────────────────────────────────
   const showToast = useCallback((msg: string) => {
@@ -215,6 +224,39 @@ export default function LiveScoreboard({
     setShowResetConfirm(false);
     if (!ok) showToast('No se pudo resetear el partido.');
   };
+
+  // ── Cambiar tema ────────────────────────────────────────────────────────────
+  const handleChangeTheme = async (newTheme: string) => {
+    setSelectedTheme(newTheme);
+    await supabase
+      .from('live_score_state')
+      .update({ theme: newTheme })
+      .eq('match_id', matchId);
+  };
+
+  // ── Marcar como featured (prioridad para streaming) ─────────────────────────
+  const handleSetFeatured = async () => {
+    setSettingFeatured(true);
+    // Quitar featured de todos
+    await supabase
+      .from('live_score_state')
+      .update({ is_featured: false })
+      .eq('is_featured', true);
+    // Marcar este como featured
+    await supabase
+      .from('live_score_state')
+      .update({ is_featured: true })
+      .eq('match_id', matchId);
+    setSettingFeatured(false);
+    showToast('✓ Este partido ahora tiene prioridad en el streaming');
+  };
+
+  // Load theme from state when it arrives
+  useEffect(() => {
+    if (state?.theme) {
+      setSelectedTheme(state.theme);
+    }
+  }, [state?.match_id, state?.theme]);
 
   // ── Compartir ───────────────────────────────────────────────────────────────
   const liveUrl = `${window.location.origin}${window.location.pathname}#live/match/${matchId}`;
@@ -380,6 +422,7 @@ export default function LiveScoreboard({
               [
                 { value: 'standard', label: 'Standard', desc: 'Mejor de 3 · Sets de 6 · Con ventaja' },
                 { value: 'nextgen', label: 'NextGen', desc: 'Mejor de 3 · Sets de 4 · Sin ventaja' },
+                { value: 'short', label: 'Short Sets', desc: 'Mejor de 3 · Sets de 4 · Con ventaja' },
                 { value: 'supertiebreak', label: 'Super Tiebreak', desc: 'Mejor de 3 · 3er set = Super TB' },
               ] as { value: MatchFormat; label: string; desc: string }[]
             ).map((f) => (
@@ -497,107 +540,172 @@ export default function LiveScoreboard({
             ↩ Deshacer último punto
           </button>
 
-          {/* Añadir editor */}
-          <div>
-            <button
-              onClick={() => setShowAddEditor((v) => !v)}
-              className="w-full rounded-xl py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 transition-all hover:bg-emerald-100"
-            >
-              {showAddEditor ? '✕ Cancelar' : '+ Añadir editor adicional'}
-            </button>
-
-            {showAddEditor && (
-              <div className="mt-2 space-y-2">
-                <input
-                  type="text"
-                  value={editorSearch}
-                  onChange={(e) => setEditorSearch(e.target.value)}
-                  placeholder="Buscar jugador por nombre..."
-                  className="w-full rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 bg-white border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                />
-                {editorResults.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleAddEditor(p.id)}
-                    disabled={addingEditor || (state.editor_ids ?? []).includes(p.id)}
-                    className="flex w-full items-center gap-3 rounded-xl bg-white border border-gray-200 px-4 py-2.5 text-left text-sm text-gray-900 transition-all hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    <span className="font-medium">{p.name}</span>
-                    {(state.editor_ids ?? []).includes(p.id) && (
-                      <span className="ml-auto text-xs text-emerald-600">✓ Ya es editor</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Reset + Cancelar partido */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Reset */}
-            {!showResetConfirm ? (
+          {/* Panel de Edición (solo admins) */}
+          {currentProfile?.role === 'admin' && (
+            <div className="border border-gray-200 rounded-2xl overflow-hidden">
               <button
-                onClick={() => setShowResetConfirm(true)}
-                className="rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-medium text-amber-700 transition-all hover:bg-amber-100"
+                onClick={() => setShowAdminPanel(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
               >
-                🔄 Reiniciar a 0
+                <span className="text-sm font-semibold text-gray-700">⚙️ Panel de Edición</span>
+                <svg className={`w-4 h-4 text-gray-400 transition-transform ${showAdminPanel ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
-            ) : (
-              <div className="col-span-2 rounded-xl bg-amber-50 p-4 border border-amber-200">
-                <p className="mb-3 text-center text-sm font-medium text-amber-800">
-                  ¿Reiniciar el marcador a 0-0? El partido sigue en vivo pero se borra todo el score actual.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setShowResetConfirm(false)}
-                    className="rounded-xl bg-gray-100 border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200"
-                  >
-                    No, continuar
-                  </button>
-                  <button
-                    onClick={handleResetMatch}
-                    disabled={resetting}
-                    className="rounded-xl bg-amber-600 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
-                  >
-                    {resetting ? 'Reiniciando...' : 'Sí, reiniciar'}
-                  </button>
-                </div>
-              </div>
-            )}
 
-            {/* Cancelar */}
-            {!showResetConfirm && (
-              !showCancelConfirm ? (
-                <button
-                  onClick={() => setShowCancelConfirm(true)}
-                  className="rounded-xl border border-red-300 bg-red-50 py-2.5 text-sm font-medium text-red-700 transition-all hover:bg-red-100"
-                >
-                  ✕ Cancelar partido
-                </button>
-              ) : (
-                <div className="col-span-2 rounded-xl bg-red-50 p-4 border border-red-200">
-                  <p className="mb-3 text-center text-sm font-medium text-red-800">
-                    ¿Cancelar el partido? El marcador se borra y el partido vuelve a estado pendiente.
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
+              {showAdminPanel && (
+                <div className="px-4 py-4 space-y-4 bg-white">
+                  {/* Tema / Color del overlay */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Color del Overlay</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'broadcast', label: 'Broadcast', bg: 'bg-[#0f172a]', accent: 'bg-sky-400', txt: 'text-white' },
+                        { id: 'forest', label: 'Forest', bg: 'bg-[#0d2818]', accent: 'bg-[#4ade80]', txt: 'text-white' },
+                        { id: 'oro', label: 'Oro', bg: 'bg-[#1a1005]', accent: 'bg-[#fbbf24]', txt: 'text-white' },
+                        { id: 'plata', label: 'Plata', bg: 'bg-[#111318]', accent: 'bg-slate-300', txt: 'text-white' },
+                        { id: 'bronce', label: 'Bronce', bg: 'bg-[#1a0f08]', accent: 'bg-[#cd7f32]', txt: 'text-white' },
+                        { id: 'wppc', label: 'WPPC', bg: 'bg-[#1f0a1e]', accent: 'bg-[#f472b6]', txt: 'text-white' },
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => handleChangeTheme(t.id)}
+                          className={`rounded-xl overflow-hidden border-2 transition-all ${
+                            selectedTheme === t.id
+                              ? 'border-emerald-500 ring-2 ring-emerald-200 scale-[1.02]'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          {/* Mini scoreboard preview */}
+                          <div className={`${t.bg} px-2.5 py-2`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <div className={`h-1.5 w-8 rounded-full ${t.accent} opacity-80`} />
+                              <div className="h-1.5 w-5 rounded-full bg-white/20" />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <div className={`h-1 w-1 rounded-full ${t.accent}`} />
+                                <div className="h-1.5 w-12 rounded-sm bg-white/70" />
+                                <div className="ml-auto h-1.5 w-3 rounded-sm bg-white/50" />
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-1 w-1 rounded-full bg-white/20" />
+                                <div className="h-1.5 w-10 rounded-sm bg-white/50" />
+                                <div className="ml-auto h-1.5 w-3 rounded-sm bg-white/30" />
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`px-2.5 py-1.5 text-center text-[11px] font-semibold ${
+                            selectedTheme === t.id ? 'text-emerald-700 bg-emerald-50' : 'text-gray-700 bg-gray-50'
+                          }`}>
+                            {t.label}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Prioridad Streaming */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Prioridad Streaming</p>
                     <button
-                      onClick={() => setShowCancelConfirm(false)}
-                      className="rounded-xl bg-gray-100 border border-gray-200 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+                      onClick={handleSetFeatured}
+                      disabled={settingFeatured || state?.is_featured === true}
+                      className={`w-full rounded-xl py-2.5 text-sm font-medium transition-all ${
+                        state?.is_featured
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      } disabled:opacity-60`}
                     >
-                      No, continuar
+                      {state?.is_featured ? '⭐ Este partido tiene prioridad' : '📺 Dar prioridad a este partido'}
                     </button>
+                    <p className="text-[10px] text-gray-400 mt-1">El overlay del streaming muestra el partido con prioridad.</p>
+                  </div>
+
+                  {/* Añadir editor */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Editores</p>
                     <button
-                      onClick={handleCancelMatch}
-                      disabled={cancelling}
-                      className="rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                      onClick={() => setShowAddEditor((v) => !v)}
+                      className="w-full rounded-xl py-2.5 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 transition-all hover:bg-emerald-100"
                     >
-                      {cancelling ? 'Cancelando...' : 'Sí, cancelar'}
+                      {showAddEditor ? '✕ Cerrar' : '+ Añadir editor adicional'}
                     </button>
+
+                    {showAddEditor && (
+                      <div className="mt-2 space-y-2">
+                        <input
+                          type="text"
+                          value={editorSearch}
+                          onChange={(e) => setEditorSearch(e.target.value)}
+                          placeholder="Buscar jugador por nombre..."
+                          className="w-full rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 bg-white border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        {editorResults.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => handleAddEditor(p.id)}
+                            disabled={addingEditor || (state.editor_ids ?? []).includes(p.id)}
+                            className="flex w-full items-center gap-3 rounded-xl bg-white border border-gray-200 px-4 py-2.5 text-left text-sm text-gray-900 transition-all hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            <span className="font-medium">{p.name}</span>
+                            {(state.editor_ids ?? []).includes(p.id) && (
+                              <span className="ml-auto text-xs text-emerald-600">✓ Editor</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reset + Cancelar */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Acciones</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {!showResetConfirm && !showCancelConfirm && (
+                        <>
+                          <button
+                            onClick={() => setShowResetConfirm(true)}
+                            className="rounded-xl border border-amber-300 bg-amber-50 py-2.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                          >
+                            🔄 Reiniciar
+                          </button>
+                          <button
+                            onClick={() => setShowCancelConfirm(true)}
+                            className="rounded-xl border border-red-300 bg-red-50 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100"
+                          >
+                            ✕ Cancelar
+                          </button>
+                        </>
+                      )}
+                      {showResetConfirm && (
+                        <div className="col-span-2 rounded-xl bg-amber-50 p-3 border border-amber-200">
+                          <p className="mb-2 text-center text-sm font-medium text-amber-800">¿Reiniciar marcador a 0-0?</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => setShowResetConfirm(false)} className="rounded-lg bg-gray-100 py-2 text-sm font-medium text-gray-700">No</button>
+                            <button onClick={handleResetMatch} disabled={resetting} className="rounded-lg bg-amber-600 py-2 text-sm font-medium text-white disabled:opacity-50">
+                              {resetting ? '...' : 'Sí'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {showCancelConfirm && (
+                        <div className="col-span-2 rounded-xl bg-red-50 p-3 border border-red-200">
+                          <p className="mb-2 text-center text-sm font-medium text-red-800">¿Cancelar partido? Vuelve a pendiente.</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button onClick={() => setShowCancelConfirm(false)} className="rounded-lg bg-gray-100 py-2 text-sm font-medium text-gray-700">No</button>
+                            <button onClick={handleCancelMatch} disabled={cancelling} className="rounded-lg bg-red-600 py-2 text-sm font-medium text-white disabled:opacity-50">
+                              {cancelling ? '...' : 'Sí'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              )
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

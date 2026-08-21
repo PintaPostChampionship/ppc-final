@@ -3,7 +3,7 @@
 // Sin efectos secundarios ni dependencias de React.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type MatchFormat = 'standard' | 'nextgen' | 'supertiebreak';
+export type MatchFormat = 'standard' | 'nextgen' | 'supertiebreak' | 'short';
 
 export interface CompletedSet {
   p1: number;
@@ -45,6 +45,10 @@ export interface LiveScoreState {
   editor_ids: string[];
   // Estado del partido
   status: 'live' | 'finished';
+  // Tema del overlay
+  theme?: string;
+  // Prioridad para streaming
+  is_featured?: boolean;
   // Timestamps
   created_at: string;
   updated_at: string;
@@ -182,7 +186,7 @@ function setsToWin(bestOf: number): number {
 }
 
 function gamesPerSet(format: MatchFormat): number {
-  return format === 'nextgen' ? 4 : 6;
+  return (format === 'nextgen' || format === 'short') ? 4 : 6;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

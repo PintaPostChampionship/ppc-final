@@ -335,6 +335,7 @@ export function useLiveScore(
         ...initialState(matchId, format, firstServer),
         previous_match_status: previousMatchStatus,
         is_featured: true,
+        theme: 'broadcast',
       };
 
       const { data: inserted, error: insertErr } = await supabase

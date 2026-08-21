@@ -30,6 +30,7 @@ import { NavPlayerSearch } from './components/NavPlayerSearch';
 import { NavTournamentsSection } from './components/NavTournamentsSection';
 import { PhotoCarousel3D } from './components/PhotoCarousel3D';
 import { GoatRegistration } from './components/GoatRegistration';
+import { StreamingGuide } from './components/StreamingGuide';
 import FinalsPreview from './components/FinalsPreview';
 import LiveOverlay from './components/LiveScoreboard/LiveOverlay';
 import { buildMatchScheduledPayload, buildResultLoadedPayload, determineRecipient } from './lib/notificationUtils';
@@ -115,6 +116,7 @@ const App = () => {
   const [showMonitorTips, setShowMonitorTips] = useState(false);
   const [showMarcador, setShowMarcador] = useState(false);
   const [marcadorTab, setMarcadorTab] = useState("live");
+  const [showStreamingGuide, setShowStreamingGuide] = useState(false);
   const [showMatchForms, setShowMatchForms] = useState(false);
   const [matchFormsTab, setMatchFormsTab] = useState<'schedule' | 'result'>('schedule');
   const [showTwitch, setShowTwitch] = useState(true);
@@ -3124,6 +3126,7 @@ const App = () => {
       setShowMonitor(false);
       setShowMonitorTips(false);
       setShowMarcador(false);
+      setShowStreamingGuide(false);
       setShowMatchForms(false);
       setCameFromHistoric(false);
       setShowNavMenu(false);
@@ -3310,6 +3313,12 @@ const App = () => {
               () => { resetNav(); setShowMarcador(true); },
               '',
               true
+            )}
+
+            {canSeeDashboard && menuItem(
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>,
+              'Guía Streaming',
+              () => { resetNav(); setShowStreamingGuide(true); }
             )}
 
             {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
@@ -7125,6 +7134,10 @@ const App = () => {
         <CourtFinder onBack={() => setShowCourtFinder(false)} currentUserId={currentUser?.id ?? null} isAdmin={currentUser?.role === 'admin'} profiles={profiles} />
       </div>
     );
+  }
+
+  if (showStreamingGuide && currentUser?.role === 'admin') {
+    return <StreamingGuide onBack={() => setShowStreamingGuide(false)} />;
   }
 
   if (showMarcador && currentUser) {

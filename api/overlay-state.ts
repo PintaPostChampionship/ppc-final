@@ -102,6 +102,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Use theme from DB if set, otherwise auto-detect from division
+  const dbTheme = (liveState as any).theme;
+  if (dbTheme && dbTheme !== 'auto') {
+    theme = dbTheme;
+  }
+
   return res.status(200).json({
     live: true,
     match_id: matchId,
