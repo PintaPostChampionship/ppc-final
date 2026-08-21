@@ -58,10 +58,7 @@ const THEMES: Theme[] = [
     roundBadgeBg: 'bg-[#4ade80]/10 border border-[#4ade80]/30',
     roundBadgeTxt: 'text-[#4ade80]',
     sponsorSlot: (
-      <div className="flex items-center gap-1.5 opacity-70">
-        <span className="text-[9px] text-white/40 uppercase tracking-wider">Powered by</span>
-        <span className="text-[10px] font-bold text-[#4ade80]">🚲 Forest</span>
-      </div>
+      <span className="text-[10px] text-[#4ade80]/80 uppercase tracking-wider font-semibold">PPC Edición 5</span>
     ),
   },
   {
@@ -144,6 +141,9 @@ const THEMES: Theme[] = [
     divider: 'border-[#e040a0]/20',
     roundBadgeBg: 'bg-[#f472b6]/10 border border-[#f472b6]/30',
     roundBadgeTxt: 'text-[#f472b6]',
+    sponsorSlot: (
+      <span className="text-[10px] text-[#f472b6]/80 uppercase tracking-wider font-semibold">WPPC Edición 2</span>
+    ),
   },
 ];
 
@@ -191,7 +191,7 @@ function ScoreRow({
       <div className={`flex-1 flex items-center gap-1.5 pl-3 py-3 ${theme.nameTxt}`}>
         {serveIndicator()}
         <span className="text-sm font-semibold">{firstName}</span>
-        {lastName && <span className="text-sm font-normal opacity-60">{lastName.charAt(0)}.</span>}
+        {lastName && <span className="text-sm font-semibold">{lastName}</span>}
       </div>
 
       {/* Set scores */}
@@ -225,13 +225,13 @@ function ScoreboardCard({ theme, match, large, serveStyle = 'ball' }: {
 
   return (
     <div className={`rounded-2xl p-4 ${theme.bg} ${theme.glowEffect || ''} ${large ? 'p-6' : ''}`}>
-      {/* Top bar: round badge + sponsor/tournament */}
+      {/* Top bar: round badge + tournament */}
       <div className="flex items-center justify-between mb-3">
         <div className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-[0.15em] ${theme.roundBadgeBg} ${theme.roundBadgeTxt}`}>
           🏆 {match.round}
         </div>
         {theme.sponsorSlot || (
-          <span className={`text-[10px] ${theme.headerTxt} uppercase tracking-wider`}>
+          <span className={`text-[10px] ${theme.headerTxt} uppercase tracking-wider font-semibold`}>
             {match.tournament}
           </span>
         )}
@@ -275,10 +275,9 @@ function ScoreboardCard({ theme, match, large, serveStyle = 'ball' }: {
         />
       </div>
 
-      {/* Live indicator */}
-      <div className="mt-3 flex items-center justify-center gap-2">
-        <span className="animate-pulse text-red-500 text-xs">●</span>
-        <span className="text-[10px] uppercase tracking-[0.15em] font-bold text-red-400">En Vivo</span>
+      {/* Web URL bottom right */}
+      <div className="mt-2 text-right">
+        <span className={`text-[9px] ${theme.headerTxt} opacity-50`}>ppctennis.vercel.app</span>
       </div>
     </div>
   );
@@ -332,7 +331,7 @@ export default function FinalsPreview({ onBack }: { onBack: () => void }) {
         <div className="mt-10">
           <h2 className="text-center text-lg font-bold text-gray-900 mb-2">Indicador de servicio — opciones</h2>
           <p className="text-center text-xs text-gray-500 mb-4">Mismo tema (Forest), 3 estilos de indicador de saque</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {(['ball', 'ppc-logo', 'forest-logo'] as ServeStyle[]).map(style => (
               <div key={style} className="text-center">
                 <div className="rounded-2xl overflow-hidden shadow-lg">

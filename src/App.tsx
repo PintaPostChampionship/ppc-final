@@ -7660,7 +7660,7 @@ const App = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             {visibleTournaments.map(tournament => {
               // Get tournament registrations
-              const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id);
+              const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id && r.status !== 'retired');
               
               // Get tournament matches
               const tournamentMatches = matches.filter(m => m.tournament_id === tournament.id);
