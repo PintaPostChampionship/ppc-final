@@ -102,6 +102,8 @@ export default function LiveScoreboard({
   // Admin panel
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState('broadcast');
+  const [selectedServeIndicator, setSelectedServeIndicator] = useState('ball');
+  const [selectedLogo, setSelectedLogo] = useState('ppc');
   const [settingFeatured, setSettingFeatured] = useState(false);
 
   // ── Hook de live score ──────────────────────────────────────────────────────
@@ -234,6 +236,24 @@ export default function LiveScoreboard({
       .eq('match_id', matchId);
   };
 
+  // ── Cambiar indicador de servicio ───────────────────────────────────────────
+  const handleChangeServeIndicator = async (indicator: string) => {
+    setSelectedServeIndicator(indicator);
+    await supabase
+      .from('live_score_state')
+      .update({ serve_indicator: indicator })
+      .eq('match_id', matchId);
+  };
+
+  // ── Cambiar logo del overlay ────────────────────────────────────────────────
+  const handleChangeLogo = async (logo: string) => {
+    setSelectedLogo(logo);
+    await supabase
+      .from('live_score_state')
+      .update({ overlay_logo: logo })
+      .eq('match_id', matchId);
+  };
+
   // ── Marcar como featured (prioridad para streaming) ─────────────────────────
   const handleSetFeatured = async () => {
     setSettingFeatured(true);
@@ -251,12 +271,12 @@ export default function LiveScoreboard({
     showToast('✓ Este partido ahora tiene prioridad en el streaming');
   };
 
-  // Load theme from state when it arrives
+  // Load settings from state when it arrives
   useEffect(() => {
-    if (state?.theme) {
-      setSelectedTheme(state.theme);
-    }
-  }, [state?.match_id, state?.theme]);
+    if (state?.theme) setSelectedTheme(state.theme);
+    if (state?.serve_indicator) setSelectedServeIndicator(state.serve_indicator);
+    if (state?.overlay_logo) setSelectedLogo(state.overlay_logo);
+  }, [state?.match_id, state?.theme, state?.serve_indicator, state?.overlay_logo]);
 
   // ── Compartir ───────────────────────────────────────────────────────────────
   const liveUrl = `${window.location.origin}${window.location.pathname}#live/match/${matchId}`;
@@ -606,6 +626,56 @@ export default function LiveScoreboard({
                   </div>
 
                   {/* Prioridad Streaming */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Indicador de Saque</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'ball', label: '🎾 Pelota', preview: '🎾' },
+                        { id: 'ppc-logo', label: 'Logo PPC', preview: '🏆' },
+                        { id: 'forest-logo', label: 'Logo Forest', preview: '🌲' },
+                      ].map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleChangeServeIndicator(opt.id)}
+                          className={`rounded-lg px-3 py-2.5 text-xs font-medium border transition-all ${
+                            selectedServeIndicator === opt.id
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="text-base block mb-0.5">{opt.preview}</span>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Logo del overlay */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Logo (esquina izq.)</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'ppc', label: 'PPC', src: '/ppc-logo.png' },
+                        { id: 'forest', label: 'Forest', src: '/forest-logo.png' },
+                        { id: 'ppc-forest', label: 'PPC + Forest', src: '/ppc-forest-logo.png' },
+                      ].map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleChangeLogo(opt.id)}
+                          className={`rounded-lg px-2 py-2 text-xs font-medium border transition-all flex flex-col items-center gap-1.5 ${
+                            selectedLogo === opt.id
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          <img src={opt.src} alt={opt.label} className="h-8 w-auto object-contain opacity-80" />
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Prioridad Streaming (original) */}
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Prioridad Streaming</p>
                     <button

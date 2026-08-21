@@ -108,6 +108,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     theme = dbTheme;
   }
 
+  const serveIndicator = (liveState as any).serve_indicator || 'ball';
+  const overlayLogo = (liveState as any).overlay_logo || 'ppc';
+
   return res.status(200).json({
     live: true,
     match_id: matchId,
@@ -116,6 +119,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     round: roundLabel,
     division: divisionName,
     theme,
+    serve_indicator: serveIndicator,
+    overlay_logo: overlayLogo,
     state: {
       p1_sets: (liveState as any).p1_sets,
       p2_sets: (liveState as any).p2_sets,

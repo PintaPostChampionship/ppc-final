@@ -112,6 +112,8 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
   const [roundLabel, setRoundLabel] = useState('');
   const [divisionLabel, setDivisionLabel] = useState('');
   const [autoTheme, setAutoTheme] = useState<string>('forest');
+  const [serveIndicator, setServeIndicator] = useState<string>('ball');
+  const [overlayLogo, setOverlayLogo] = useState<string>('ppc');
   const [score, setScore] = useState({
     p1_sets: 0, p2_sets: 0,
     p1_games: 0, p2_games: 0,
@@ -150,6 +152,8 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
         setRoundLabel(data.round || '');
         setDivisionLabel(data.division || '');
         if (themeName === 'auto') setAutoTheme(data.theme || 'forest');
+        setServeIndicator(data.serve_indicator || 'ball');
+        setOverlayLogo(data.overlay_logo || 'ppc');
         setScore(data.state);
       } catch { /* ignore */ }
     }
@@ -228,8 +232,15 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
     <div className="fixed inset-0 pointer-events-none font-sans">
       {/* Bottom bar: logo far left, scoreboard right */}
       <div className="absolute bottom-4 left-6 right-4 flex items-center justify-between">
-        {/* Logo PPC — left */}
-        <img src="/ppc-logo.png" alt="PPC" className="w-16 h-16 object-contain drop-shadow-lg" />
+        {/* Logo — left */}
+        <div className="flex items-center gap-2">
+          {(overlayLogo === 'ppc' || overlayLogo === 'ppc-forest') && (
+            <img src="/ppc-logo.png" alt="PPC" className="w-14 h-14 object-contain drop-shadow-lg opacity-90" />
+          )}
+          {(overlayLogo === 'forest' || overlayLogo === 'ppc-forest') && (
+            <img src="/forest-logo.png" alt="Forest" className="w-14 h-14 object-contain drop-shadow-lg opacity-90" />
+          )}
+        </div>
 
         {/* Score card — right */}
         <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}
@@ -265,7 +276,11 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
               )}
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className={`text-[13px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
-                {score.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
+                {score.server === 1 && (
+                  serveIndicator === 'ppc-logo' ? <img src="/ppc-logo.png" alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+                  : serveIndicator === 'forest-logo' ? <img src="/forest-logo.png" alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+                  : <span className="text-xs flex-shrink-0">🎾</span>
+                )}
               </div>
               <div className="flex items-center">
                 {score.completed_sets.map((s, i) => (
@@ -283,7 +298,11 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
               )}
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className={`text-[13px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
-                {score.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
+                {score.server === 2 && (
+                  serveIndicator === 'ppc-logo' ? <img src="/ppc-logo.png" alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+                  : serveIndicator === 'forest-logo' ? <img src="/forest-logo.png" alt="" className="w-4 h-4 object-contain flex-shrink-0" />
+                  : <span className="text-xs flex-shrink-0">🎾</span>
+                )}
               </div>
               <div className="flex items-center">
                 {score.completed_sets.map((s, i) => (

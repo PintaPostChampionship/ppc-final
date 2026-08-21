@@ -7643,7 +7643,6 @@ const App = () => {
               const isUserRegisteredAV = currentUser
                 ? avTournamentProfileIds.includes(currentUser.id)
                 : false;
-              if (isUserRegisteredAV) return null;
               return (
                 <div className="mb-6 mx-auto max-w-2xl">
                   <div
@@ -7657,12 +7656,16 @@ const App = () => {
                           Copa Andrea Vivaldi — Golden Point Slam
                         </div>
                         <div className="text-xs text-gray-600 mt-0.5">
-                          {avRemaining > 0
-                            ? `Solo quedan ${avRemaining} cupos · Sábado 22 de agosto`
-                            : 'Cupos agotados — lista de espera disponible'}
+                          {isUserRegisteredAV
+                            ? `✅ Inscrito · ${avTournamentCount} participantes · Sábado 22 de agosto`
+                            : avRemaining > 0
+                              ? `Solo quedan ${avRemaining} cupos · Sábado 22 de agosto`
+                              : 'Cupos agotados — lista de espera disponible'}
                         </div>
                       </div>
-                      <span className="text-emerald-600 text-xs font-semibold whitespace-nowrap">Inscríbete →</span>
+                      <span className="text-emerald-600 text-xs font-semibold whitespace-nowrap">
+                        {isUserRegisteredAV ? 'Ver inscritos →' : 'Inscríbete →'}
+                      </span>
                     </div>
                   </div>
                 </div>

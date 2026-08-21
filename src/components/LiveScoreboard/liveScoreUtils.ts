@@ -47,6 +47,10 @@ export interface LiveScoreState {
   status: 'live' | 'finished';
   // Tema del overlay
   theme?: string;
+  // Indicador de servicio
+  serve_indicator?: string;
+  // Logo del overlay
+  overlay_logo?: string;
   // Prioridad para streaming
   is_featured?: boolean;
   // Timestamps
