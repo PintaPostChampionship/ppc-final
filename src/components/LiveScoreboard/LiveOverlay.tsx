@@ -4,8 +4,7 @@
 // URL: /#overlay/match/:id?theme=forest
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import React, { useState, useEffect } from 'react';
 import type { LiveScoreState } from './liveScoreUtils';
 
 interface OverlayProps {
@@ -106,162 +105,69 @@ function fmtPoints(pts: number, inTB: boolean, inSTB: boolean): string {
 
 // ── Main Component ───────────────────────────────────────────────────────────
 
-export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = 'auto' }: OverlayProps) {
-  const [state, setState] = useState<LiveScoreState | null>(null);
+export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 'auto' }: OverlayProps) {
+  const [isLive, setIsLive] = useState(false);
   const [p1Name, setP1Name] = useState('Jugador 1');
   const [p2Name, setP2Name] = useState('Jugador 2');
   const [roundLabel, setRoundLabel] = useState('');
   const [divisionLabel, setDivisionLabel] = useState('');
-  const [resolvedMatchId, setResolvedMatchId] = useState<string | null>(null);
   const [autoTheme, setAutoTheme] = useState<string>('forest');
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [score, setScore] = useState({
+    p1_sets: 0, p2_sets: 0,
+    p1_games: 0, p2_games: 0,
+    p1_points: 0, p2_points: 0,
+    server: 1 as 1 | 2,
+    in_tiebreak: false,
+    in_super_tiebreak: false,
+    completed_sets: [] as Array<{ p1: number; p2: number }>,
+  });
 
   // Use explicit theme or auto-detected one
   const effectiveTheme = themeName === 'auto' ? autoTheme : themeName;
   const t = THEMES[effectiveTheme] || THEMES.forest;
 
-  // ── Resolve match ID (for 'latest' mode) ───────────────────────────────────
+  // ── Poll API for state (uses service role, no auth needed) ─────────────────
 
   useEffect(() => {
-    async function resolve() {
-      if (matchIdProp !== 'latest') {
-        setResolvedMatchId(matchIdProp);
-        return;
-      }
+    let cancelled = false;
 
-      // Find featured match first
-      const { data: featured } = await supabase
-        .from('live_score_state')
-        .select('match_id')
-        .eq('is_featured', true)
-        .eq('status', 'live')
-        .maybeSingle();
+    async function poll() {
+      try {
+        const resp = await fetch('/api/overlay-state');
+        if (!resp.ok) return;
+        const data = await resp.json();
 
-      if (featured) {
-        setResolvedMatchId((featured as any).match_id);
-        return;
-      }
+        if (cancelled) return;
 
-      // Fallback: most recently created live match
-      const { data: latest } = await supabase
-        .from('live_score_state')
-        .select('match_id')
-        .eq('status', 'live')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        if (!data.live) {
+          setIsLive(false);
+          return;
+        }
 
-      if (latest) {
-        setResolvedMatchId((latest as any).match_id);
-      } else {
-        setResolvedMatchId(null);
-      }
+        setIsLive(true);
+        setP1Name(data.p1_name || 'Jugador 1');
+        setP2Name(data.p2_name || 'Jugador 2');
+        setRoundLabel(data.round || '');
+        setDivisionLabel(data.division || '');
+        if (themeName === 'auto') setAutoTheme(data.theme || 'forest');
+        setScore(data.state);
+      } catch { /* ignore */ }
     }
 
-    resolve();
+    poll();
+    const interval = setInterval(poll, 2000); // Poll every 2s for responsive updates
 
-    // Re-resolve every 5s in case featured changes or new match starts
-    const interval = setInterval(resolve, 5000);
-    return () => clearInterval(interval);
-  }, [matchIdProp]);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [themeName]);
 
-  // ── Load match data + live state ───────────────────────────────────────────
+  // ── Not live — show default placeholder ────────────────────────────────────
 
-  useEffect(() => {
-    if (!resolvedMatchId) return;
-
-    async function load() {
-      // Load live state
-      const { data: liveState } = await supabase
-        .from('live_score_state')
-        .select('*')
-        .eq('match_id', resolvedMatchId)
-        .maybeSingle();
-      if (liveState) setState(liveState as LiveScoreState);
-
-      // Load match + player names
-      const { data: match } = await supabase
-        .from('matches')
-        .select('home_player_id, away_player_id, knockout_round, division_id')
-        .eq('id', resolvedMatchId)
-        .maybeSingle();
-
-      if (match) {
-        // Round label
-        const roundMap: Record<string, string> = {
-          'F': 'Final', 'SF': 'Semifinal', 'QF': 'Cuartos', 'R16': 'Ronda 16',
-        };
-        if ((match as any).knockout_round) {
-          setRoundLabel(roundMap[(match as any).knockout_round] || '');
-        }
-
-        // Auto-detect theme from division name
-        if (themeName === 'auto' && (match as any).division_id) {
-          const { data: div } = await supabase
-            .from('divisions')
-            .select('name')
-            .eq('id', (match as any).division_id)
-            .maybeSingle();
-          if (div) {
-            const divName = ((div as any).name || '').toLowerCase();
-            setDivisionLabel((div as any).name || '');
-            if (divName.includes('oro') || divName.includes('gold')) setAutoTheme('oro');
-            else if (divName.includes('plata') || divName.includes('silver')) setAutoTheme('plata');
-            else if (divName.includes('bronce') || divName.includes('bronze') || divName.includes('cobre')) setAutoTheme('bronce');
-            else if (divName.includes('wppc') || divName.includes('mujer') || divName.includes('women')) setAutoTheme('wppc');
-            else setAutoTheme('forest');
-          }
-        }
-
-        // Player names (full name for professional look)
-        if ((match as any).home_player_id) {
-          const { data: p1, error: p1Err } = await supabase
-            .from('profiles').select('name, nickname')
-            .eq('id', (match as any).home_player_id).maybeSingle();
-          if (p1) setP1Name((p1 as any).name || (p1 as any).nickname || 'P1');
-          if (p1Err) console.error('[overlay] p1 name error:', p1Err.message);
-        }
-        if ((match as any).away_player_id) {
-          const { data: p2, error: p2Err } = await supabase
-            .from('profiles').select('name, nickname')
-            .eq('id', (match as any).away_player_id).maybeSingle();
-          if (p2) setP2Name((p2 as any).name || (p2 as any).nickname || 'P2');
-          if (p2Err) console.error('[overlay] p2 name error:', p2Err.message);
-        }
-      }
-    }
-
-    load();
-
-    // Subscribe to realtime updates
-    const channel = supabase
-      .channel(`overlay-${resolvedMatchId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'live_score_state',
-        filter: `match_id=eq.${resolvedMatchId}`,
-      }, (payload) => {
-        setState(payload.new as LiveScoreState);
-      })
-      .subscribe();
-
-    channelRef.current = channel;
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [resolvedMatchId, themeName]);
-
-  // ── Not live yet — show default placeholder ─────────────────────────────────
-
-  if (!resolvedMatchId || !state || state.status === 'finished') {
+  if (!isLive) {
     const dt = THEMES.broadcast;
     return (
       <div className="fixed inset-0 pointer-events-none font-sans">
         <div className="absolute bottom-4 left-12 right-4 flex items-center justify-between">
-          <img src="/PPC Logo sin fondo - original.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+          <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
           <div className={`rounded-xl ${dt.cardBg} border ${dt.border} backdrop-blur-md overflow-hidden shadow-2xl`}
             style={{ minWidth: '360px', maxWidth: '450px' }}>
             <div className="divide-y divide-white/5">
@@ -292,17 +198,17 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render live ──────────────────────────────────────────────────────────────
 
-  const p1Pts = fmtPoints(state.p1_points, state.in_tiebreak, state.in_super_tiebreak);
-  const p2Pts = fmtPoints(state.p2_points, state.in_tiebreak, state.in_super_tiebreak);
+  const p1Pts = fmtPoints(score.p1_points, score.in_tiebreak, score.in_super_tiebreak);
+  const p2Pts = fmtPoints(score.p2_points, score.in_tiebreak, score.in_super_tiebreak);
 
   return (
     <div className="fixed inset-0 pointer-events-none font-sans">
-      {/* Bottom bar: logo left, scoreboard right, vertically centered */}
-      <div className="absolute bottom-4 left-12 right-4 flex items-center justify-between">
-        {/* Logo PPC — left, with more margin from edge */}
-        <img src="/PPC Logo sin fondo - original.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+      {/* Bottom bar: logo far left, scoreboard right */}
+      <div className="absolute bottom-4 left-6 right-4 flex items-center justify-between">
+        {/* Logo PPC — left */}
+        <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
 
         {/* Score card — right */}
         <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}
@@ -311,15 +217,15 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
             {/* Player 1 */}
             <div className="flex items-center px-4 py-2.5">
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                {state.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
-                {state.server !== 1 && <div className="w-4" />}
+                {score.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
+                {score.server !== 1 && <div className="w-4" />}
                 <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
               </div>
               <div className="flex items-center">
-                {state.completed_sets.map((s, i) => (
+                {score.completed_sets.map((s, i) => (
                   <div key={i} className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{s.p1}</div>
                 ))}
-                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{state.p1_games}</div>
+                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{score.p1_games}</div>
               </div>
               <div className={`w-10 text-center text-lg font-black ${t.pointsTxt}`}>{p1Pts}</div>
             </div>
@@ -327,15 +233,15 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
             {/* Player 2 */}
             <div className="flex items-center px-4 py-2.5">
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                {state.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
-                {state.server !== 2 && <div className="w-4" />}
+                {score.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
+                {score.server !== 2 && <div className="w-4" />}
                 <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
               </div>
               <div className="flex items-center">
-                {state.completed_sets.map((s, i) => (
+                {score.completed_sets.map((s, i) => (
                   <div key={i} className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{s.p2}</div>
                 ))}
-                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{state.p2_games}</div>
+                <div className={`w-6 text-center text-[15px] font-mono font-bold ${t.scoreTxt}`}>{score.p2_games}</div>
               </div>
               <div className={`w-10 text-center text-lg font-black ${t.pointsTxt}`}>{p2Pts}</div>
             </div>
