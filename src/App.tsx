@@ -5151,7 +5151,7 @@ const App = () => {
 
   const visibleTournaments = [...tournaments]
     // 🔹 mostrar solo torneos vivos (por ahora: activos o próximos)
-    .filter(t => (t.status === 'active' || t.status === 'upcoming') && !HIDDEN_TOURNAMENT_IDS.includes(t.id))
+    .filter(t => (t.status === 'active' || t.status === 'upcoming') && (!HIDDEN_TOURNAMENT_IDS.includes(t.id) || currentUser?.role === 'admin'))
     .sort((a, b) => {
       // 0 arriba, 999 abajo (Calibraciones queda último)
       const soA = a.sort_order ?? 0;
@@ -7638,7 +7638,7 @@ const App = () => {
                     onClick={() => { window.location.hash = '#registro-1-punto'; window.location.reload(); }}
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl">🏆</span>
+                      <img src="/Andrea-Vivaldi/foto-1.jpeg" alt="Andrea Vivaldi" className="w-10 h-10 rounded-full object-cover ring-1 ring-yellow-200 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-gray-900 text-sm">
                           Copa Andrea Vivaldi — Golden Point Slam
@@ -7683,13 +7683,11 @@ const App = () => {
                   <div className="p-6">
                     <div className="flex items-center gap-3 mb-4">
                       {/* Contenedor cuadrado: asegura tamaño idéntico en todos los logos */}
-                      <div className="shrink-0 flex items-center justify-center
-                                      h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16
-                                      rounded">
+                      <div className={`shrink-0 flex items-center justify-center h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16 ${/Andrea Vivaldi/i.test(tournament.name) ? 'rounded-full overflow-hidden ring-2 ring-yellow-200' : 'rounded'}`}>
                         <img
                           src={tournamentLogoSrc(tournament.name)}
                           alt={`${tournament.name} logo`}
-                          className="max-h-full max-w-full object-contain"
+                          className={/Andrea Vivaldi/i.test(tournament.name) ? "w-full h-full object-cover" : "max-h-full max-w-full object-contain"}
                         />
                       </div>
 
@@ -7878,6 +7876,7 @@ const App = () => {
           profiles={profiles}
           historicPlayers={historicPlayers}
           matchSets={matchSets}
+          currentUser={currentUser}
           onBack={() => {
             setSelectedTournament(null);
             setSelectedDivision(null);
@@ -9065,7 +9064,8 @@ const App = () => {
         matches={tournamentMatches}
         profiles={profiles}
         historicPlayers={historicPlayers}
-        matchSets={matchSets}         
+        matchSets={matchSets}
+        currentUser={currentUser}
         onBack={() => {
           setSelectedTournament(null);
           setSelectedDivision(null);

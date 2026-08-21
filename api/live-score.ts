@@ -411,11 +411,12 @@ async function handleInit(
     .eq('id', matchId);
 
   // ── Notify all subscribed users that a match is live ──
-  if (!silent) {
-    notifyMatchLive(supabase, matchId).catch(err =>
-      console.error('[live-score] Push notification error:', err?.message || err)
-    );
-  }
+  // TEMPORARILY DISABLED FOR TESTING
+  // if (!silent) {
+  //   notifyMatchLive(supabase, matchId).catch(err =>
+  //     console.error('[live-score] Push notification error:', err?.message || err)
+  //   );
+  // }
 
   return res.status(201).json({ ok: true });
 }

@@ -254,10 +254,42 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
     };
   }, [resolvedMatchId, themeName]);
 
-  // ── Not live yet ───────────────────────────────────────────────────────────
+  // ── Not live yet — show default placeholder ─────────────────────────────────
 
   if (!resolvedMatchId || !state || state.status === 'finished') {
-    return <div className="w-full h-full" />;
+    const dt = THEMES.broadcast;
+    return (
+      <div className="fixed inset-0 pointer-events-none font-sans">
+        <div className="absolute bottom-4 left-12 right-4 flex items-center justify-between">
+          <img src="/PPC Logo sin fondo - original.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+          <div className={`rounded-xl ${dt.cardBg} border ${dt.border} backdrop-blur-md overflow-hidden shadow-2xl`}
+            style={{ minWidth: '360px', maxWidth: '450px' }}>
+            <div className="divide-y divide-white/5">
+              <div className="flex items-center px-4 py-2.5">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="w-4" />
+                  <span className={`text-[15px] font-semibold ${dt.nameTxt}`}>Jugador 1</span>
+                </div>
+                <div className={`w-6 text-center text-[15px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
+                <div className={`w-10 text-center text-lg font-black ${dt.pointsTxt}`}>0</div>
+              </div>
+              <div className="flex items-center px-4 py-2.5">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="w-4" />
+                  <span className={`text-[15px] font-semibold ${dt.nameTxt}`}>Jugador 2</span>
+                </div>
+                <div className={`w-6 text-center text-[15px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
+                <div className={`w-10 text-center text-lg font-black ${dt.pointsTxt}`}>0</div>
+              </div>
+            </div>
+            <div className={`px-4 py-1.5 flex items-center justify-between border-t border-white/5`}>
+              <span className={`text-[9px] font-bold uppercase tracking-wider ${dt.badgeTxt}`}>PPC</span>
+              <span className={`text-[8px] ${dt.footerTxt}`}>ppctennis.vercel.app</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -270,7 +302,7 @@ export default function LiveOverlay({ matchId: matchIdProp, theme: themeName = '
       {/* Bottom bar: logo left, scoreboard right, vertically centered */}
       <div className="absolute bottom-4 left-12 right-4 flex items-center justify-between">
         {/* Logo PPC — left, with more margin from edge */}
-        <img src="/ppc-cup-trophy-transparente.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
+        <img src="/PPC Logo sin fondo - original.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
 
         {/* Score card — right */}
         <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}

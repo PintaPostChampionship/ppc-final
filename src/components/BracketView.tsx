@@ -6,6 +6,14 @@ import { supabase } from '../lib/supabaseClient';
 export function getNextMatchPosition(round: string | null | undefined, pos: number | null | undefined) {
   if (!round || !pos) return null;
 
+  // R32 -> R16
+  if (round === 'R32') {
+    return {
+      nextRound: 'R16',
+      nextPos: Math.ceil(pos / 2),
+    };
+  }
+
   // R16 -> QF
   if (round === 'R16') {
     // 1-2 -> QF1, 3-4 -> QF2, 5-6 -> QF3, 7-8 -> QF4
@@ -152,17 +160,20 @@ type BracketViewProps = {
   onEditResult: (m: Match) => void;
   canEditSchedule: (m: Match) => boolean;
   onStartLive?: (matchId: string) => void;
+  currentUser?: Profile | null;
 };
 
 type BracketPlayerSlotProps = {
   player?: BracketAnyPlayer | null;
   isWinner?: boolean;
   isLoser?: boolean;
+  compact?: boolean;
 };
 
-function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps) {
-  const base =
-    'flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all duration-150 min-w-[150px]';
+function BracketPlayerSlot({ player, isWinner, isLoser, compact = false }: BracketPlayerSlotProps) {
+  const base = compact
+    ? 'flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-all duration-150'
+    : 'flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all duration-150 min-w-[150px]';
 
   let cls =
     'bg-white border-slate-200 text-slate-800 shadow-sm';
@@ -182,7 +193,7 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
 
   return (
     <div className={`${base} ${cls}`}>
-      <div className="h-8 w-8 rounded-full overflow-hidden ring-2 ring-white bg-slate-200 shadow-sm flex-shrink-0">
+      <div className={`rounded-full overflow-hidden ring-2 ring-white bg-slate-200 shadow-sm flex-shrink-0 ${compact ? 'h-5 w-5' : 'h-8 w-8'}`}>
         {player?.avatar_url ? (
           <img
             src={player.avatar_url}
@@ -190,13 +201,13 @@ function BracketPlayerSlot({ player, isWinner, isLoser }: BracketPlayerSlotProps
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="h-full w-full flex items-center justify-center text-xs">
+          <div className={`h-full w-full flex items-center justify-center ${compact ? 'text-[8px]' : 'text-xs'}`}>
             🎾
           </div>
         )}
       </div>
-      <div className="text-sm font-medium truncate">
-        {player ? uiName(player.name) : '—'}
+      <div className={`font-medium truncate ${compact ? 'text-[10px]' : 'text-sm'}`}>
+        {player ? uiName(player.name) : '\u00A0'}
       </div>
     </div>
   );
@@ -208,6 +219,7 @@ type BracketMatchCardProps = {
   player2?: BracketAnyPlayer | null;
   header?: string;
   sets?: MatchSet[];
+  compact?: boolean;
 };
 
 const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
@@ -216,6 +228,7 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
   player2,
   header,
   sets = [],
+  compact = false,
 }) => {
   let winnerId: string | null = null;
   let loserId: string | null = null;
@@ -244,27 +257,29 @@ const BracketMatchCard: React.FC<BracketMatchCardProps> = ({
       : '';
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
       {header && (
-        <div className="text-[11px] uppercase tracking-[0.20em] text-emerald-700 mb-1 text-center font-semibold">
+        <div className={`uppercase tracking-[0.20em] text-emerald-700 text-center font-semibold ${compact ? 'text-[9px] mb-0.5' : 'text-[11px] mb-1'}`}>
           {header}
         </div>
       )}
 
-      <div className="rounded-2xl border border-white/80 bg-white/95 p-3 text-slate-900 text-sm flex flex-col gap-2 min-h-[88px] shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+      <div className={`rounded-xl border border-white/80 bg-white/95 text-slate-900 text-sm flex flex-col shadow-[0_4px_12px_rgba(15,23,42,0.06)] backdrop-blur-sm ${compact ? 'p-1.5 gap-1 min-h-[56px] rounded-lg' : 'p-3 gap-2 min-h-[88px] rounded-2xl shadow-[0_12px_30px_rgba(15,23,42,0.08)]'}`}>
         <BracketPlayerSlot
           player={player1}
           isWinner={isWinner(player1)}
           isLoser={isLoser(player1)}
+          compact={compact}
         />
         <BracketPlayerSlot
           player={player2}
           isWinner={isWinner(player2)}
           isLoser={isLoser(player2)}
+          compact={compact}
         />
 
         {scoreLine && (
-          <div className="mt-1 text-[11px] text-slate-600 text-center tracking-[0.14em] font-semibold">
+          <div className={`text-slate-600 text-center tracking-[0.14em] font-semibold ${compact ? 'text-[9px]' : 'mt-1 text-[11px]'}`}>
             {scoreLine}
           </div>
         )}
@@ -286,7 +301,66 @@ export function BracketView({
   onEditResult,
   canEditSchedule,
   onStartLive,
+  currentUser,
 }: BracketViewProps) {
+
+  const is1PointSlam = /Andrea Vivaldi/i.test(tournament.name);
+  const isAdmin = currentUser?.role === 'admin';
+
+  // Alert state for 1-point slam
+  const [alertingId, setAlertingId] = useState<string | null>(null);
+  const [selectingWinner, setSelectingWinner] = useState<string | null>(null);
+
+  const getAlertMessage = (round?: string | null) => {
+    const isGrass = round === 'QF' || round === 'SF' || round === 'F';
+    return isGrass
+      ? '🌱 Tu partido en la Copa Andrea Vivaldi comienza pronto. ¡Acércate a las canchas de PASTO!'
+      : '🎾 Tu partido en la Copa Andrea Vivaldi comienza pronto. ¡Acércate a las canchas de CEMENTO!';
+  };
+
+  const sendPlayerAlert = async (targetProfileId: string, round?: string | null) => {
+    setAlertingId(targetProfileId);
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      await fetch('/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetUserId: targetProfileId,
+          title: '🏆 Copa Andrea Vivaldi — ¡Te toca!',
+          body: getAlertMessage(round),
+          url: `${window.location.origin}/#registro-1-punto`,
+        }),
+      });
+    } catch { /* silent */ }
+    finally { setAlertingId(null); }
+  };
+
+  const selectWinner = async (matchId: string, winnerId: string) => {
+    setSelectingWinner(matchId);
+    try {
+      const match = matches.find(m => m.id === matchId);
+      if (!match) return;
+      const isP1Winner = match.home_player_id === winnerId;
+      const { error } = await supabase
+        .from('matches')
+        .update({
+          status: 'played',
+          player1_sets_won: isP1Winner ? 1 : 0,
+          player2_sets_won: isP1Winner ? 0 : 1,
+        })
+        .eq('id', matchId);
+      if (error) throw error;
+      // Advance winner to next round
+      const updatedMatch = { ...match, status: 'played' as const, player1_sets_won: isP1Winner ? 1 : 0, player2_sets_won: isP1Winner ? 0 : 1 };
+      await advanceWinner(updatedMatch as Match, supabase);
+      window.location.reload();
+    } catch (e: any) {
+      alert(`Error: ${e.message}`);
+    } finally {
+      setSelectingWinner(null);
+    }
+  };
 
   const getPlayer = (id?: string | null): BracketAnyPlayer | null => {
     if (!id) return null;
@@ -302,7 +376,7 @@ export function BracketView({
 
   // Collapsible round sections — default: first incomplete round open, rest closed
   const [openRounds, setOpenRounds] = useState<Record<string, boolean>>(() => {
-    const rounds = ['R16', 'QF', 'SF', 'F'] as const;
+    const rounds = ['R32', 'R16', 'QF', 'SF', 'F'] as const;
     const initial: Record<string, boolean> = {};
     let foundIncomplete = false;
     for (const round of rounds) {
@@ -325,7 +399,7 @@ export function BracketView({
   };
 
   const byRound = (
-    round: 'R16' | 'QF' | 'SF' | 'F',
+    round: 'R32' | 'R16' | 'QF' | 'SF' | 'F',
     pos: number
   ): Match | null =>
     matches.find(
@@ -335,8 +409,11 @@ export function BracketView({
     ) || null;
 
   // Colocamos siempre los slots, aunque no haya partido en BD → se ve el "esqueleto" completo
-  const r16Left = [1, 2, 3, 4].map(pos => byRound('R16', pos));
-  const r16Right = [5, 6, 7, 8].map(pos => byRound('R16', pos));
+  const is32 = /Andrea Vivaldi/i.test(tournament.name);
+  const r32Left = [1, 2, 3, 4, 5, 6, 7, 8].map(pos => byRound('R32', pos));
+  const r32Right = [9, 10, 11, 12, 13, 14, 15, 16].map(pos => byRound('R32', pos));
+  const r16Left = is32 ? [1, 2, 3, 4].map(pos => byRound('R16', pos)) : [1, 2, 3, 4].map(pos => byRound('R16', pos));
+  const r16Right = is32 ? [5, 6, 7, 8].map(pos => byRound('R16', pos)) : [5, 6, 7, 8].map(pos => byRound('R16', pos));
   const qfLeft = [1, 2].map(pos => byRound('QF', pos));
   const qfRight = [3, 4].map(pos => byRound('QF', pos));
   const sf = [1, 2].map(pos => byRound('SF', pos));
@@ -362,8 +439,8 @@ export function BracketView({
   const champion = championId ? getPlayer(championId) : null;  
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#eefaf7] via-[#f7fffd] to-[#eef6ff] text-slate-900">
-      <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#eefaf7] via-[#f7fffd] to-[#eef6ff] text-slate-900 overflow-x-hidden">
+      <div className="max-w-[1400px] mx-auto px-2 py-8">
         <div className="mb-4">
           <button
             type="button"
@@ -382,27 +459,163 @@ export function BracketView({
 
           <div className="relative flex flex-col items-center px-6 py-8 text-center">
             <img
-              src="/ppc-cup-trophy.jpg"
-              alt="PPC Cup Trophy"
-              className="h-40 w-auto mb-4 object-contain drop-shadow-[0_10px_25px_rgba(16,185,129,0.18)]"
+              src={/Andrea Vivaldi/i.test(tournament.name) ? '/Andrea-Vivaldi/foto-1.jpeg' : '/ppc-cup-trophy.jpg'}
+              alt={tournament.name}
+              className={/Andrea Vivaldi/i.test(tournament.name)
+                ? "h-32 w-32 mb-4 rounded-full object-cover object-[60%_20%] ring-4 ring-yellow-200 shadow-lg"
+                : "h-40 w-auto mb-4 object-contain drop-shadow-[0_10px_25px_rgba(16,185,129,0.18)]"
+              }
             />
             <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 border border-emerald-100 px-4 py-1.5 mb-3">
-              <span className="text-sm">🏆</span>
+              {/Andrea Vivaldi/i.test(tournament.name) ? (
+                <span className="text-sm">💛</span>
+              ) : (
+                <span className="text-sm">🏆</span>
+              )}
               <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">
-                PPC Cup
+                {/Andrea Vivaldi/i.test(tournament.name) ? 'Golden Point Slam' : 'PPC Cup'}
               </span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-wide text-slate-900">
               {tournament.name}
             </h1>
             <p className="text-sm text-slate-600 mt-2">
-              Knockout · 16 jugadores
+              Knockout · {/Andrea Vivaldi/i.test(tournament.name) ? '32' : '16'} jugadores
             </p>
           </div>
         </div>
 
         {/* Grid del bracket */}
-        <div className="overflow-x-auto">
+        <div className={is32 ? "w-full" : "overflow-x-auto"}>
+          {is32 ? (
+          /* 32-player bracket: R32 | R16 | QF | SF+F | QF | R16 | R32 */
+          <div className="w-full grid grid-cols-7 gap-x-2">
+            {/* R32 izquierda */}
+            <div className="space-y-3">
+              {r32Left.map((m, idx) => (
+                <BracketMatchCard
+                  key={`r32-L-${idx}`}
+                  match={m}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
+                  header={idx === 0 ? 'Ronda de 32' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                  compact
+                />
+              ))}
+            </div>
+
+            {/* R16 izquierda */}
+            <div className="flex flex-col justify-around py-6">
+              {r16Left.map((m, idx) => (
+                <BracketMatchCard
+                  key={`r16-L-${idx}`}
+                  match={m}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
+                  header={idx === 0 ? 'R16' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                  compact
+                />
+              ))}
+            </div>
+
+            {/* QF izquierda */}
+            <div className="flex flex-col justify-around py-6">
+              {qfLeft.map((m, idx) => (
+                <BracketMatchCard
+                  key={`qf-L-${idx}`}
+                  match={m}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
+                  header={idx === 0 ? 'QF' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                  compact
+                />
+              ))}
+            </div>
+
+            {/* Centro: SF1, Final, SF2 — verticalmente centrados */}
+            <div className="flex flex-col justify-center gap-3 py-6">
+              <div className="text-center mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500 font-semibold">SF</div>
+              <BracketMatchCard
+                match={sf[0]}
+                player1={getPlayer(getMatchHomeId(sf[0]))}
+                player2={getPlayer(getMatchAwayId(sf[0]))}
+                sets={sf[0] ? matchSets.filter(s => s.match_id === sf[0]!.id) : []}
+                compact
+              />
+              <div className="my-1 text-center text-[11px] uppercase tracking-[0.2em] text-emerald-600 font-bold">Final</div>
+              <BracketMatchCard
+                match={finalMatch}
+                player1={getPlayer(getMatchHomeId(finalMatch))}
+                player2={getPlayer(getMatchAwayId(finalMatch))}
+                sets={finalMatch ? matchSets.filter(s => s.match_id === finalMatch.id) : []}
+                compact
+              />
+              {champion && (
+                <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-center">
+                  <p className="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold mb-1">Campeón</p>
+                  <h2 className="text-base font-extrabold text-slate-900">{uiName(champion.name)}</h2>
+                </div>
+              )}
+              <div className="text-center mt-1 mb-1 text-[10px] uppercase tracking-[0.2em] text-slate-500 font-semibold">SF</div>
+              <BracketMatchCard
+                match={sf[1]}
+                player1={getPlayer(getMatchHomeId(sf[1]))}
+                player2={getPlayer(getMatchAwayId(sf[1]))}
+                sets={sf[1] ? matchSets.filter(s => s.match_id === sf[1]!.id) : []}
+                compact
+              />
+            </div>
+
+            {/* QF derecha */}
+            <div className="flex flex-col justify-around py-6">
+              {qfRight.map((m, idx) => (
+                <BracketMatchCard
+                  key={`qf-R-${idx}`}
+                  match={m}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
+                  header={idx === 0 ? 'QF' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                  compact
+                />
+              ))}
+            </div>
+
+            {/* R16 derecha */}
+            <div className="flex flex-col justify-around py-6">
+              {r16Right.map((m, idx) => (
+                <BracketMatchCard
+                  key={`r16-R-${idx}`}
+                  match={m}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
+                  header={idx === 0 ? 'R16' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                  compact
+                />
+              ))}
+            </div>
+
+            {/* R32 derecha */}
+            <div className="space-y-3">
+              {r32Right.map((m, idx) => (
+                <BracketMatchCard
+                  key={`r32-R-${idx}`}
+                  match={m}
+                  player1={getPlayer(getMatchHomeId(m))}
+                  player2={getPlayer(getMatchAwayId(m))}
+                  header={idx === 0 ? 'Ronda de 32' : undefined}
+                  sets={m ? matchSets.filter(s => s.match_id === m.id) : []}
+                  compact
+                />
+              ))}
+            </div>
+          </div>
+          ) : (
+          /* 16-player bracket: R16 | QF | SF+F | QF | R16 */
           <div className="min-w-[900px] grid grid-cols-[1.1fr,1fr,1.2fr,1fr,1.1fr] gap-x-6">
           {/* R16 izquierda */}
           <div className="space-y-6">
@@ -521,7 +734,7 @@ export function BracketView({
             ))}
           </div>
         </div>
-        
+          )}
         </div>
       </div>
 
@@ -532,8 +745,9 @@ export function BracketView({
         </h2>
 
         <div className="space-y-8">
-          {(["R16", "QF", "SF", "F"] as const).map((round) => {
+          {(["R32", "R16", "QF", "SF", "F"] as const).map((round) => {
             const roundConfig = {
+              R32: { label: "Ronda de 32", icon: "🎾", color: "slate" },
               R16: { label: "Ronda de 16", icon: "🎯", color: "emerald" },
               QF: { label: "Cuartos de final", icon: "⚡", color: "sky" },
               SF: { label: "Semifinales", icon: "🔥", color: "amber" },
@@ -664,7 +878,47 @@ export function BracketView({
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-1.5 justify-end">
-                                {canEditSchedule(m) && m.status !== 'played' && m.home_player_id && m.away_player_id && onStartLive && (
+                                {/* 1-Point Slam: alert + select winner */}
+                                {is1PointSlam && isAdmin && m.status !== 'played' && p1 && (
+                                  <button
+                                    onClick={() => sendPlayerAlert(p1.id, round)}
+                                    disabled={alertingId === p1.id}
+                                    className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 text-[11px] font-medium transition-colors disabled:opacity-50"
+                                    title={`Llamar a ${uiName(p1.name)}`}
+                                  >
+                                    🔔 {uiName(p1.name)?.split(' ')[0]}
+                                  </button>
+                                )}
+                                {is1PointSlam && isAdmin && m.status !== 'played' && p2 && (
+                                  <button
+                                    onClick={() => sendPlayerAlert(p2.id, round)}
+                                    disabled={alertingId === p2.id}
+                                    className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 text-[11px] font-medium transition-colors disabled:opacity-50"
+                                    title={`Llamar a ${uiName(p2.name)}`}
+                                  >
+                                    🔔 {uiName(p2.name)?.split(' ')[0]}
+                                  </button>
+                                )}
+                                {is1PointSlam && isAdmin && m.status !== 'played' && p1 && p2 && (
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => selectWinner(m.id, p1.id)}
+                                      disabled={selectingWinner === m.id}
+                                      className="px-2 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 text-[11px] font-medium transition-colors disabled:opacity-50"
+                                    >
+                                      ✓ {uiName(p1.name)?.split(' ')[0]}
+                                    </button>
+                                    <button
+                                      onClick={() => selectWinner(m.id, p2.id)}
+                                      disabled={selectingWinner === m.id}
+                                      className="px-2 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 text-[11px] font-medium transition-colors disabled:opacity-50"
+                                    >
+                                      ✓ {uiName(p2.name)?.split(' ')[0]}
+                                    </button>
+                                  </div>
+                                )}
+                                {/* Standard tournament actions */}
+                                {!is1PointSlam && canEditSchedule(m) && m.status !== 'played' && m.home_player_id && m.away_player_id && onStartLive && (
                                   <button
                                     onClick={() => onStartLive(m.id)}
                                     className="px-2.5 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-[11px] font-medium transition-colors"
@@ -672,7 +926,7 @@ export function BracketView({
                                     🔴 En Vivo
                                   </button>
                                 )}
-                                {canEditSchedule(m) && (
+                                {!is1PointSlam && canEditSchedule(m) && (
                                   <button
                                     onClick={() => onEditSchedule(m)}
                                     className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 text-[11px] font-medium transition-colors"
@@ -680,7 +934,7 @@ export function BracketView({
                                     📅 Horario
                                   </button>
                                 )}
-                                {canEditSchedule(m) && (
+                                {!is1PointSlam && canEditSchedule(m) && (
                                   <button
                                     onClick={() => onEditResult(m)}
                                     className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 text-[11px] font-medium transition-colors"
@@ -759,7 +1013,36 @@ export function BracketView({
                             {placeText !== 'Por definir' && <span className="ml-2">📍 {placeText}</span>}
                           </div>
 
-                          {canEditSchedule(m) && (
+                          {is1PointSlam && isAdmin && m.status !== 'played' && (
+                            <div className="flex flex-wrap gap-1">
+                              {p1 && (
+                                <button onClick={() => sendPlayerAlert(p1.id, round)} disabled={alertingId === p1.id}
+                                  className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-medium disabled:opacity-50">
+                                  🔔{uiName(p1.name)?.split(' ')[0]}
+                                </button>
+                              )}
+                              {p2 && (
+                                <button onClick={() => sendPlayerAlert(p2.id, round)} disabled={alertingId === p2.id}
+                                  className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-medium disabled:opacity-50">
+                                  🔔{uiName(p2.name)?.split(' ')[0]}
+                                </button>
+                              )}
+                              {p1 && p2 && (
+                                <>
+                                  <button onClick={() => selectWinner(m.id, p1.id)} disabled={selectingWinner === m.id}
+                                    className="px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-medium disabled:opacity-50">
+                                    ✓{uiName(p1.name)?.split(' ')[0]}
+                                  </button>
+                                  <button onClick={() => selectWinner(m.id, p2.id)} disabled={selectingWinner === m.id}
+                                    className="px-2 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-medium disabled:opacity-50">
+                                    ✓{uiName(p2.name)?.split(' ')[0]}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {!is1PointSlam && canEditSchedule(m) && (
                             <div className="flex gap-1.5">
                               {m.status !== 'played' && m.home_player_id && m.away_player_id && onStartLive && (
                                 <button

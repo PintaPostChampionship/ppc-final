@@ -131,5 +131,6 @@ export function tournamentLogoSrc(name: string) {
   if (/^PPC Winter/i.test(name)) return '/ppc-logo.png';            // PPC Winter 2025/2026
   if (/^WPPC Winter/i.test(name)) return '/wppc-logo-transparente.png';          // WPPC Winter 2025/2026
   if (/PPC Cup/i.test(name)) return '/ppc-cup-trophy-transparente.png';          // PPC Cup 2025
+  if (/Andrea Vivaldi/i.test(name)) return '/Andrea-Vivaldi/foto-1.jpeg';        // Copa Andrea Vivaldi
   return '/ppc-logo.png';
 }

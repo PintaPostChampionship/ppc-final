@@ -35,6 +35,9 @@ export interface LiveMatchBannerProps {
 }
 
 export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps) {
+  // TODO: Remove this flag after testing is done
+  const HIDE_BANNER_FOR_TESTING = true;
+
   const [liveMatches, setLiveMatches] = useState<LiveMatchInfo[]>([]);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -167,6 +170,7 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── No hay partidos en vivo ────────────────────────────────────────────────
+  if (HIDE_BANNER_FOR_TESTING) return null;
   if (liveMatches.length === 0) return null;
 
   // ── Banner ─────────────────────────────────────────────────────────────────
