@@ -187,11 +187,11 @@ function ScoreRow({
         <div className={`absolute left-0 top-1 bottom-1 w-1 rounded-full ${theme.rowActiveBar}`} />
       )}
 
-      {/* Serve indicator + Name */}
+      {/* Name + Serve indicator (right of name) */}
       <div className={`flex-1 flex items-center gap-1.5 pl-3 py-3 ${theme.nameTxt}`}>
-        {serveIndicator()}
         <span className="text-sm font-semibold">{firstName}</span>
         {lastName && <span className="text-sm font-semibold">{lastName}</span>}
+        {isServing && serveIndicator()}
       </div>
 
       {/* Set scores */}

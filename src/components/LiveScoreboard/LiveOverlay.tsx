@@ -163,17 +163,34 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
   // ── Not live — show default placeholder ────────────────────────────────────
 
   if (!isLive) {
-    const dt = THEMES.broadcast;
+    const dt = THEMES.forest;
     return (
       <div className="fixed inset-0 pointer-events-none font-sans">
-        <div className="absolute bottom-4 left-12 right-4 flex items-center justify-between">
+        <div className="absolute bottom-4 left-6 right-4 flex items-center justify-between">
           <img src="/ppc-logo.png" alt="PPC" className="w-20 h-20 object-contain drop-shadow-lg" />
           <div className={`rounded-xl ${dt.cardBg} border ${dt.border} backdrop-blur-md overflow-hidden shadow-2xl`}
-            style={{ minWidth: '360px', maxWidth: '450px' }}>
+            style={{ minWidth: '380px', maxWidth: '480px' }}>
+            
+            {/* Top bar */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
+              <div className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-[0.12em] ${dt.badgeBg} ${dt.badgeTxt}`}>
+                🏆 Final
+              </div>
+              <span className={`text-[10px] uppercase tracking-wider font-semibold ${dt.badgeTxt} opacity-80`}>
+                PPC Edición 5
+              </span>
+            </div>
+
+            {/* Header row */}
+            <div className={`flex items-center px-4 py-1 text-[9px] uppercase tracking-wider ${dt.footerTxt} border-b border-white/5`}>
+              <div className="flex-1 pl-1">Jugador</div>
+              <div className="w-6 text-center">G</div>
+              <div className="w-10 text-center">Pts</div>
+            </div>
+
             <div className="divide-y divide-white/5">
               <div className="flex items-center px-4 py-2.5">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <div className="w-4" />
                   <span className={`text-[15px] font-semibold ${dt.nameTxt}`}>Jugador 1</span>
                 </div>
                 <div className={`w-6 text-center text-[15px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
@@ -181,13 +198,13 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
               </div>
               <div className="flex items-center px-4 py-2.5">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <div className="w-4" />
                   <span className={`text-[15px] font-semibold ${dt.nameTxt}`}>Jugador 2</span>
                 </div>
                 <div className={`w-6 text-center text-[15px] font-mono font-bold ${dt.scoreTxt}`}>0</div>
                 <div className={`w-10 text-center text-lg font-black ${dt.pointsTxt}`}>0</div>
               </div>
             </div>
+
             <div className={`px-4 py-1.5 flex items-center justify-between border-t border-white/5`}>
               <span className={`text-[9px] font-bold uppercase tracking-wider ${dt.badgeTxt}`}>PPC</span>
               <span className={`text-[8px] ${dt.footerTxt}`}>ppctennis.vercel.app</span>
@@ -203,6 +220,10 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
   const p1Pts = fmtPoints(score.p1_points, score.in_tiebreak, score.in_super_tiebreak);
   const p2Pts = fmtPoints(score.p2_points, score.in_tiebreak, score.in_super_tiebreak);
 
+  const tournamentLabel = divisionLabel?.toLowerCase().includes('serena') || divisionLabel?.toLowerCase().includes('anita')
+    ? 'WPPC Edición 2'
+    : 'PPC Edición 5';
+
   return (
     <div className="fixed inset-0 pointer-events-none font-sans">
       {/* Bottom bar: logo far left, scoreboard right */}
@@ -212,14 +233,39 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
 
         {/* Score card — right */}
         <div className={`rounded-xl ${t.cardBg} border ${t.border} backdrop-blur-md overflow-hidden shadow-2xl`}
-          style={{ minWidth: '360px', maxWidth: '450px' }}>
+          style={{ minWidth: '380px', maxWidth: '480px' }}>
+          
+          {/* Top bar: round badge + tournament */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
+            <div className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-[0.12em] ${t.badgeBg} ${t.badgeTxt}`}>
+              🏆 {roundLabel || 'Final'}
+            </div>
+            <span className={`text-[10px] uppercase tracking-wider font-semibold ${t.badgeTxt} opacity-80`}>
+              {tournamentLabel}
+            </span>
+          </div>
+
+          {/* Header row */}
+          <div className={`flex items-center px-4 py-1 text-[9px] uppercase tracking-wider ${t.footerTxt} border-b border-white/5`}>
+            <div className="flex-1 pl-5">Jugador</div>
+            <div className="flex items-center">
+              {score.completed_sets.map((_, i) => (
+                <div key={i} className="w-6 text-center">S{i + 1}</div>
+              ))}
+              <div className="w-6 text-center">G</div>
+            </div>
+            <div className="w-10 text-center">Pts</div>
+          </div>
+
           <div className="divide-y divide-white/5">
             {/* Player 1 */}
-            <div className="flex items-center px-4 py-2.5">
+            <div className="relative flex items-center px-4 py-2.5">
+              {score.server === 1 && (
+                <div className={`absolute left-0 top-1 bottom-1 w-1 rounded-full ${t.serveDot === 'text-[#4ade80]' ? 'bg-[#4ade80]' : t.serveDot === 'text-[#fbbf24]' ? 'bg-[#fbbf24]' : t.serveDot === 'text-[#f472b6]' ? 'bg-[#f472b6]' : t.serveDot === 'text-[#cd7f32]' ? 'bg-[#cd7f32]' : t.serveDot === 'text-sky-400' ? 'bg-sky-400' : 'bg-slate-300'}`} />
+              )}
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                {score.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
-                {score.server !== 1 && <div className="w-4" />}
                 <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p1Name}</span>
+                {score.server === 1 && <span className="text-xs flex-shrink-0">🎾</span>}
               </div>
               <div className="flex items-center">
                 {score.completed_sets.map((s, i) => (
@@ -231,11 +277,13 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
             </div>
 
             {/* Player 2 */}
-            <div className="flex items-center px-4 py-2.5">
+            <div className="relative flex items-center px-4 py-2.5">
+              {score.server === 2 && (
+                <div className={`absolute left-0 top-1 bottom-1 w-1 rounded-full ${t.serveDot === 'text-[#4ade80]' ? 'bg-[#4ade80]' : t.serveDot === 'text-[#fbbf24]' ? 'bg-[#fbbf24]' : t.serveDot === 'text-[#f472b6]' ? 'bg-[#f472b6]' : t.serveDot === 'text-[#cd7f32]' ? 'bg-[#cd7f32]' : t.serveDot === 'text-sky-400' ? 'bg-sky-400' : 'bg-slate-300'}`} />
+              )}
               <div className="flex items-center gap-2 flex-1 min-w-0">
-                {score.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
-                {score.server !== 2 && <div className="w-4" />}
                 <span className={`text-[15px] font-semibold truncate ${t.nameTxt}`}>{p2Name}</span>
+                {score.server === 2 && <span className="text-xs flex-shrink-0">🎾</span>}
               </div>
               <div className="flex items-center">
                 {score.completed_sets.map((s, i) => (
@@ -250,7 +298,7 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
           {/* Footer */}
           <div className={`px-4 py-1.5 flex items-center justify-between border-t border-white/5`}>
             <span className={`text-[9px] font-bold uppercase tracking-wider ${t.badgeTxt}`}>
-              {roundLabel ? `PPC ${roundLabel}${divisionLabel ? ' ' + divisionLabel : ''}` : 'PPC'}
+              {divisionLabel || 'PPC'}
             </span>
             <span className={`text-[8px] ${t.footerTxt}`}>ppctennis.vercel.app</span>
           </div>
