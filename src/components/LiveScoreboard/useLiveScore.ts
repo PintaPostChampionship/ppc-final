@@ -363,6 +363,15 @@ export function useLiveScore(
         setError('Error al actualizar el estado del partido.');
       }
 
+      // Notify subscribers that a match is live (fire-and-forget)
+      if (!silent) {
+        fetch('/api/live-score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'notify-live', match_id: matchId }),
+        }).catch(() => {});
+      }
+
       // Limpiar historial de undo al iniciar
       undoHistoryRef.current = [];
       setUndoCount(0);
@@ -389,7 +398,8 @@ export function useLiveScore(
         .eq('id', matchId);
 
       if (matchErr) {
-        setError('Error al guardar el resultado final. Por favor, inténtalo de nuevo.');
+        console.error('[finalizeMatch] Error updating matches:', matchErr);
+        setError('Error al guardar el resultado final. Usa el botón para reintentar.');
         return;
       }
 
@@ -401,9 +411,11 @@ export function useLiveScore(
       }));
 
       if (setsToInsert.length > 0) {
+        // Delete existing sets first (ignore errors — may not exist yet)
         await supabase.from('match_sets').delete().eq('match_id', matchId);
         const { error: setsErr } = await supabase.from('match_sets').insert(setsToInsert);
         if (setsErr) {
+          console.error('[finalizeMatch] Error inserting match_sets:', setsErr);
           setError('Error al guardar los sets. Por favor, edita el partido manualmente.');
         }
       }

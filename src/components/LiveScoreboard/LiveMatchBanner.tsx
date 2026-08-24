@@ -35,9 +35,6 @@ export interface LiveMatchBannerProps {
 }
 
 export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps) {
-  // TODO: Remove this flag after testing is done
-  const HIDE_BANNER_FOR_TESTING = true;
-
   const [liveMatches, setLiveMatches] = useState<LiveMatchInfo[]>([]);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -170,7 +167,6 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── No hay partidos en vivo ────────────────────────────────────────────────
-  if (HIDE_BANNER_FOR_TESTING) return null;
   if (liveMatches.length === 0) return null;
 
   // ── Banner ─────────────────────────────────────────────────────────────────
@@ -217,55 +213,60 @@ export default function LiveMatchBanner({ currentProfile }: LiveMatchBannerProps
 
               {/* Actions */}
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* Featured toggle (stream) */}
-                <button
-                  onClick={async () => {
-                    await fetch('/api/live-score', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
-                      body: JSON.stringify({ action: 'set_featured', match_id: m.id }),
-                    });
-                    loadLiveMatches();
-                  }}
-                  className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-all ${
-                    (m.liveState as any)?.is_featured
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-purple-900/50 text-purple-300 hover:bg-purple-700'
-                  }`}
-                  title={`${(m.liveState as any)?.is_featured ? 'En stream' : 'Poner en stream'}`}
-                >
-                  📺
-                </button>
-                {m.status === 'live' && (
-                  <button
-                    onClick={async () => {
-                      if (!confirm('¿Pausar este partido?')) return;
-                      await fetch('/api/live-score', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
-                        body: JSON.stringify({ action: 'pause', match_id: m.id }),
-                      });
-                      loadLiveMatches();
-                    }}
-                    className="rounded-lg bg-yellow-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-yellow-500"
-                  >
-                    ⏸
-                  </button>
-                )}
-                <button
-                  onClick={async () => {
-                    if (!confirm('¿Cerrar este partido? Se restaurará el estado anterior.')) return;
-                    await fetch('/api/live-score', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
-                      body: JSON.stringify({ action: 'close', match_id: m.id }),
-                    });
-                    loadLiveMatches();
-                  }}
+                {/* Admin controls */}
+                {currentProfile?.role === 'admin' && (
+                  <>
+                    {/* Featured toggle (stream) */}
+                    <button
+                      onClick={async () => {
+                        await fetch('/api/live-score', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
+                          body: JSON.stringify({ action: 'set_featured', match_id: m.id }),
+                        });
+                        loadLiveMatches();
+                      }}
+                      className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition-all ${
+                        (m.liveState as any)?.is_featured
+                          ? 'bg-purple-500 text-white'
+                          : 'bg-purple-900/50 text-purple-300 hover:bg-purple-700'
+                      }`}
+                      title={`${(m.liveState as any)?.is_featured ? 'En stream' : 'Poner en stream'}`}
+                    >
+                      📺
+                    </button>
+                    {m.status === 'live' && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm('¿Pausar este partido?')) return;
+                          await fetch('/api/live-score', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
+                            body: JSON.stringify({ action: 'pause', match_id: m.id }),
+                          });
+                          loadLiveMatches();
+                        }}
+                        className="rounded-lg bg-yellow-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-yellow-500"
+                      >
+                        ⏸
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        if (!confirm('¿Cerrar este partido? Se restaurará el estado anterior.')) return;
+                        await fetch('/api/live-score', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'X-Player-Id': currentProfile?.id || '' },
+                          body: JSON.stringify({ action: 'close', match_id: m.id }),
+                        });
+                        loadLiveMatches();
+                      }}
                   className="rounded-lg bg-gray-600/80 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-gray-500"
                 >
                   ✕
                 </button>
+                  </>
+                )}
                 <a
                   href={`#live/match/${m.id}`}
                   onClick={(e) => {

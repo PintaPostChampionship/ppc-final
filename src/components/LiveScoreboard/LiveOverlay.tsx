@@ -233,12 +233,15 @@ export default function LiveOverlay({ matchId: _matchIdProp, theme: themeName = 
       {/* Bottom bar: logo far left, scoreboard right */}
       <div className="absolute bottom-4 left-6 right-4 flex items-center justify-between">
         {/* Logo — left */}
-        <div className="flex items-center gap-2">
-          {(overlayLogo === 'ppc' || overlayLogo === 'ppc-forest') && (
+        <div className="flex items-center">
+          {overlayLogo === 'ppc' && (
             <img src="/ppc-logo.png" alt="PPC" className="w-14 h-14 object-contain drop-shadow-lg opacity-90" />
           )}
-          {(overlayLogo === 'forest' || overlayLogo === 'ppc-forest') && (
+          {overlayLogo === 'forest' && (
             <img src="/forest-logo.png" alt="Forest" className="w-14 h-14 object-contain drop-shadow-lg opacity-90" />
+          )}
+          {overlayLogo === 'ppc-forest' && (
+            <img src="/ppc-forest-logo.png" alt="PPC x Forest" className="h-14 w-auto object-contain drop-shadow-lg opacity-90" />
           )}
         </div>
 

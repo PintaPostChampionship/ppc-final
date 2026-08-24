@@ -290,6 +290,14 @@ async function handlePost(
     return handleUndo(res, supabase, match_id);
   }
 
+  // ── Action: notify-live — Send push to all subscribers (no auth needed) ──
+  if (action === 'notify-live') {
+    notifyMatchLive(supabase, match_id).catch(err =>
+      console.error('[live-score] Push notification error:', err?.message || err)
+    );
+    return res.status(200).json({ ok: true });
+  }
+
   return res.status(400).json({ error: 'Unknown action' });
 }
 
@@ -411,12 +419,11 @@ async function handleInit(
     .eq('id', matchId);
 
   // ── Notify all subscribed users that a match is live ──
-  // TEMPORARILY DISABLED FOR TESTING
-  // if (!silent) {
-  //   notifyMatchLive(supabase, matchId).catch(err =>
-  //     console.error('[live-score] Push notification error:', err?.message || err)
-  //   );
-  // }
+  if (!silent) {
+    notifyMatchLive(supabase, matchId).catch(err =>
+      console.error('[live-score] Push notification error:', err?.message || err)
+    );
+  }
 
   return res.status(201).json({ ok: true });
 }

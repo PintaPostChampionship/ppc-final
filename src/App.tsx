@@ -3315,12 +3315,6 @@ const App = () => {
               true
             )}
 
-            {canSeeDashboard && menuItem(
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>,
-              'Guía Streaming',
-              () => { resetNav(); setShowStreamingGuide(true); }
-            )}
-
             {currentUser.id === BUSCAR_CLASES_ALLOWED_ID && menuItem(
               <span className="text-base">🎾</span>,
               'Buscar Clases',
@@ -7087,24 +7081,19 @@ const App = () => {
     );
   }
 
-  // 🎾 Live Scoreboard — accesible via /#live/match/:id
-  if (liveMatchId && currentUser) {
+  // 🎾 Live Scoreboard — accesible via /#live/match/:id (anyone can view, login only for editing)
+  if (liveMatchId) {
     return (
       <LiveScoreboard
         matchId={liveMatchId}
-        currentUser={sessionUser}
-        currentProfile={currentUser}
+        currentUser={sessionUser ?? null}
+        currentProfile={currentUser ?? null}
         onBack={() => {
           window.location.hash = '';
           setLiveMatchId(null);
         }}
       />
     );
-  }
-
-  // Si hay liveMatchId pero no hay sesión → mostrar login (el hash se guardó en pending_hash)
-  if (liveMatchId && !currentUser) {
-    // loginView ya se activa por el efecto de sesión; no hacemos nada extra aquí
   }
 
   if (showAdminDashboard && canSeeDashboard) {
@@ -7136,11 +7125,12 @@ const App = () => {
     );
   }
 
-  if (showStreamingGuide && currentUser?.role === 'admin') {
-    return <StreamingGuide onBack={() => setShowStreamingGuide(false)} />;
-  }
-
   if (showMarcador && currentUser) {
+    // StreamingGuide as a sub-view within Marcador
+    if (showStreamingGuide && currentUser.role === 'admin') {
+      return <StreamingGuide onBack={() => setShowStreamingGuide(false)} />;
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
         <header className="bg-white shadow-lg sticky top-0 z-10">
@@ -7294,6 +7284,17 @@ const App = () => {
                     </div>
                   )}
                 </div>
+                {/* Streaming guide link — admin only */}
+                {currentUser.role === 'admin' && (
+                  <button
+                    onClick={() => setShowStreamingGuide(true)}
+                    className="w-full text-left bg-white/5 backdrop-blur-sm rounded-xl p-3 border border-white/10 hover:bg-white/10 transition flex items-center gap-2"
+                  >
+                    <span className="text-white/60">📺</span>
+                    <span className="text-sm font-medium text-white/70">Guía de Streaming (OBS/PRISM)</span>
+                    <span className="ml-auto text-white/30 text-xs">→</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -7485,6 +7486,7 @@ const App = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {activeHistoricTournaments.map(tournament => {
                 const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id);
+                const participantCount = tournament.id === '2606f3ec-6145-47b0-9536-3e91ac04b02d' ? 32 : tournamentRegistrations.length;
                 const tournamentMatches = matches.filter(m => m.tournament_id === tournament.id);
                 const allScheduled = tournamentMatches.filter(m => m.status === 'scheduled' && isTodayOrFuture(m.date));
                 const totalPints = tournamentMatches.reduce((sum, m) => sum + Number(m.player1_pints ?? 0) + Number(m.player2_pints ?? 0), 0);
@@ -7516,7 +7518,7 @@ const App = () => {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div className="text-center p-3 bg-gray-50 rounded-lg">
-                          <div className="text-2xl font-bold text-blue-600">{tournamentRegistrations.length}</div>
+                          <div className="text-2xl font-bold text-blue-600">{participantCount}</div>
                           <div className="text-sm text-gray-600">Jugadores</div>
                         </div>
                         <div className="text-center p-3 bg-gray-50 rounded-lg">
@@ -7547,7 +7549,7 @@ const App = () => {
   if (!selectedTournament) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-        {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
+        {/* 🎾 Banner de partidos en vivo */}
         <LiveMatchBanner currentProfile={currentUser} />
         <header className="bg-white shadow-lg sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -7637,46 +7639,14 @@ const App = () => {
             <p className="text-white text-lg opacity-90">Selecciona un torneo para ver divisiones y detalles de jugadores</p>
           </div>
 
-            {/* Copa Andrea Vivaldi Banner */}
-            {(() => {
-              const avRemaining = Math.max(32 - avTournamentCount, 0);
-              const isUserRegisteredAV = currentUser
-                ? avTournamentProfileIds.includes(currentUser.id)
-                : false;
-              return (
-                <div className="mb-6 mx-auto max-w-2xl">
-                  <div
-                    className="rounded-xl border border-yellow-200 bg-gradient-to-r from-yellow-50 to-emerald-50 p-4 shadow-sm cursor-pointer hover:shadow-md transition"
-                    onClick={() => { window.location.hash = '#registro-1-punto'; window.location.reload(); }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <img src="/Andrea-Vivaldi/foto-1.jpeg" alt="Andrea Vivaldi" className="w-10 h-10 rounded-full object-cover ring-1 ring-yellow-200 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-gray-900 text-sm">
-                          Copa Andrea Vivaldi — Golden Point Slam
-                        </div>
-                        <div className="text-xs text-gray-600 mt-0.5">
-                          {isUserRegisteredAV
-                            ? `✅ Inscrito · ${avTournamentCount} participantes · Sábado 22 de agosto`
-                            : avRemaining > 0
-                              ? `Solo quedan ${avRemaining} cupos · Sábado 22 de agosto`
-                              : 'Cupos agotados — lista de espera disponible'}
-                        </div>
-                      </div>
-                      <span className="text-emerald-600 text-xs font-semibold whitespace-nowrap">
-                        {isUserRegisteredAV ? 'Ver inscritos →' : 'Inscríbete →'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             {visibleTournaments.map(tournament => {
               // Get tournament registrations
               const tournamentRegistrations = registrations.filter(r => r.tournament_id === tournament.id && r.status !== 'retired');
+              
+              // For Andrea Vivaldi, use actual participant count (32) since some joined on the day
+              const participantCount = tournament.id === '2606f3ec-6145-47b0-9536-3e91ac04b02d' ? 32 : tournamentRegistrations.length;
               
               // Get tournament matches
               const tournamentMatches = matches.filter(m => m.tournament_id === tournament.id);
@@ -7715,7 +7685,7 @@ const App = () => {
                     
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{tournamentRegistrations.length}</div>
+                        <div className="text-2xl font-bold text-blue-600">{participantCount}</div>
                         <div className="text-sm text-gray-600">Jugadores</div>
                       </div>
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
@@ -8085,7 +8055,7 @@ const App = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-lime-700">
-        {/* 🎾 Banner de partidos en vivo — solo admins en Fase 1 */}
+        {/* 🎾 Banner de partidos en vivo */}
         <LiveMatchBanner currentProfile={currentUser} />
         <header className="bg-white shadow-lg sticky top-0 z-10">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">

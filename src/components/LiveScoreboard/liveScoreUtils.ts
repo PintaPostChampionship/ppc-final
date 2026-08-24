@@ -160,16 +160,16 @@ export function getServeAfterGame(currentServer: 1 | 2): 1 | 2 {
 
 export function getServeAfterTiebreakPoint(
   tiebreakFirstServer: 1 | 2,
-  tiebreakPointsPlayed: number
+  nextPointIndex: number
 ): 1 | 2 {
-  // Punto 1: primer sacador. Luego alterna cada 2.
-  // Puntos 1 → primer sacador
-  // Puntos 2,3 → segundo sacador
-  // Puntos 4,5 → primer sacador
-  // ...
-  // Después del punto 1 (index 0), el bloque es floor((pointsPlayed) / 2)
-  // Si el bloque es par → primer sacador, impar → segundo sacador
-  const block = Math.floor(tiebreakPointsPlayed / 2);
+  // Tiebreak serve pattern (0-indexed point number):
+  //   Point 0: A (first server)
+  //   Points 1,2: B
+  //   Points 3,4: A
+  //   Points 5,6: B
+  //   ...
+  // Formula: floor((pointIndex + 1) / 2) → if even = A, if odd = B
+  const block = Math.floor((nextPointIndex + 1) / 2);
   const isFirstServer = block % 2 === 0;
   if (isFirstServer) return tiebreakFirstServer;
   return tiebreakFirstServer === 1 ? 2 : 1;
@@ -298,20 +298,19 @@ function addPointTiebreak(state: LiveScoreState, player: 1 | 2): LiveScoreState 
   const p2 = s.p2_points;
   const totalPoints = p1 + p2;
 
+  // Always update serve for the next point FIRST (needed by getTiebreakFirstServer)
+  s.server = getServeAfterTiebreakPoint(
+    getTiebreakFirstServer(state), // use original state to infer first server
+    totalPoints // index of next point to be served
+  );
+
   // NextGen: punto de oro en 6-6 del tiebreak
   if (s.format === 'nextgen' && p1 === 6 && p2 === 6) {
-    // El siguiente punto ganará el tiebreak — no hacemos nada especial aquí,
-    // el punto de oro se resuelve en el siguiente addPoint
-    // Actualizar saque
-    s.server = getServeAfterTiebreakPoint(
-      getTiebreakFirstServer(s),
-      totalPoints - 1 // puntos jugados antes de este
-    );
+    // The next point will decide the tiebreak — nothing special here
     return s;
   }
 
   // NextGen: si estamos en 6-6 y alguien acaba de ganar un punto → gana el tiebreak
-  // (punto de oro ya jugado)
   if (s.format === 'nextgen') {
     const prevP1 = player === 1 ? p1 - 1 : p1;
     const prevP2 = player === 2 ? p2 - 1 : p2;
@@ -320,16 +319,10 @@ function addPointTiebreak(state: LiveScoreState, player: 1 | 2): LiveScoreState 
     }
   }
 
-  // Standard: gana con 7+ y diferencia ≥ 2
+  // Standard/Short: gana con 7+ y diferencia ≥ 2
   const minToWin = 7;
   const winner = checkTiebreakWinner(p1, p2, minToWin);
   if (winner) return winTiebreak(s, winner);
-
-  // Actualizar saque (alterna cada 2 puntos)
-  s.server = getServeAfterTiebreakPoint(
-    getTiebreakFirstServer(s),
-    totalPoints - 1
-  );
 
   return s;
 }
@@ -348,6 +341,12 @@ function addPointSuperTiebreak(state: LiveScoreState, player: 1 | 2): LiveScoreS
   const p2 = s.p2_points;
   const totalPoints = p1 + p2;
 
+  // Always update serve for the next point FIRST (use original state for inference)
+  s.server = getServeAfterTiebreakPoint(
+    getTiebreakFirstServer(state),
+    totalPoints // index of next point to be served
+  );
+
   const winner = checkTiebreakWinner(p1, p2, 10);
   if (winner) {
     // Guardar el super tiebreak como tercer set
@@ -365,12 +364,6 @@ function addPointSuperTiebreak(state: LiveScoreState, player: 1 | 2): LiveScoreS
     s.status = 'finished';
     return s;
   }
-
-  // Actualizar saque
-  s.server = getServeAfterTiebreakPoint(
-    getTiebreakFirstServer(s),
-    totalPoints - 1
-  );
 
   return s;
 }
@@ -423,13 +416,23 @@ function winGame(state: LiveScoreState, player: 1 | 2): LiveScoreState {
 function winTiebreak(state: LiveScoreState, player: 1 | 2): LiveScoreState {
   let s = { ...state };
 
-  // El set queda 7-6 para el ganador
-  const setP1 = player === 1 ? 7 : 6;
-  const setP2 = player === 2 ? 7 : 6;
+  // The set ends as 7-6 (or 5-4 for short) for the winner
+  const limit = gamesPerSet(s.format);
+  const setP1 = player === 1 ? limit + 1 : limit;
+  const setP2 = player === 2 ? limit + 1 : limit;
+
+  // Determine who served first in the tiebreak BEFORE clearing state
+  const tiebreakFirstServer = getTiebreakFirstServer(s);
 
   s.in_tiebreak = false;
   s.p1_points = 0;
   s.p2_points = 0;
+
+  // Rule: the player who served first in the tiebreak RECEIVES serve in the next set.
+  // So the OTHER player serves first in the next set.
+  // We set s.server to tiebreakFirstServer so that winSet's getServeAfterGame
+  // will flip it to the other player (who should serve the next set).
+  s.server = tiebreakFirstServer;
 
   return winSet(s, player, setP1, setP2);
 }
@@ -514,16 +517,16 @@ function checkTiebreakWinner(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getTiebreakFirstServer(state: LiveScoreState): 1 | 2 {
-  // El primer sacador del tiebreak es quien tenía el saque cuando in_tiebreak
-  // se activó. Como lo guardamos en state.server en ese momento, y luego
-  // getServeAfterTiebreakPoint lo usa para calcular el saque actual,
-  // necesitamos reconstruirlo desde los puntos actuales.
-  // Usamos el server actual y los puntos para inferir el primer sacador.
+  // The first server of the tiebreak is whoever had serve when in_tiebreak
+  // was set to true. We reconstruct it from the current server and total points.
+  // Using the serve formula: who serves at point index `totalPoints` (next point)?
+  //   block = floor((totalPoints + 1) / 2), even = first, odd = second
+  // So if we know current server = who serves at `totalPoints`, we can infer first server.
   const totalPoints = state.p1_points + state.p2_points;
-  const block = Math.floor(totalPoints / 2);
-  const isFirstServer = block % 2 === 0;
+  const block = Math.floor((totalPoints + 1) / 2);
+  const nextPointIsFirstServer = block % 2 === 0;
 
-  // Si el bloque actual es par, el server actual ES el primer sacador
-  if (isFirstServer) return state.server;
+  // state.server = who serves the NEXT point (at index totalPoints)
+  if (nextPointIsFirstServer) return state.server;
   return state.server === 1 ? 2 : 1;
 }

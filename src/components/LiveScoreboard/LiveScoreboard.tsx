@@ -402,6 +402,16 @@ export default function LiveScoreboard({
           </button>
         )}
 
+        {/* Retry finalization if match result wasn't saved to DB */}
+        {canEdit && state?.status === 'finished' && match.status !== 'played' && (
+          <button
+            onClick={finalizeMatch}
+            className="mt-4 w-full rounded-xl py-3 font-semibold text-red-700 bg-red-50 border border-red-200 transition-all hover:bg-red-100"
+          >
+            ⚠️ Guardar resultado (no se guardó correctamente)
+          </button>
+        )}
+
         <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-center text-sm text-emerald-700 border border-emerald-200">
           🍺 Recuerda editar el partido después para agregar las pintas o cambiar algo.
         </div>
