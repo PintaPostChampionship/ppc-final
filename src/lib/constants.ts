@@ -11,6 +11,7 @@ export const HIDDEN_TOURNAMENT_IDS: string[] = [
 // Profile IDs autorizados para ver el Dashboard Admin (además de role === 'admin' y capitanes)
 export const DASHBOARD_ALLOWED_IDS: string[] = [
   "63423627-6cac-4876-b6eb-6a39440a45dd", // Patrick Kohler
+  "965af7a2-92f1-49b0-8cfc-67d76bdf3d6e", // Ale Amunategui
 ];
 
 // 🔹 CARRUSEL DE FOTOS ANTERIORES (home)
