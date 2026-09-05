@@ -1218,13 +1218,22 @@ const App = () => {
       setCurrentUser(userProfile || null);
       setLoginView(false);
 
-      // If user exists but has NO registrations in active tournaments → prompt to join
+      // If user exists but has NO registrations in active tournaments → prompt to join.
+      // Solo consideramos torneos "unibles": activos, de liga, no calibración
+      // (Calibraciones es solo para nuevos; los knockout/copa no aplican).
+      // Si no hay ningún torneo unible abierto, no mostramos el modal aunque
+      // el jugador no tenga inscripción activa (hay que esperar la nueva temporada).
       if (userProfile && registrations.length > 0) {
-        const activeTournamentIds = tournaments.filter(t => t.status === 'active').map(t => t.id);
-        const hasActiveReg = registrations.some(r =>
-          r.profile_id === userProfile.id && activeTournamentIds.includes(r.tournament_id)
+        const joinableTournaments = tournaments.filter(t =>
+          t.status === 'active' &&
+          t.format === 'league' &&
+          !isCalibrationTournamentByName(t.name)
         );
-        if (!hasActiveReg && !showJoinModal) {
+        const joinableTournamentIds = joinableTournaments.map(t => t.id);
+        const hasActiveReg = registrations.some(r =>
+          r.profile_id === userProfile.id && joinableTournamentIds.includes(r.tournament_id)
+        );
+        if (joinableTournaments.length > 0 && !hasActiveReg && !showJoinModal) {
           setShowJoinModal(true);
         }
       }
