@@ -516,16 +516,9 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
         const map = L.map(mapRef.current).setView(center, zoom);
         mapInstanceRef.current = map;
         const cartoKey = import.meta.env.VITE_CARTO_API_KEY;
-        if (cartoKey) {
-          L.tileLayer(`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`, {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>', maxZoom: 19,
-          }).addTo(map);
-        } else {
-          // Fallback to OpenStreetMap tiles (no key needed) if CARTO key is missing
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>', maxZoom: 19,
-          }).addTo(map);
-        }
+        L.tileLayer(`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`, {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>', maxZoom: 19,
+        }).addTo(map);
         if (userLat && userLng) {
           L.circleMarker([userLat, userLng], { radius: 8, fillColor: "#3b82f6", fillOpacity: 0.8, color: "white", weight: 2 }).addTo(map).bindPopup("Tu ubicación");
         }
