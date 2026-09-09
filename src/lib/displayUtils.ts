@@ -31,7 +31,7 @@ export function divisionLogoSrc(name: string) {
   return map[name] || '/ppc-logo.png';
 }
 
-export function divisionColors(name: string): {
+export function divisionColors(name: string, league?: HofLeague): {
   barGradient: string;
   ringColor: string;
   avatarShadow: string;
@@ -40,6 +40,20 @@ export function divisionColors(name: string): {
   blurBottom: string;
 } {
   const n = (name || '').trim();
+
+  // Divisiones femeninas compartidas (Oro/Plata/Bronce en WPPC): tinte rosado
+  // sutil por encima del color base para diferenciarlas de las masculinas.
+  if (league === 'wppc' && ['Oro', 'Plata', 'Bronce'].includes(n)) {
+    return {
+      barGradient: 'from-rose-400 via-pink-400 to-fuchsia-400',
+      ringColor: 'ring-rose-200',
+      avatarShadow: '0_12px_30px_rgba(244,114,182,0.28)',
+      cardBorder: 'border-rose-100',
+      blurTop: 'bg-rose-100/70',
+      blurBottom: 'bg-pink-100/70',
+    };
+  }
+
   switch (n) {
     case 'Élite':
     case 'Anita Lizana':
@@ -133,4 +147,60 @@ export function tournamentLogoSrc(name: string) {
   if (/PPC Cup/i.test(name)) return '/ppc-cup-trophy-transparente.png';          // PPC Cup 2025
   if (/Andrea Vivaldi/i.test(name)) return '/Andrea-Vivaldi/foto-1.jpeg';        // Copa Andrea Vivaldi
   return '/ppc-logo.png';
+}
+
+// ─────────────────────────────────────────────────────────────
+// Salón de la Fama — helpers de liga / división canónica
+// ─────────────────────────────────────────────────────────────
+
+export type HofLeague = 'ppc' | 'wppc' | 'special';
+
+/** Detecta la liga de un torneo por su nombre. WPPC = mujeres, PPC = hombres. */
+export function hofLeagueFromTournamentName(name?: string | null): HofLeague {
+  const n = (name || '').trim();
+  if (/^WPPC/i.test(n)) return 'wppc';
+  if (/^PPC\s+Edici[oó]n/i.test(n) || /^PPC\s+Winter/i.test(n)) return 'ppc';
+  // Torneos especiales (PPC Cup, Andrea Vivaldi, etc.)
+  return 'special';
+}
+
+/** Etiqueta corta para el chip de liga. */
+export function hofLeagueLabel(league: HofLeague): string {
+  if (league === 'wppc') return 'WPPC';
+  if (league === 'ppc') return 'PPC';
+  return '';
+}
+
+/**
+ * Clave canónica de una división, única a través de ediciones y que separa
+ * Oro Hombres (ppc) de Oro Mujeres (wppc). Formato: `${league}:${divisionLower}`.
+ * Para torneos especiales usamos solo la división (no colisionan).
+ */
+export function hofDivisionKey(tournamentName: string, divisionName: string): string {
+  const league = hofLeagueFromTournamentName(tournamentName);
+  const div = (divisionName || '').trim().toLowerCase();
+  if (league === 'special') return `special:${div}`;
+  return `${league}:${div}`;
+}
+
+/** Label legible de una división canónica (agrega "Mujeres"/"Hombres" cuando el nombre colisiona). */
+export function hofDivisionLabel(tournamentName: string, divisionName: string): string {
+  const league = hofLeagueFromTournamentName(tournamentName);
+  const div = (divisionName || '').trim();
+  const divLower = div.toLowerCase();
+  // Torneos especiales con división genérica → "Otros Torneos"
+  if (league === 'special' && (divLower === 'principal' || divLower === '')) return 'Otros Torneos';
+  // Divisiones cuyo nombre existe en ambas ligas → desambiguar
+  const shared = ['oro', 'plata', 'bronce'];
+  if (league === 'wppc' && shared.includes(divLower)) return `${div} Mujeres`;
+  if (league === 'ppc' && shared.includes(divLower)) return `${div} Hombres`;
+  return div;
+}
+
+/** Extrae el año de un torneo (usa end_date/start_date; si no, busca 4 dígitos en el nombre). */
+export function hofYearFromTournament(name: string, endDate?: string | null, startDate?: string | null): string {
+  const iso = (endDate || startDate || '').trim();
+  if (iso.length >= 4 && /^\d{4}/.test(iso)) return iso.slice(0, 4);
+  const m = (name || '').match(/(20\d{2})/);
+  return m ? m[1] : 'Sin fecha';
 }

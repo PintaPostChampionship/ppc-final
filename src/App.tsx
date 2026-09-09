@@ -20,7 +20,7 @@ import type { Profile, PlayerCard, HistoricPlayer, Location, AvailabilitySlot, T
 import { isCalibrationTournamentByName, isOfficialMatchByTournamentId } from './lib/tournamentUtils';
 import { formatISOToDDMMYYYY, parseDDMMYYYYToISO, tituloFechaEs, isTodayOrFuture, parseYMDLocal, formatDateLocal, dateKey } from './lib/dateUtils';
 import { getPlayerStatsSummaryAll, getLeagueRegistrationsForPlayer, getLastLeagueEntryForPlayer, getFirstLeagueEntryForPlayer, getPrettyLeagueResultForPlayer, getDivisionNameByIdLocal, getAgeFromBirthDate } from './lib/playerUtils';
-import { toTitleCase, uiName, capitaliseFirst, divisionLogoSrc, divisionColors, divisionIcon, tournamentLogoSrc } from './lib/displayUtils';
+import { toTitleCase, uiName, capitaliseFirst, divisionLogoSrc, divisionColors, divisionIcon, tournamentLogoSrc, hofLeagueFromTournamentName, hofLeagueLabel, hofDivisionKey, hofDivisionLabel, hofYearFromTournament } from './lib/displayUtils';
 import { dataURItoBlob, dataURLtoFile, resizeImage, avatarSrc, hasExplicitAvatar } from './lib/imageUtils';
 import { compressAvailability, decompressAvailability, savePending, loadPending, clearPending, migrateLocalToSession, PENDING_KEY } from './lib/onboardingUtils';
 import { BUSCAR_CLASES_ALLOWED_ID, DASHBOARD_ALLOWED_IDS, PHOTOS_BASE_PATH, highlightPhotos, BOOKING_VENUES, HIDDEN_TOURNAMENT_IDS } from './lib/constants';
@@ -89,8 +89,15 @@ const App = () => {
   const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
   const [historicTab, setHistoricTab] = useState<'men' | 'women' | 'calibrations' | 'other'>('men');
   const [showHallOfFameView, setShowHallOfFameView] = useState(false);
-  const [hallOfFameTournamentFilter, setHallOfFameTournamentFilter] = useState('all');
-  const [hallOfFameDivisionFilter, setHallOfFameDivisionFilter] = useState('all');
+  // Modo de visualización del Salón de la Fama (default: por división)
+  const [hallOfFameViewMode, setHallOfFameViewMode] = useState<'edition' | 'division' | 'year'>('division');
+  // Panel de filtros colapsable
+  const [hallOfFameFiltersOpen, setHallOfFameFiltersOpen] = useState(false);
+  // Filtros multi-select (Sets vacíos = "todos"). Guardamos ids de torneo y claves de división canónica.
+  const [hallOfFameTournamentIds, setHallOfFameTournamentIds] = useState<Set<string>>(new Set());
+  const [hallOfFameDivisionKeys, setHallOfFameDivisionKeys] = useState<Set<string>>(new Set());
+  // Filtro por liga: 'all' | 'ppc' (hombres) | 'wppc' (mujeres)
+  const [hallOfFameLeagueFilter, setHallOfFameLeagueFilter] = useState<'all' | 'ppc' | 'wppc'>('all');
   const [historicPlayers, setHistoricPlayers] = useState<HistoricPlayer[]>([]);
   const [birthDateInput, setBirthDateInput] = useState('');
   const [newMatch, setNewMatch] = useState({ 
@@ -3297,7 +3304,7 @@ const App = () => {
             {menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z"/></svg>,
               'Salón de la Fama',
-              () => { resetNav(); setShowHallOfFameView(true); setHallOfFameTournamentFilter('all'); setHallOfFameDivisionFilter('all'); }
+              () => { resetNav(); setShowHallOfFameView(true); setHallOfFameViewMode('division'); setHallOfFameTournamentIds(new Set()); setHallOfFameDivisionKeys(new Set()); setHallOfFameLeagueFilter('all'); setHallOfFameFiltersOpen(false); }
             )}
 
             {divider()}
@@ -3631,6 +3638,18 @@ const App = () => {
       || null;
   };
 
+  // ¿El torneo tiene alguna final (finals_main + F + played)? Si la tiene,
+  // solo mostramos campeones de divisiones con final real (evita duplicados por
+  // divisiones "fantasma" como Anita Lizana/Serena Williams que solo son fases de grupo).
+  // Si NO tiene ninguna final (ej. PPC Cup por standings), permitimos el fallback.
+  const tournamentHasAnyFinal = (tournamentId: string) =>
+    matches.some(m =>
+      m.tournament_id === tournamentId &&
+      m.phase === 'finals_main' &&
+      m.knockout_round === 'F' &&
+      m.status === 'played'
+    );
+
   const getHallOfFameWinnerForDivision = (tournamentId: string, divisionId: string) => {
     const finalsMainMatches = matches.filter(m =>
       m.tournament_id === tournamentId &&
@@ -3655,6 +3674,10 @@ const App = () => {
         if (winner) return winner;
       }
     }
+
+    // Si el torneo tiene finales en otras divisiones pero ESTA no, no rellenamos
+    // con el primero de la tabla (esa división no coronó campeón por final).
+    if (tournamentHasAnyFinal(tournamentId)) return null;
 
     const divisionStandings = standings
       .filter(s => s.tournament_id === tournamentId && s.division_id === divisionId)
@@ -3692,13 +3715,34 @@ const App = () => {
     if (n === 'élite 1') return 23;
     if (n === 'élite 2') return 24;
 
+    // Torneos especiales al final: PPC Cup antes que "Otros Torneos" (Andrea Vivaldi, etc.)
+    if (n === 'ppc cup') return 90;
+    if (n === 'principal') return 91; // Andrea Vivaldi → "Otros Torneos"
+
     return 99;
   };
 
-  const hallOfFameEntries = tournaments
+  type HofEntry = {
+    tournamentId: string;
+    tournamentName: string;
+    tournamentEndDate: string;
+    year: string;
+    league: 'ppc' | 'wppc' | 'special';
+    divisionId: string;
+    divisionName: string;
+    divisionKey: string;
+    divisionLabel: string;
+    winnerId: string;
+    winnerName: string;
+    winnerAvatar: string | null;
+  };
+
+  // Todos los campeones (sin filtrar) — base para opciones de filtro y vistas
+  const hallOfFameAllEntries: HofEntry[] = tournaments
     .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
     .filter(t => !isCalibrationTournamentByName(t.name))
     .flatMap(tournament => {
+      const league = hofLeagueFromTournamentName(tournament.name);
       const tournamentDivisions = divisions
         .filter(d => d.tournament_id === tournament.id)
         .slice()
@@ -3718,62 +3762,128 @@ const App = () => {
             tournamentId: tournament.id,
             tournamentName: tournament.name,
             tournamentEndDate: tournament.end_date || tournament.start_date || '',
+            year: hofYearFromTournament(tournament.name, tournament.end_date, tournament.start_date),
+            league,
             divisionId: division.id,
             divisionName: division.name,
+            divisionKey: hofDivisionKey(tournament.name, division.name),
+            divisionLabel: hofDivisionLabel(tournament.name, division.name),
             winnerId: winner.id,
             winnerName: winner.name || '—',
             winnerAvatar: ('avatar_url' in winner ? winner.avatar_url : null) || null,
-          };
+          } as HofEntry;
         })
-        .filter(Boolean) as Array<{
-          tournamentId: string;
-          tournamentName: string;
-          tournamentEndDate: string;
-          divisionId: string;
-          divisionName: string;
-          winnerId: string;
-          winnerName: string;
-          winnerAvatar: string | null;
-        }>;
-    })
-    .filter(entry =>
-      hallOfFameTournamentFilter === 'all' || entry.tournamentId === hallOfFameTournamentFilter
-    )
-    .filter(entry =>
-      hallOfFameDivisionFilter === 'all' ||
-      entry.divisionName.trim().toLowerCase() === hallOfFameDivisionFilter
-    )
+        .filter(Boolean) as HofEntry[];
+    });
+
+  // Aplicar filtros (Sets vacíos = todos)
+  const hallOfFameEntries = hallOfFameAllEntries
+    .filter(e => hallOfFameLeagueFilter === 'all' || e.league === hallOfFameLeagueFilter)
+    .filter(e => hallOfFameTournamentIds.size === 0 || hallOfFameTournamentIds.has(e.tournamentId))
+    .filter(e => hallOfFameDivisionKeys.size === 0 || hallOfFameDivisionKeys.has(e.divisionKey))
     .sort((a, b) => {
       const byDate = (b.tournamentEndDate || '').localeCompare(a.tournamentEndDate || '');
       if (byDate !== 0) return byDate;
-
       const byTournament = a.tournamentName.localeCompare(b.tournamentName, 'es');
       if (byTournament !== 0) return byTournament;
-
       return getHallOfFameDivisionSortRank(a.divisionName) - getHallOfFameDivisionSortRank(b.divisionName);
     });
 
+  // Opciones para chips de torneo (ediciones)
   const hallOfFameTournamentOptions = tournaments
     .filter(t => t.status === 'closed' || t.status === 'completed' || t.status === 'finished')
     .filter(t => !isCalibrationTournamentByName(t.name))
     .slice()
-    .sort((a, b) => (b.end_date || b.start_date || '').localeCompare(a.end_date || a.start_date || ''));
+    .sort((a, b) => (b.end_date || b.start_date || '').localeCompare(a.end_date || a.start_date || ''))
+    .map(t => ({ id: t.id, name: t.name, league: hofLeagueFromTournamentName(t.name) }));
 
+  // Opciones para chips de división (canónicas, distinguen H/M)
   const hallOfFameDivisionOptions = Array.from(
     new Map(
-      divisions
-        .filter(d => {
-          const tournament = tournaments.find(t => t.id === d.tournament_id);
-          return tournament && !isCalibrationTournamentByName(tournament.name);
-        })
-        .map(d => [(d.name || '').trim().toLowerCase(), { id: (d.name || '').trim().toLowerCase(), name: d.name }])
+      hallOfFameAllEntries.map(e => [e.divisionKey, { key: e.divisionKey, label: e.divisionLabel, name: e.divisionName, league: e.league }])
     ).values()
   ).sort((a, b) => {
     const ra = getHallOfFameDivisionSortRank(a.name);
     const rb = getHallOfFameDivisionSortRank(b.name);
     if (ra !== rb) return ra - rb;
-    return (a.name || '').localeCompare(b.name || '', 'es');
+    return (a.label || '').localeCompare(b.label || '', 'es');
   });
+
+  // ── Agrupaciones para los 3 modos de vista ──
+  const hofLeagueRank = (l: HofEntry['league']) => (l === 'ppc' ? 0 : l === 'wppc' ? 1 : 2);
+  const hofGroupedByEdition = (() => {
+    const map = new Map<string, { key: string; title: string; league: HofEntry['league']; endDate: string; entries: HofEntry[] }>();
+    for (const e of hallOfFameEntries) {
+      if (!map.has(e.tournamentId)) {
+        map.set(e.tournamentId, { key: e.tournamentId, title: e.tournamentName, league: e.league, endDate: e.tournamentEndDate, entries: [] });
+      }
+      map.get(e.tournamentId)!.entries.push(e);
+    }
+    // Orden: PPC primero, luego WPPC, luego especiales; dentro de cada liga por fecha desc
+    return Array.from(map.values()).sort((a, b) => {
+      const byLeague = hofLeagueRank(a.league) - hofLeagueRank(b.league);
+      if (byLeague !== 0) return byLeague;
+      return (b.endDate || '').localeCompare(a.endDate || '');
+    });
+  })();
+
+  const hofGroupedByDivision = (() => {
+    const map = new Map<string, { key: string; title: string; league: HofEntry['league']; rank: number; entries: HofEntry[] }>();
+    for (const e of hallOfFameEntries) {
+      if (!map.has(e.divisionKey)) {
+        map.set(e.divisionKey, { key: e.divisionKey, title: e.divisionLabel, league: e.league, rank: getHallOfFameDivisionSortRank(e.divisionName), entries: [] });
+      }
+      map.get(e.divisionKey)!.entries.push(e);
+    }
+    // dentro de cada división, ordenar por fecha desc
+    for (const g of map.values()) {
+      g.entries.sort((a, b) => (b.tournamentEndDate || '').localeCompare(a.tournamentEndDate || ''));
+    }
+    return Array.from(map.values()).sort((a, b) => (a.rank - b.rank) || a.title.localeCompare(b.title, 'es'));
+  })();
+
+  const hofGroupedByYear = (() => {
+    const map = new Map<string, { key: string; title: string; entries: HofEntry[] }>();
+    for (const e of hallOfFameEntries) {
+      if (!map.has(e.year)) map.set(e.year, { key: e.year, title: e.year, entries: [] });
+      map.get(e.year)!.entries.push(e);
+    }
+    for (const g of map.values()) {
+      g.entries.sort((a, b) => {
+        const byDate = (b.tournamentEndDate || '').localeCompare(a.tournamentEndDate || '');
+        if (byDate !== 0) return byDate;
+        return getHallOfFameDivisionSortRank(a.divisionName) - getHallOfFameDivisionSortRank(b.divisionName);
+      });
+    }
+    return Array.from(map.values()).sort((a, b) => b.title.localeCompare(a.title));
+  })();
+
+  const toggleHofTournament = (id: string) => {
+    setHallOfFameTournamentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleHofDivision = (key: string) => {
+    setHallOfFameDivisionKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+  const clearHofFilters = () => {
+    setHallOfFameTournamentIds(new Set());
+    setHallOfFameDivisionKeys(new Set());
+    setHallOfFameLeagueFilter('all');
+  };
+  const selectAllHofTournaments = () => setHallOfFameTournamentIds(new Set(hallOfFameTournamentOptions.map(t => t.id)));
+  const selectAllHofDivisions = () => setHallOfFameDivisionKeys(new Set(hallOfFameDivisionOptions.map(d => d.key)));
+  // Nº de filtros activos (para el badge del botón desplegable)
+  const hofActiveFilterCount =
+    (hallOfFameLeagueFilter !== 'all' ? 1 : 0) +
+    hallOfFameTournamentIds.size +
+    hallOfFameDivisionKeys.size;
 
 
   if (showHallOfFameView) {
@@ -3844,36 +3954,153 @@ const App = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
 
-          {/* ── Filters ── */}
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-            <select
-              value={hallOfFameTournamentFilter}
-              onChange={(e) => setHallOfFameTournamentFilter(e.target.value)}
-              className="w-full sm:w-auto min-w-[240px] px-4 py-2.5 rounded-xl bg-white text-slate-900 border border-amber-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
-            >
-              <option value="all">Todos los torneos</option>
-              {hallOfFameTournamentOptions.map(tournament => (
-                <option key={tournament.id} value={tournament.id}>
-                  {tournament.name}
-                </option>
+          {/* ── Selector de modo de vista ── */}
+          <div className="flex justify-center">
+            <div className="inline-flex rounded-2xl bg-white border border-amber-200 shadow-sm p-1">
+              {([
+                { key: 'division', label: 'Por División' },
+                { key: 'edition', label: 'Por Edición' },
+                { key: 'year', label: 'Por Año' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setHallOfFameViewMode(opt.key)}
+                  className={`px-4 sm:px-5 py-2 rounded-xl text-sm font-semibold transition ${
+                    hallOfFameViewMode === opt.key
+                      ? 'bg-amber-500 text-white shadow'
+                      : 'text-slate-600 hover:bg-amber-50'
+                  }`}
+                >
+                  {opt.label}
+                </button>
               ))}
-            </select>
-
-            <select
-              value={hallOfFameDivisionFilter}
-              onChange={(e) => setHallOfFameDivisionFilter(e.target.value)}
-              className="w-full sm:w-auto min-w-[220px] px-4 py-2.5 rounded-xl bg-white text-slate-900 border border-emerald-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-300"
-            >
-              <option value="all">Todas las divisiones</option>
-              {hallOfFameDivisionOptions.map(division => (
-                <option key={division.id} value={division.id}>
-                  {division.name}
-                </option>
-              ))}
-            </select>
+            </div>
           </div>
 
-          {/* ── Grid / empty state ── */}
+          {/* ── Filtros con chips ── */}
+          <div className="rounded-2xl border border-amber-100 bg-white/80 backdrop-blur">
+            {/* Cabecera desplegable */}
+            <button
+              type="button"
+              onClick={() => setHallOfFameFiltersOpen(v => !v)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left"
+            >
+              <svg className="w-5 h-5 text-amber-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" />
+              </svg>
+              <span className="font-semibold text-slate-700">Filtros</span>
+              {hofActiveFilterCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-xs font-bold">
+                  {hofActiveFilterCount}
+                </span>
+              )}
+              <svg
+                className={`w-5 h-5 text-slate-400 ml-auto transition-transform ${hallOfFameFiltersOpen ? 'rotate-180' : ''}`}
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* Cuerpo desplegable */}
+            {hallOfFameFiltersOpen && (
+              <div className="px-4 pb-4 space-y-4 border-t border-amber-100 pt-4">
+                {/* Liga */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 w-full sm:w-24">Liga</span>
+                  {([
+                    { key: 'all', label: 'Todas' },
+                    { key: 'ppc', label: 'PPC (Hombres)' },
+                    { key: 'wppc', label: 'WPPC (Mujeres)' },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setHallOfFameLeagueFilter(opt.key)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition ${
+                        hallOfFameLeagueFilter === opt.key
+                          ? (opt.key === 'wppc' ? 'bg-rose-500 text-white border-rose-500' : opt.key === 'ppc' ? 'bg-blue-600 text-white border-blue-600' : 'bg-slate-800 text-white border-slate-800')
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Ediciones */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Ediciones</span>
+                    <button type="button" onClick={selectAllHofTournaments} className="text-[11px] font-semibold text-amber-700 hover:text-amber-900">Todas</button>
+                    <span className="text-slate-300">·</span>
+                    <button type="button" onClick={() => setHallOfFameTournamentIds(new Set())} className="text-[11px] font-semibold text-slate-500 hover:text-slate-700">Ninguna</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {hallOfFameTournamentOptions.map(t => {
+                      const active = hallOfFameTournamentIds.has(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => toggleHofTournament(t.id)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition inline-flex items-center gap-1.5 ${
+                            active ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-300'
+                          }`}
+                        >
+                          {active && <span className="text-[10px]">✓</span>}
+                          {t.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Divisiones */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Divisiones</span>
+                    <button type="button" onClick={selectAllHofDivisions} className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900">Todas</button>
+                    <span className="text-slate-300">·</span>
+                    <button type="button" onClick={() => setHallOfFameDivisionKeys(new Set())} className="text-[11px] font-semibold text-slate-500 hover:text-slate-700">Ninguna</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {hallOfFameDivisionOptions.map(d => {
+                      const active = hallOfFameDivisionKeys.has(d.key);
+                      return (
+                        <button
+                          key={d.key}
+                          type="button"
+                          onClick={() => toggleHofDivision(d.key)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition inline-flex items-center gap-1.5 ${
+                            active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'
+                          }`}
+                        >
+                          {active && <span className="text-[10px]">✓</span>}
+                          {d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {hofActiveFilterCount > 0 && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={clearHofFilters}
+                      className="text-xs font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2"
+                    >
+                      Limpiar filtros
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Contenido / empty state ── */}
           {hallOfFameEntries.length === 0 ? (
             <div className="rounded-2xl border border-amber-100 bg-white/90 p-10 text-center shadow-sm">
               <p className="text-3xl mb-3">🏆</p>
@@ -3881,59 +4108,87 @@ const App = () => {
               <p className="text-slate-500 text-sm mt-1">Prueba a cambiar los filtros.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {hallOfFameEntries.map(entry => {
-                const dc = divisionColors(entry.divisionName);
-                return (
-                <div
-                  key={`${entry.tournamentId}-${entry.divisionId}`}
-                  className={`group relative overflow-hidden rounded-[26px] border bg-white shadow-[0_16px_45px_rgba(15,23,42,0.08)] transition-transform duration-200 hover:-translate-y-1 ${dc.cardBorder}`}
-                >
-                  <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${dc.barGradient}`} />
-                  <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full blur-2xl ${dc.blurTop}`} />
-                  <div className={`absolute -bottom-10 -left-10 w-36 h-36 rounded-full blur-2xl ${dc.blurBottom}`} />
-
-                  <div className="relative p-6">
-                    <div className="flex items-start gap-4 mb-5">
-                      <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0 shadow-sm">
-                        <img
-                          src={divisionLogoSrc(entry.divisionName)}
-                          alt={`${entry.divisionName} logo`}
-                          className="max-h-[42px] max-w-[42px] object-contain"
-                        />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-600 mb-1">
-                          Campeón
-                        </p>
-                        <h3 className="text-xl font-bold text-slate-900 leading-tight">
-                          {entry.tournamentName}
-                        </h3>
-                        <p className="text-sm text-slate-500 mt-1">
-                          División {entry.divisionName}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col items-center text-center">
-                      <div className={`relative w-28 h-28 rounded-full overflow-hidden border-4 border-white mb-4 bg-slate-100 shadow-[${dc.avatarShadow}]`}>
-                        <div className={`absolute inset-0 rounded-full ring-4 ${dc.ringColor}`} />
-                        <img
-                          src={entry.winnerAvatar || '/default-avatar.png'}
-                          alt={entry.winnerName}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-
-                      <h4 className="text-lg font-bold text-slate-900">
-                        {uiName(entry.winnerName)}
-                      </h4>
-                    </div>
+            <div className="space-y-8">
+              {(hallOfFameViewMode === 'edition' ? hofGroupedByEdition
+                : hallOfFameViewMode === 'division' ? hofGroupedByDivision
+                : hofGroupedByYear
+              ).map(group => (
+                <section key={group.key}>
+                  {/* Encabezado del grupo */}
+                  <div className="flex items-center gap-3 mb-4">
+                    {hallOfFameViewMode === 'edition' && (
+                      <img
+                        src={tournamentLogoSrc(group.title)}
+                        alt=""
+                        className="w-10 h-10 rounded-xl object-contain bg-white border border-slate-100 shadow-sm p-1"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-800">{group.title}</h2>
+                    {'league' in group && (group as any).league && (group as any).league !== 'special' && (
+                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                        (group as any).league === 'wppc' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {hofLeagueLabel((group as any).league)}
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs font-medium text-slate-400">
+                      {group.entries.length} {group.entries.length === 1 ? 'campeón' : 'campeones'}
+                    </span>
                   </div>
-                </div>
-                );
-              })}
+
+                  {/* Grilla de mini-tarjetas */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 sm:gap-4">
+                    {group.entries.map(entry => {
+                      const dc = divisionColors(entry.divisionName, entry.league);
+                      // En vista por edición mostramos la división; en las otras, el torneo
+                      const subtitle = hallOfFameViewMode === 'edition' ? entry.divisionLabel : entry.tournamentName;
+                      return (
+                        <div
+                          key={`${entry.tournamentId}-${entry.divisionId}`}
+                          className={`group relative overflow-hidden rounded-2xl border bg-white shadow-[0_8px_24px_rgba(15,23,42,0.06)] transition-transform duration-200 hover:-translate-y-1 ${dc.cardBorder}`}
+                        >
+                          <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${dc.barGradient}`} />
+                          <div className="relative p-3 sm:p-4 flex flex-col items-center text-center">
+                            {/* Logo división + chip liga */}
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <img
+                                src={divisionLogoSrc(entry.divisionName)}
+                                alt=""
+                                className="w-5 h-5 object-contain"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              />
+                              {entry.league !== 'special' && (
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold leading-none ${
+                                  entry.league === 'wppc' ? 'bg-rose-100 text-rose-600' : 'bg-blue-100 text-blue-600'
+                                }`}>
+                                  {hofLeagueLabel(entry.league)}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Avatar */}
+                            <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-white mb-2 bg-slate-100 shadow-md">
+                              <div className={`absolute inset-0 rounded-full ring-2 ${dc.ringColor}`} />
+                              <img
+                                src={entry.winnerAvatar || '/default-avatar.png'}
+                                alt={entry.winnerName}
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/default-avatar.png'; }}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+
+                            <h4 className="text-sm font-bold text-slate-900 leading-tight line-clamp-2">
+                              {uiName(entry.winnerName)}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{subtitle}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </div>
