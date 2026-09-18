@@ -3,7 +3,7 @@ import { createSign } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { verifyAuth } from './_lib/verifyAuth.js';
 
-const SPREADSHEET_ID = '1DC64PmiKF7yerp59-PT0fnEGcU0xSW7Dm500PyBtJWg';
+const SPREADSHEET_ID = '1tFrZmGg5V-YQlcIAbzYhhGKnFd-RNoHJZ7ctvmiye6s';
 const SHEET_NAME = 'pagos_web';
 
 interface ServiceAccountCredentials {

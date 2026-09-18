@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import type { PaymentStatusMap } from '../types/payment';
 
 const GVIZ_URL =
-  'https://docs.google.com/spreadsheets/d/1DC64PmiKF7yerp59-PT0fnEGcU0xSW7Dm500PyBtJWg/gviz/tq?tqx=out:json&sheet=pagos_web';
+  'https://docs.google.com/spreadsheets/d/1tFrZmGg5V-YQlcIAbzYhhGKnFd-RNoHJZ7ctvmiye6s/gviz/tq?tqx=out:json&sheet=pagos_web';
 
 export interface UsePaymentStatusResult {
   paymentMap: PaymentStatusMap;
