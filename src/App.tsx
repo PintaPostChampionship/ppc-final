@@ -88,6 +88,7 @@ const App = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showHistoricTournaments, setShowHistoricTournaments] = useState(false);
   const [historicTab, setHistoricTab] = useState<'men' | 'women' | 'calibrations' | 'other'>('men');
+  const [guestLoading, setGuestLoading] = useState(false);
   const [showHallOfFameView, setShowHallOfFameView] = useState(false);
   // Modo de visualización del Salón de la Fama (default: por división)
   const [hallOfFameViewMode, setHallOfFameViewMode] = useState<'edition' | 'division' | 'year'>('division');
@@ -1038,6 +1039,8 @@ const App = () => {
 
   function canEditSchedule(m: Match) {
     if (!currentUser) return false;
+    // Invitado: solo lectura, nunca puede editar
+    if (currentUser.role === 'guest') return false;
 
     const isPlayer =
       currentUser.id === m.home_player_id ||
@@ -1220,6 +1223,20 @@ const App = () => {
 
   // EFECTO 2: Sincroniza el currentUser con los datos cargados
   useEffect(() => {
+    // Sesión de invitado (anónima): no tiene fila en profiles.
+    // Construimos un currentUser sintético de solo lectura con role 'guest'.
+    if (sessionUser && (sessionUser as any).is_anonymous) {
+      setCurrentUser({
+        id: sessionUser.id,
+        name: 'Invitado',
+        role: 'guest',
+        created_at: new Date().toISOString(),
+        avatar_url: '/forest-logo.png',
+      } as Profile);
+      setLoginView(false);
+      return;
+    }
+
     if (sessionUser && profiles.length > 0) {
       const userProfile = profiles.find(p => p.id === sessionUser.id);
       setCurrentUser(userProfile || null);
@@ -1616,8 +1633,12 @@ const App = () => {
   const uid: string | null = currentUser?.id ? String(currentUser.id) : null;
   const role: string = currentUser?.role ?? 'user';
 
+  // Invitado de solo lectura (sesión anónima). No puede escribir nada.
+  const isGuest: boolean = currentUser?.role === 'guest';
+
   const isBookingAdmin: boolean =
     uid !== null &&
+    !isGuest &&
     (bookingAdmins?.some?.(a => String(a.profile_id) === uid) === true);
 
   // Dashboard access: admin, hardcoded IDs, or captain of any division in an active tournament
@@ -2299,6 +2320,20 @@ const App = () => {
       if (error) throw error;
     } catch (err: any) {
       alert(`Error al iniciar sesión con Google: ${err.message}`);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setGuestLoading(true);
+    try {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      // La sesión anónima dispara onAuthStateChange → se cargan los datos.
+      // El perfil "guest" (solo lectura) se resuelve en el efecto de sesión.
+    } catch (err: any) {
+      alert(`No se pudo entrar como invitado: ${err.message}`);
+    } finally {
+      setGuestLoading(false);
     }
   };
 
@@ -3067,6 +3102,7 @@ const App = () => {
 
   const goToMyPlayerProfile = () => {
     if (!currentUser) return;
+    if (currentUser.role === 'guest') return; // invitado no tiene perfil propio
 
     const latestTournament = getLatestTournamentForUser(currentUser.id);
     if (!latestTournament) {
@@ -3222,7 +3258,7 @@ const App = () => {
             }}
           >
 
-            {menuItem(
+            {!isGuest && menuItem(
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><circle cx="12" cy="7" r="4"/><path d="M6 21c0-3.314 2.686-6 6-6s6 2.686 6 6" strokeLinecap="round"/></svg>,
               'Mi Perfil',
               () => { openEditProfile(); setShowNavMenu(false); }
@@ -3362,7 +3398,8 @@ const App = () => {
             </span>
           </div>
 
-          {/* Join at bottom */}
+          {/* Join at bottom (oculto para invitados) */}
+          {!isGuest && (
           <div className="px-3 pt-2 pb-1">
             <button
               type="button"
@@ -3375,6 +3412,7 @@ const App = () => {
               <span>Unirse a un Torneo</span>
             </button>
           </div>
+          )}
 
           {/* Logout */}
           <div className="px-3 pb-5 pt-2 border-t border-white/10">
@@ -5751,6 +5789,23 @@ const App = () => {
                     </div>
                   </div>
                 </form>
+              )}
+
+              {/* Entrar como invitado (solo lectura) */}
+              {authTab === 'login' && (
+                <div className="mt-5 pt-5 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={handleGuestLogin}
+                    disabled={guestLoading}
+                    className="w-full bg-gray-100 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-200 transition duration-200 disabled:opacity-60"
+                  >
+                    {guestLoading ? 'Entrando…' : 'Entrar como invitado'}
+                  </button>
+                  <p className="text-center text-xs text-gray-400 mt-2">
+                    Explora la web en modo solo lectura, sin necesidad de cuenta.
+                  </p>
+                </div>
               )}
 
               {/* Register form (step 1: name + email) */}
