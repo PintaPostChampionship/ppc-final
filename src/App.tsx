@@ -1231,7 +1231,7 @@ const App = () => {
         name: 'Invitado',
         role: 'guest',
         created_at: new Date().toISOString(),
-        avatar_url: '/forest-logo.png',
+        avatar_url: '/forest-logo-guest.png',
       } as Profile);
       setLoginView(false);
       return;
