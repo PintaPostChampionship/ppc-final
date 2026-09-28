@@ -1521,7 +1521,7 @@ const App = () => {
 
     const loadBookingData = async () => {
       try {
-        const [adminsRes, accountsRes, requestsRes] = await Promise.all([
+        const [adminsRes, accountsRes, requestsRes, sharedRes] = await Promise.all([
           supabase.from('booking_admins').select('id, profile_id, created_at'),
           supabase
             .from('booking_accounts')
@@ -1532,15 +1532,24 @@ const App = () => {
             .select('*')
             .order('target_date', { ascending: true })
             .order('target_start_time', { ascending: true }),
+          // Cuentas de Better compartidas con el usuario actual (ej. Vicho usa la de Dominga).
+          supabase
+            .from('booking_account_users')
+            .select('booking_account_id'),
         ]);
 
         if (adminsRes.error) throw adminsRes.error;
         if (accountsRes.error) throw accountsRes.error;
         if (requestsRes.error) throw requestsRes.error;
+        // sharedRes puede fallar silenciosamente si la tabla no existe todavía en algún entorno.
 
         const adminsData = (adminsRes.data ?? []) as BookingAdmin[];
         const accountsData = (accountsRes.data ?? []) as BookingAccount[];
         const requestsData = (requestsRes.data ?? []) as CourtBookingRequest[];
+        // IDs de cuentas compartidas conmigo (RLS ya filtra por mi profile_id).
+        const sharedAccountIds = new Set(
+          (sharedRes?.data ?? []).map((r: { booking_account_id: string }) => String(r.booking_account_id))
+        );
 
         const currentUid = session?.user?.id ?? null;
         const currentIsAdmin =
@@ -1550,7 +1559,9 @@ const App = () => {
         const visibleAccounts = currentIsAdmin
           ? accountsData
           : accountsData.filter(
-              acc => String(acc.owner_profile_id) === String(currentUid)
+              acc =>
+                String(acc.owner_profile_id) === String(currentUid) ||
+                sharedAccountIds.has(String(acc.id))
             );
 
         // IMPORTANTE: usa los *mismos* setters que ya tienes en el componente
@@ -1660,11 +1671,10 @@ const App = () => {
     return () => document.body.classList.remove('nav-open');
   }, [showNavMenu, currentUser]);
 
-  const visibleBookingAccounts: BookingAccount[] = isBookingAdmin
-    ? bookingAccounts
-    : bookingAccounts.filter(
-        acc => String(acc.owner_profile_id) === String(uid)
-      );
+  // bookingAccounts ya viene filtrado en loadBookingData (owner + cuentas compartidas
+  // vía booking_account_users). No re-filtramos por owner aquí para no excluir las
+  // cuentas compartidas (ej. Vicho usando la cuenta de Dominga).
+  const visibleBookingAccounts: BookingAccount[] = bookingAccounts;
 
   // Bloques horarios disponibles en Better (dinámico según venue)
   const betterTimeSlots: { value: string; label: string }[] = (() => {
