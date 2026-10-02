@@ -11620,29 +11620,35 @@ const App = () => {
           {/* Create Match Section — shown as independent view */}
           {showMatchForms && selectedDivision && (
           <div className="mb-8">
-            {/* Sub-tabs */}
-            <div className="flex gap-2 mb-6">
+            {/* Sub-tabs (segmented control exagerado: imposible no notar cuál está activo) */}
+            <div className="flex w-full sm:w-auto items-center gap-2 mb-6 p-2 bg-gray-100 rounded-2xl border border-gray-200 shadow-inner">
                 <button
                   type="button"
                   onClick={() => setMatchFormsTab('schedule')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${
+                  aria-pressed={matchFormsTab === 'schedule'}
+                  className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl transition-all duration-200 ease-out ${
                     matchFormsTab === 'schedule'
-                      ? 'bg-emerald-600 text-white border-emerald-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      ? 'px-6 py-3.5 bg-gradient-to-br from-sky-500 to-blue-600 text-white font-extrabold text-base shadow-lg shadow-blue-500/40 ring-2 ring-white scale-105 -translate-y-0.5'
+                      : 'px-4 py-2.5 bg-transparent text-gray-400 font-medium text-sm opacity-60 scale-95 hover:opacity-100'
                   }`}
                 >
-                  📅 Agendar Partido
+                  <span className="text-lg">📅</span>
+                  <span>Agendar{matchFormsTab === 'schedule' ? ' Partido' : ''}</span>
+                  {matchFormsTab === 'schedule' && <span className="ml-0.5 flex items-center justify-center w-5 h-5 rounded-full bg-white/25 text-xs font-black">✓</span>}
                 </button>
                 <button
                   type="button"
                   onClick={() => setMatchFormsTab('result')}
-                  className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${
+                  aria-pressed={matchFormsTab === 'result'}
+                  className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 rounded-xl transition-all duration-200 ease-out ${
                     matchFormsTab === 'result'
-                      ? 'bg-emerald-600 text-white border-emerald-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      ? 'px-6 py-3.5 bg-gradient-to-br from-emerald-500 to-green-600 text-white font-extrabold text-base shadow-lg shadow-emerald-500/40 ring-2 ring-white scale-105 -translate-y-0.5'
+                      : 'px-4 py-2.5 bg-transparent text-gray-400 font-medium text-sm opacity-60 scale-95 hover:opacity-100'
                   }`}
                 >
-                  ✏️ Agregar Resultado
+                  <span className="text-lg">✏️</span>
+                  <span>{matchFormsTab === 'result' ? 'Agregar ' : ''}Resultado</span>
+                  {matchFormsTab === 'result' && <span className="ml-0.5 flex items-center justify-center w-5 h-5 rounded-full bg-white/25 text-xs font-black">✓</span>}
                 </button>
             </div>
 
