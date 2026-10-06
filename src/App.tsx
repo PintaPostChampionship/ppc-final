@@ -228,6 +228,12 @@ const App = () => {
     if (activitySlug === BOOKING_VENUES.swimming.activity_slug) {
       return BOOKING_VENUES.swimming;
     }
+    if (activitySlug === BOOKING_VENUES.indoor.activity_slug) {
+      return BOOKING_VENUES.indoor;
+    }
+    if (activitySlug === BOOKING_VENUES.outdoor.activity_slug) {
+      return BOOKING_VENUES.outdoor;
+    }
     return BOOKING_VENUES.highbury;
   };
 
@@ -1755,29 +1761,26 @@ const App = () => {
       : filteredHistoricalRequests.slice(0, Number(bookingHistoryLimit));
 
   useEffect(() => {
-    if (!newBooking.better_account_id) {
-      // Set default account based on the logged-in user's own account
-      const myAccount = bookingAccounts.find(a => a.owner_profile_id === currentUser?.id);
-      if (myAccount) {
-        setNewBooking(prev => ({ ...prev, better_account_id: myAccount.id }));
-        return;
-      }
-      // Fallback to first visible account
-      if (visibleBookingAccounts.length > 0) {
-        setNewBooking(prev => ({ ...prev, better_account_id: visibleBookingAccounts[0].id }));
-      }
-      return;
-    }
+    // Esperar a que las cuentas estén cargadas antes de elegir un default. Si no,
+    // el fallback (primera cuenta alfabética) se dispara ANTES de cargar y luego
+    // nunca se corrige — por eso a Javier le salía Dominga por default.
+    if (visibleBookingAccounts.length === 0) return;
+
+    // La cuenta PROPIA del usuario (donde es owner y está activa) tiene prioridad.
+    const myAccount = bookingAccounts.find(
+      a => a.owner_profile_id === currentUser?.id && a.is_active !== false
+    );
 
     const stillVisible = visibleBookingAccounts.some(
       acc => acc.id === newBooking.better_account_id
     );
 
-    if (!stillVisible) {
-      setNewBooking(prev => ({
-        ...prev,
-        better_account_id: visibleBookingAccounts[0]?.id ?? '',
-      }));
+    // Caso 1: no hay cuenta seleccionada o la seleccionada ya no es visible.
+    if (!newBooking.better_account_id || !stillVisible) {
+      const defaultId = myAccount?.id ?? visibleBookingAccounts[0].id;
+      if (defaultId !== newBooking.better_account_id) {
+        setNewBooking(prev => ({ ...prev, better_account_id: defaultId }));
+      }
     }
   }, [visibleBookingAccounts, newBooking.better_account_id, currentUser?.id, bookingAccounts]);
 
@@ -1789,9 +1792,13 @@ const App = () => {
 
   const shortCourt = (name?: string | null) => {
     if (!name) return null;
-    const m = /(\d+)$/.exec(name);
-    // Si quieres “Court 11” en vez de solo “11”, cambia el return a: `Court ${m ? m[1] : name}`
-    return m ? m[1] : name;
+    const num = /(\d+)/.exec(name);
+    const n = num ? num[1] : null;
+    // Preservar la distinción Indoor/Outdoor (Islington tiene ambas, muy distintas).
+    const lower = name.toLowerCase();
+    if (lower.includes('indoor')) return n ? `Indoor ${n}` : name;
+    if (lower.includes('outdoor')) return n ? `Outdoor ${n}` : name;
+    return n ?? name;
   };
 
   const joinCourtsShort = (
@@ -6816,9 +6823,19 @@ const App = () => {
                       if (!creditInfo) return (
                         <p className="mt-1.5 text-xs text-gray-400">Sin datos de créditos aún</p>
                       );
-                      // Precio según venue seleccionado
-                      const isRosemary = newBooking.activity_slug === BOOKING_VENUES.rosemary.activity_slug;
-                      const costPence = (isRosemary ? creditInfo.costRosemary : creditInfo.costHighbury) ?? 1285;
+                      // Precio según venue seleccionado (en peniques).
+                      // Indoor/Outdoor tienen precio fijo de socio (no están en la tabla de créditos).
+                      const _slug = newBooking.activity_slug;
+                      let costPence: number;
+                      if (_slug === BOOKING_VENUES.indoor.activity_slug) {
+                        costPence = 3550; // £35.50 socio indoor
+                      } else if (_slug === BOOKING_VENUES.outdoor.activity_slug) {
+                        costPence = 1275; // £12.75 socio outdoor
+                      } else if (_slug === BOOKING_VENUES.rosemary.activity_slug) {
+                        costPence = creditInfo.costRosemary ?? 1285;
+                      } else {
+                        costPence = creditInfo.costHighbury ?? 1285;
+                      }
                       const hasEnough = creditInfo.credits >= costPence;
                       const numReservas = costPence > 0 ? Math.floor(creditInfo.credits / costPence) : 0;
                       const updatedAgo = (() => {
@@ -6859,6 +6876,8 @@ const App = () => {
                         onChange={(e) => handleBookingVenueChange(e.target.value as BookingVenueKey)}
                       >
                         <option value="highbury">Highbury Fields</option>
+                        <option value="indoor">Islington Indoor</option>
+                        <option value="outdoor">Islington Outdoor</option>
                         <option value="rosemary">Rosemary Gardens</option>
                         {(currentUser?.id === 'cd5a32f3-a98f-4936-9b43-4f8374fa488c' || isBookingAdmin) && (
                           <option value="swimming">Open Water Swimming</option>

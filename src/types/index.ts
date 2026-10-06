@@ -217,7 +217,7 @@ export type PendingOnboarding = {
 
 export type PPCNotif = { id: string; text: string; matchId?: string; at: number };
 
-export type BookingVenueKey = 'highbury' | 'rosemary' | 'swimming';
+export type BookingVenueKey = 'highbury' | 'rosemary' | 'swimming' | 'indoor' | 'outdoor';
 
 export interface PushSubscriptionRecord {
   id: string;

@@ -95,6 +95,30 @@ export const BOOKING_VENUES = {
     ],
     defaultPreferences: ['Court 1', 'Court 2', ''],
   },
+  indoor: {
+    key: 'indoor' as BookingVenueKey,
+    venue_slug: 'islington-tennis-centre',
+    activity_slug: 'tennis-court-indoor',
+    venue_label: 'Islington Indoor (Islington Tennis Centre)',
+    activity_label: 'Islington Tennis Court (Indoor)',
+    courtOptions: Array.from({ length: 6 }, (_, i) => ({
+      short: `Court ${i + 1}`,
+      full: `Indoor Court ${i + 1}`,
+    })),
+    defaultPreferences: ['Court 1', 'Court 2', 'Court 3'],
+  },
+  outdoor: {
+    key: 'outdoor' as BookingVenueKey,
+    venue_slug: 'islington-tennis-centre',
+    activity_slug: 'tennis-court-outdoor',
+    venue_label: 'Islington Outdoor (Islington Tennis Centre)',
+    activity_label: 'Islington Tennis Court (Outdoor)',
+    courtOptions: [
+      { short: 'Court 1', full: 'Outdoor Court 1' },
+      { short: 'Court 2', full: 'Outdoor Court 2' },
+    ],
+    defaultPreferences: ['Court 1', 'Court 2', ''],
+  },
   swimming: {
     key: 'swimming' as BookingVenueKey,
     venue_slug: 'west-reservoir-centre',
