@@ -49,6 +49,8 @@ const App = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [pendingAvatarPreview, setPendingAvatarPreview] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  // Marca si el usuario eligió manualmente la cuenta de booking (para no sobreescribirla).
+  const bookingAccountChosenManually = useRef(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [divisionsByTournament, setDivisionsByTournament] = useState<Record<string, Division[]>>({});
@@ -294,14 +296,30 @@ const App = () => {
   const handleBookingVenueChange = (venueKey: BookingVenueKey) => {
     const cfg = BOOKING_VENUES[venueKey];
 
-    setNewBooking(prev => ({
-      ...prev,
-      venue_slug: cfg.venue_slug,
-      activity_slug: cfg.activity_slug,
-      preferred_court_name_1: '',
-      preferred_court_name_2: '',
-      preferred_court_name_3: '',
-    }));
+    // Rango de horas por venue (verificado contra Better):
+    // Islington Indoor/Outdoor: 07:00–22:00 | Highbury/Rosemary: 08:00–20:00.
+    // Si la hora actual queda fuera del rango del nuevo venue, reseteamos a 19:00.
+    const isIslingtonExt =
+      cfg.activity_slug === BOOKING_VENUES.indoor.activity_slug ||
+      cfg.activity_slug === BOOKING_VENUES.outdoor.activity_slug;
+    const minStartHour = isIslingtonExt ? 7 : 8;
+    const maxStartHour = isIslingtonExt ? 22 : 20;
+
+    setNewBooking(prev => {
+      const curHour = parseInt((prev.start_time || '19:00').split(':')[0], 10);
+      const safeStart = (isNaN(curHour) || curHour > maxStartHour || curHour < minStartHour)
+        ? '19:00'
+        : prev.start_time;
+      return {
+        ...prev,
+        venue_slug: cfg.venue_slug,
+        activity_slug: cfg.activity_slug,
+        start_time: safeStart,
+        preferred_court_name_1: '',
+        preferred_court_name_2: '',
+        preferred_court_name_3: '',
+      };
+    });
   };  
 
   const [socialEvents, setSocialEvents] = useState<SocialEvent[]>([]);
@@ -1703,13 +1721,22 @@ const App = () => {
       }
       return slots;
     }
-    // Tennis: bloques de 1h, de 08:00 a 20:00
+    // Tennis: bloques de 1h. El rango depende del venue (verificado contra Better):
+    // - Islington Indoor / Outdoor: 07:00 a 22:00 (último bloque 22:00–23:00).
+    //   Tienen hora más temprana (07:00) y más tardía (21:00, 22:00) que Highbury.
+    // - Highbury / Rosemary: 08:00 a 20:00 (último bloque 20:00–21:00).
+    const _slug = newBooking.activity_slug;
+    const isIslingtonExt =
+      _slug === BOOKING_VENUES.indoor.activity_slug ||
+      _slug === BOOKING_VENUES.outdoor.activity_slug;
+    const firstStartHour = isIslingtonExt ? 7 : 8;
+    const lastStartHour = isIslingtonExt ? 22 : 20;
+    const pad = (n: number) => String(n).padStart(2, '0');
     return Array.from(
-      { length: 13 },
+      { length: lastStartHour - firstStartHour + 1 },
       (_, i) => {
-        const startH = 8 + i;
+        const startH = firstStartHour + i;
         const endH = startH + 1;
-        const pad = (n: number) => String(n).padStart(2, '0');
         return {
           value: `${pad(startH)}:00`,
           label: `${pad(startH)}:00–${pad(endH)}:00`,
@@ -1761,9 +1788,6 @@ const App = () => {
       : filteredHistoricalRequests.slice(0, Number(bookingHistoryLimit));
 
   useEffect(() => {
-    // Esperar a que las cuentas estén cargadas antes de elegir un default. Si no,
-    // el fallback (primera cuenta alfabética) se dispara ANTES de cargar y luego
-    // nunca se corrige — por eso a Javier le salía Dominga por default.
     if (visibleBookingAccounts.length === 0) return;
 
     // La cuenta PROPIA del usuario (donde es owner y está activa) tiene prioridad.
@@ -1775,7 +1799,18 @@ const App = () => {
       acc => acc.id === newBooking.better_account_id
     );
 
-    // Caso 1: no hay cuenta seleccionada o la seleccionada ya no es visible.
+    // Si el usuario NO eligió manualmente, SIEMPRE preferir su cuenta propia.
+    // Esto corrige el bug: el default temprano (antes de que cargue currentUser)
+    // ponía la primera cuenta alfabética (Dominga) y, como era visible, nunca se
+    // corregía a la propia (Javier) cuando currentUser terminaba de cargar.
+    if (!bookingAccountChosenManually.current && myAccount) {
+      if (newBooking.better_account_id !== myAccount.id) {
+        setNewBooking(prev => ({ ...prev, better_account_id: myAccount.id }));
+      }
+      return;
+    }
+
+    // Si no hay cuenta propia (ej. admin sin cuenta): elegir default si falta o no es visible.
     if (!newBooking.better_account_id || !stillVisible) {
       const defaultId = myAccount?.id ?? visibleBookingAccounts[0].id;
       if (defaultId !== newBooking.better_account_id) {
@@ -6801,7 +6836,10 @@ const App = () => {
                     <select
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                       value={newBooking.better_account_id || ''}  // UI en string
-                      onChange={(e) => setNewBooking({ ...newBooking, better_account_id: e.target.value })}
+                      onChange={(e) => {
+                        bookingAccountChosenManually.current = true;
+                        setNewBooking({ ...newBooking, better_account_id: e.target.value });
+                      }}
                       required
                     >
                       <option value="">Selecciona una cuenta</option>
