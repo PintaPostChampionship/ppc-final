@@ -296,14 +296,15 @@ const App = () => {
   const handleBookingVenueChange = (venueKey: BookingVenueKey) => {
     const cfg = BOOKING_VENUES[venueKey];
 
-    // Rango de horas por venue (verificado contra Better):
-    // Islington Indoor/Outdoor: 07:00–22:00 | Highbury/Rosemary: 08:00–20:00.
+    // Rango de horas por venue:
+    // Islington Indoor: inicio 07:00–22:00 (último bloque 22:00–23:00).
+    // Islington Outdoor: inicio 07:00–21:00 (último bloque 21:00–22:00).
+    // Highbury/Rosemary: inicio 08:00–20:00 (último bloque 20:00–21:00).
     // Si la hora actual queda fuera del rango del nuevo venue, reseteamos a 19:00.
-    const isIslingtonExt =
-      cfg.activity_slug === BOOKING_VENUES.indoor.activity_slug ||
-      cfg.activity_slug === BOOKING_VENUES.outdoor.activity_slug;
-    const minStartHour = isIslingtonExt ? 7 : 8;
-    const maxStartHour = isIslingtonExt ? 22 : 20;
+    const isIndoor = cfg.activity_slug === BOOKING_VENUES.indoor.activity_slug;
+    const isOutdoor = cfg.activity_slug === BOOKING_VENUES.outdoor.activity_slug;
+    const minStartHour = (isIndoor || isOutdoor) ? 7 : 8;
+    const maxStartHour = isIndoor ? 22 : isOutdoor ? 21 : 20;
 
     setNewBooking(prev => {
       const curHour = parseInt((prev.start_time || '19:00').split(':')[0], 10);
@@ -1721,16 +1722,15 @@ const App = () => {
       }
       return slots;
     }
-    // Tennis: bloques de 1h. El rango depende del venue (verificado contra Better):
-    // - Islington Indoor / Outdoor: 07:00 a 22:00 (último bloque 22:00–23:00).
-    //   Tienen hora más temprana (07:00) y más tardía (21:00, 22:00) que Highbury.
-    // - Highbury / Rosemary: 08:00 a 20:00 (último bloque 20:00–21:00).
+    // Tennis: bloques de 1h. El rango depende del venue:
+    // - Islington Indoor: inicio 07:00 a 22:00 (último bloque 22:00–23:00).
+    // - Islington Outdoor: inicio 07:00 a 21:00 (último bloque 21:00–22:00).
+    // - Highbury / Rosemary: inicio 08:00 a 20:00 (último bloque 20:00–21:00).
     const _slug = newBooking.activity_slug;
-    const isIslingtonExt =
-      _slug === BOOKING_VENUES.indoor.activity_slug ||
-      _slug === BOOKING_VENUES.outdoor.activity_slug;
-    const firstStartHour = isIslingtonExt ? 7 : 8;
-    const lastStartHour = isIslingtonExt ? 22 : 20;
+    const isIndoor = _slug === BOOKING_VENUES.indoor.activity_slug;
+    const isOutdoor = _slug === BOOKING_VENUES.outdoor.activity_slug;
+    const firstStartHour = (isIndoor || isOutdoor) ? 7 : 8;
+    const lastStartHour = isIndoor ? 22 : isOutdoor ? 21 : 20;
     const pad = (n: number) => String(n).padStart(2, '0');
     return Array.from(
       { length: lastStartHour - firstStartHour + 1 },
