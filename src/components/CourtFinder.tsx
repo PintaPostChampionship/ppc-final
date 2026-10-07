@@ -7,7 +7,7 @@ import { supabase } from "../lib/supabaseClient";
 interface CourtSlot {
   venue_name: string;
   venue_slug: string;
-  platform: "better" | "clubspark" | "parks";
+  platform: "better" | "clubspark" | "parks" | "camden" | "courtside";
   court_name: string | null;
   date: string;
   start_time: string;
@@ -49,8 +49,8 @@ interface VenueSummary {
 const JSON_URL =
   "https://api.github.com/repos/jifones/booking_ppc/contents/data/court_availability.json";
 
-const PLATFORM_LABELS: Record<string, string> = { better: "Better", clubspark: "ClubSpark", parks: "Parks", camden: "Camden" };
-const PLATFORM_COLORS: Record<string, string> = { better: "bg-sky-100 text-sky-800", clubspark: "bg-amber-100 text-amber-800", parks: "bg-violet-100 text-violet-800", camden: "bg-rose-100 text-rose-800" };
+const PLATFORM_LABELS: Record<string, string> = { better: "Better", clubspark: "ClubSpark", parks: "Parks", camden: "Camden", courtside: "Courtside" };
+const PLATFORM_COLORS: Record<string, string> = { better: "bg-sky-100 text-sky-800", clubspark: "bg-amber-100 text-amber-800", parks: "bg-violet-100 text-violet-800", camden: "bg-rose-100 text-rose-800", courtside: "bg-teal-100 text-teal-800" };
 const DAY_LABELS: Record<number, string> = { 0: "Dom", 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb" };
 
 const TIME_BLOCKS = [
@@ -98,7 +98,7 @@ const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; p
   { name: "Ravenscourt Park", slug: "RavenscourtPark", platform: "clubspark", postcode: "W6 0UL", lat: 51.494, lng: -0.236, floodlit: null },
   { name: "Kilburn Grange", slug: "kilburn-grange", platform: "camden", postcode: "NW6 2JH", lat: 51.543, lng: -0.198, floodlit: null },
   { name: "Waterlow Park", slug: "waterlow-park", platform: "camden", postcode: "N6 5HG", lat: 51.569, lng: -0.147, floodlit: null },
-  { name: "Victoria Park", slug: "VictoriaPark11", platform: "clubspark", postcode: "E9 7DE", lat: 51.536, lng: -0.040, floodlit: false },
+  { name: "Victoria Park", slug: "victoria-park-th", platform: "courtside", postcode: "E9 7DE", lat: 51.5365, lng: -0.0392, floodlit: true },
   { name: "Acton Park", slug: "ActonPark2", platform: "clubspark", postcode: "W3 7JB", lat: 51.508, lng: -0.271, floodlit: null },
 ];
 
@@ -131,6 +131,16 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 function googleMapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+
+// Courtside (tennistowerhamlets) — no se puede ver disponibilidad por restricción
+// de su web; enlazamos directo a la página de la cancha del día (Today).
+const COURTSIDE_BASE = "https://tennistowerhamlets.com/book/courts";
+function courtsideUrl(venueSlug: string, dateStr?: string): string {
+  // venueSlug local "victoria-park-th" → segmento real "victoria-park"
+  const seg = venueSlug.replace(/-th$/, "");
+  const day = dateStr || new Date().toISOString().slice(0, 10);
+  return `${COURTSIDE_BASE}/${seg}/${day}#book`;
 }
 
 // ─── Slot Row ─────────────────────────────────────────────────────────────────
@@ -362,17 +372,19 @@ function VenueCard({ venue, filterDate, filterTimeRange, filterDuration, allDate
             </div>
           </div>
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setShowWatch(!showWatch)}
-              className={`text-xs px-2.5 py-1 rounded-md border transition flex items-center gap-1 ${
-                activeWatchCount > 0
-                  ? "border-amber-400 bg-amber-50 text-amber-700"
-                  : showWatch
-                    ? "border-amber-400 bg-amber-100 text-amber-700"
-                    : "border-gray-300 hover:border-amber-400 hover:text-amber-700 text-gray-500"
-              }`}>
-              🔔 {activeWatchCount > 0 ? `${activeWatchCount} alerta${activeWatchCount > 1 ? "s" : ""}` : "Crear alerta"}
-              <span className={`text-[10px] transition ${showWatch ? "rotate-180" : ""}`}>▼</span>
-            </button>
+            {venue.platform !== "courtside" && (
+              <button onClick={() => setShowWatch(!showWatch)}
+                className={`text-xs px-2.5 py-1 rounded-md border transition flex items-center gap-1 ${
+                  activeWatchCount > 0
+                    ? "border-amber-400 bg-amber-50 text-amber-700"
+                    : showWatch
+                      ? "border-amber-400 bg-amber-100 text-amber-700"
+                      : "border-gray-300 hover:border-amber-400 hover:text-amber-700 text-gray-500"
+                }`}>
+                🔔 {activeWatchCount > 0 ? `${activeWatchCount} alerta${activeWatchCount > 1 ? "s" : ""}` : "Crear alerta"}
+                <span className={`text-[10px] transition ${showWatch ? "rotate-180" : ""}`}>▼</span>
+              </button>
+            )}
             <a href={googleMapsUrl(venue.lat, venue.lng)} target="_blank" rel="noopener noreferrer"
               className="text-xs px-2 py-1 rounded-md border border-gray-300 hover:border-emerald-400 hover:text-emerald-700 transition">📍</a>
           </div>
@@ -457,7 +469,16 @@ function VenueCard({ venue, filterDate, filterTimeRange, filterDuration, allDate
           })}
         </div>
       )}
-      {expanded && filteredSlots.length === 0 && (
+      {expanded && filteredSlots.length === 0 && venue.platform === "courtside" && (
+        <div className="px-4 py-3 text-xs text-gray-500 space-y-2">
+          <p className="italic">La web de reservas de este recinto no permite mostrar los horarios aquí. Revisa la disponibilidad directamente en su sitio:</p>
+          <a href={courtsideUrl(venue.slug, filterDate !== "all" ? filterDate : undefined)} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-md bg-teal-600 text-white hover:bg-teal-700 active:scale-95 transition">
+            Ver horarios en Courtside →
+          </a>
+        </div>
+      )}
+      {expanded && filteredSlots.length === 0 && venue.platform !== "courtside" && (
         <div className="px-4 py-3 text-xs text-gray-400 italic">Sin disponibilidad — crea una alerta para que te avisemos</div>
       )}
     </div>
@@ -863,7 +884,9 @@ export default function CourtFinder({ onBack, currentUserId, isAdmin, profiles }
 
     // Include ALL known venues (even those with 0 slots)
     for (const sv of ALL_VENUES_STATIC) {
-      const slots = byVenue.get(sv.name) || [];
+      // Courtside venues (e.g. Victoria Park / tennistowerhamlets) can't be scraped —
+      // their web forbids it. Always treat as link-only, ignoring any (stale) JSON slots.
+      const slots = sv.platform === "courtside" ? [] : (byVenue.get(sv.name) || []);
       const distance = (userLat && userLng) ? haversineKm(userLat, userLng, sv.lat, sv.lng) : undefined;
       const filtered = slots.filter(s => {
         if (filterDate !== "all" && s.date !== filterDate) return false;
