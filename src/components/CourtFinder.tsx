@@ -102,6 +102,107 @@ const ALL_VENUES_STATIC: Array<{ name: string; slug: string; platform: string; p
   { name: "Acton Park", slug: "ActonPark2", platform: "clubspark", postcode: "W3 7JB", lat: 51.508, lng: -0.271, floodlit: null },
 ];
 
+// ─── Booking windows (cuántos días antes se puede reservar) ────────────────────
+// noMember / member = días de anticipación (T+N). Si son iguales, no hay membresía
+// que cambie la ventana. weeks=true → el valor está en semanas (Camden).
+// Fuente: verificado manualmente (ver booking-windows.md).
+type BookingWindow = { noMember: number; member: number; weeks?: boolean; note?: string };
+const BOOKING_WINDOWS: Record<string, BookingWindow> = {
+  // Better — T+6 sin membresía, T+7 con membresía (release ~22:00)
+  "Highbury Fields": { noMember: 6, member: 7 },
+  "Islington Tennis Centre (Outdoor)": { noMember: 6, member: 7 },
+  "Islington Tennis Centre (Indoor)": { noMember: 6, member: 7 },
+  "Tufnell Park": { noMember: 6, member: 7 },
+  "Rosemary Gardens": { noMember: 6, member: 7 },
+  "Hackney Parks (Outdoor)": { noMember: 6, member: 7 },
+  "Gunnersbury Park": { noMember: 6, member: 7 },
+  // ClubSpark sin membresía — T+6
+  "Kennington Park": { noMember: 6, member: 6 },
+  "Archbishops Park": { noMember: 6, member: 6 },
+  "Burgess Park": { noMember: 6, member: 6 },
+  "Vauxhall Park": { noMember: 6, member: 6 },
+  "Larkhall Park": { noMember: 6, member: 6 },
+  "Clapham Common": { noMember: 6, member: 6 },
+  "Clissold Park": { noMember: 6, member: 6 },
+  "Hackney Downs": { noMember: 6, member: 6 },
+  "Millfields Park": { noMember: 6, member: 6 },
+  "London Fields": { noMember: 6, member: 6 },
+  "Spring Hill": { noMember: 6, member: 6 },
+  "Avondale Park": { noMember: 6, member: 6 },
+  "Kensington Memorial Park": { noMember: 6, member: 6 },
+  "Acton Park": { noMember: 6, member: 6 },
+  // ClubSpark T+7
+  "Myatts Field Park": { noMember: 7, member: 7 },
+  "Finsbury Park": { noMember: 7, member: 7 },
+  "Chelmsford Square": { noMember: 7, member: 7 },
+  "Ravenscourt Park": { noMember: 7, member: 7 },
+  // Mixtas
+  "Battersea Park": { noMember: 1, member: 6 },
+  "Parliament Hill": { noMember: 2, member: 4 },
+  "Queens Park": { noMember: 2, member: 7 },
+  "Abbotts Park": { noMember: 5, member: 7 },
+  "Lloyd & Aveling Park": { noMember: 5, member: 7 },
+  // Parks / Flow — T+7
+  "Hyde Park": { noMember: 7, member: 7 },
+  "Regent's Park": { noMember: 7, member: 7 },
+  // Camden — 5 semanas
+  "Kilburn Grange": { noMember: 5, member: 5, weeks: true },
+  "Waterlow Park": { noMember: 5, member: 5, weeks: true },
+};
+
+// Genera las líneas del aviso de ventana de reserva (texto fijo, sin calcular fecha).
+function bookingWindowLines(venueName: string): string[] {
+  const w = BOOKING_WINDOWS[venueName];
+  if (!w) return [];
+  const unit = w.weeks ? "semanas" : "días";
+  if (w.noMember === w.member) {
+    return [`Reserva hasta ${w.member} ${unit} antes`];
+  }
+  return [
+    `Con membresía: hasta ${w.member} ${unit} antes`,
+    `Sin membresía: hasta ${w.noMember} ${unit} antes`,
+  ];
+}
+
+// URL base de reservas (sin fecha/cancha) — para "ir a la web" sin agregar nada.
+function baseBookingUrl(venueName: string, slug: string, platform: string): string {
+  switch (platform) {
+    case "better": {
+      const BETTER: Record<string, string> = {
+        "Highbury Fields": "islington-tennis-centre/highbury-tennis",
+        "Islington Tennis Centre (Outdoor)": "islington-tennis-centre/tennis-court-outdoor",
+        "Islington Tennis Centre (Indoor)": "islington-tennis-centre/tennis-court-indoor",
+        "Tufnell Park": "islington-tennis-centre/tufnell-park-tennis",
+        "Rosemary Gardens": "islington-tennis-centre/rosemary-gardens-tennis",
+        "Hackney Parks (Outdoor)": "hackney-parks/tennis-court-outdoor",
+        "Gunnersbury Park": "gunnersbury-park-sports-hub/tennis-court-outdoor",
+      };
+      const path = BETTER[venueName];
+      return path ? `https://bookings.better.org.uk/location/${path}` : "https://bookings.better.org.uk/";
+    }
+    case "clubspark": {
+      // Abbotts/Lloyd usan dominio propio
+      if (venueName === "Abbotts Park") return "https://abbotts.playtenniswalthamforest.com/Booking/BookByDate";
+      if (venueName === "Lloyd & Aveling Park") return "https://lloyd.playtenniswalthamforest.com/Booking/BookByDate";
+      return `https://clubspark.lta.org.uk/${slug}/Booking/BookByDate`;
+    }
+    case "parks": {
+      const PARKS: Record<string, string> = {
+        "Hyde Park": "hyde-park-courts/tennis",
+        "Regent's Park": "the-regents-park-courts/tennis",
+      };
+      const path = PARKS[venueName] || `${slug}/tennis`;
+      return `https://sportsandleisureroyalparks.bookings.flow.onl/location/${path}`;
+    }
+    case "camden":
+      return "https://camdenactive.camden.gov.uk/courses/27/tennis/";
+    case "courtside":
+      return courtsideUrl(slug);
+    default:
+      return "";
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(dateStr: string): string {
@@ -369,9 +470,22 @@ function VenueCard({ venue, filterDate, filterTimeRange, filterDuration, allDate
                 {venue.floodlit === false && <span className="ml-1.5 text-xs text-gray-300" title="Sin luces">🌙</span>}
               </h3>
               {venue.distance != null && <span className="text-xs text-gray-400">{venue.distance.toFixed(1)} km</span>}
+              {bookingWindowLines(venue.name).length > 0 && (
+                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="text-[10px]" title="Ventana de reserva">🗓️</span>
+                  {bookingWindowLines(venue.name).map((line, i) => (
+                    <span key={i} className="text-[10px] text-gray-500 leading-tight">
+                      {line}{i < bookingWindowLines(venue.name).length - 1 ? " ·" : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <a href={baseBookingUrl(venue.name, venue.slug, venue.platform)} target="_blank" rel="noopener noreferrer"
+              title="Ir a la web de reservas"
+              className="text-xs px-2 py-1 rounded-md border border-gray-300 hover:border-emerald-400 hover:text-emerald-700 transition">🌐</a>
             {venue.platform !== "courtside" && (
               <button onClick={() => setShowWatch(!showWatch)}
                 className={`text-xs px-2.5 py-1 rounded-md border transition flex items-center gap-1 ${
@@ -585,7 +699,18 @@ function CourtMap({ venues, onVenueClick, selectedVenue, userLat, userLng, onBou
           iconAnchor: [isSelected ? 16 : 13, isSelected ? 16 : 13],
         });
         const marker = L.marker([venue.lat, venue.lng], { icon }).addTo(map);
-        marker.bindPopup('<strong>' + venue.name + '</strong><br/>' + venue.totalSlots + ' opciones · ' + venue.postcode);
+        const windowLines = bookingWindowLines(venue.name);
+        const windowHtml = windowLines.length > 0
+          ? '<div style="margin-top:4px;font-size:11px;color:#6b7280;">🗓️ ' + windowLines.join('<br/>🗓️ ') + '</div>'
+          : '';
+        const webUrl = baseBookingUrl(venue.name, venue.slug, venue.platform);
+        const webHtml = webUrl
+          ? '<div style="margin-top:5px;"><a href="' + webUrl + '" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:#059669;font-weight:600;text-decoration:none;">🌐 Ir a la web de reservas →</a></div>'
+          : '';
+        const slotsHtml = venue.platform === "courtside"
+          ? '<span style="color:#6b7280;">Ver horarios en su web</span>'
+          : venue.totalSlots + ' opciones';
+        marker.bindPopup('<strong>' + venue.name + '</strong><br/>' + slotsHtml + ' · ' + venue.postcode + windowHtml + webHtml);
         marker.on("click", () => onVenueClick(venue.name));
         markersRef.current.push(marker);
       }
