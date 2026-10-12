@@ -638,11 +638,17 @@ function DivisionSettings({
 
     setUpdating(reg.id);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('tournament_registrations')
         .update({ status: newStatus })
-        .eq('id', reg.id);
+        .eq('id', reg.id)
+        .select('id'); // devuelve las filas afectadas para detectar bloqueo silencioso por RLS
       if (error) throw error;
+
+      // Si RLS bloquea el UPDATE, no hay error pero no se afecta ninguna fila.
+      if (!data || data.length === 0) {
+        throw new Error('No se pudo guardar el cambio. No tienes permisos para modificar esta división (se requiere ser admin o capitán).');
+      }
 
       setLocalOverrides(prev => ({ ...prev, [reg.id]: newStatus }));
       setUpdating(null);
