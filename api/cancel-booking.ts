@@ -131,10 +131,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .eq('id', booking_account_id)
     .single();
 
+  // Acceso compartido: usuarios en booking_account_users pueden gestionar la cuenta
+  // (ej. Vicho con la cuenta de Dominga).
+  const { data: sharedAccess } = await supabase
+    .from('booking_account_users')
+    .select('profile_id')
+    .eq('booking_account_id', booking_account_id)
+    .eq('profile_id', userId);
+
   const isAdmin = (admins && admins.length > 0);
   const isOwner = account?.owner_profile_id === userId;
+  const isSharedUser = (sharedAccess && sharedAccess.length > 0);
 
-  if (!isAdmin && !isOwner) {
+  if (!isAdmin && !isOwner && !isSharedUser) {
     return res.status(403).json({ error: 'No tienes permiso para cancelar esta reserva' });
   }
 

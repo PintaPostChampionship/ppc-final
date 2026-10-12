@@ -1701,6 +1701,16 @@ const App = () => {
   // cuentas compartidas (ej. Vicho usando la cuenta de Dominga).
   const visibleBookingAccounts: BookingAccount[] = bookingAccounts;
 
+  // ¿Puede el usuario GESTIONAR (crear/editar/cancelar/eliminar) esta cuenta de Better?
+  // True para: admin, el owner, o quien tenga acceso compartido. Como visibleBookingAccounts
+  // ya incluye owner + compartidas (y todas si es admin), basta con que la cuenta esté ahí.
+  // Esto permite que Vicho cancele/edite reservas de la cuenta de Dominga, igual que crear.
+  const canManageBookingAccount = (accountId?: string | null): boolean => {
+    if (!accountId) return false;
+    if (isBookingAdmin) return true;
+    return visibleBookingAccounts.some(a => a.id === accountId);
+  };
+
   // Bloques horarios disponibles en Better (dinámico según venue)
   const betterTimeSlots: { value: string; label: string }[] = (() => {
     if (newBooking.activity_slug === 'open-water-swimming') {
@@ -2048,8 +2058,14 @@ const App = () => {
   }
 
   async function handleCancelBooking(req: CourtBookingRequest) {
-    if (!isBookingAdmin && currentUser?.id !== req.profile_id) {
-      alert('Solo el creador o un admin puede cancelar esta reserva.');
+    // Puede cancelar: admin, el creador, o quien gestione la cuenta de Better de la
+    // request (owner o acceso compartido, ej. Vicho con la cuenta de Dominga).
+    const canManage =
+      isBookingAdmin ||
+      currentUser?.id === req.profile_id ||
+      canManageBookingAccount(req.better_account_id);
+    if (!canManage) {
+      alert('Solo el creador, quien usa la cuenta, o un admin puede cancelar esta reserva.');
       return;
     }
     if (!window.confirm('¿Seguro que quieres cancelar esta reserva automática?')) {
@@ -6710,9 +6726,13 @@ const App = () => {
                 </div>
 
                 {(() => {
-                  // Filter bookings based on selected filter
+                  // Filter bookings based on selected filter.
+                  // "mine" = cuentas que el usuario gestiona (propias + compartidas,
+                  // ej. Vicho con la cuenta de Dominga), no solo donde es owner.
                   const myOwnAccountIds = new Set(
-                    bookingAccounts.filter(a => a.owner_profile_id === currentUser?.id).map(a => a.id)
+                    visibleBookingAccounts
+                      .filter(a => isBookingAdmin ? a.owner_profile_id === currentUser?.id : true)
+                      .map(a => a.id)
                   );
                   const filteredBookings = reservasFilter === 'all'
                     ? betterBookings
@@ -6761,7 +6781,7 @@ const App = () => {
                                 .replace('Highbury Fields ', '');
                               const account = bookingAccounts.find(a => a.id === b.booking_account_id);
                               const playerName = account?.label || '—';
-                              const canCancelThis = b.can_cancel && (isBookingAdmin || account?.owner_profile_id === currentUser?.id);
+                              const canCancelThis = b.can_cancel && canManageBookingAccount(b.booking_account_id);
                               return (
                                 <div key={b.id} className="px-4 py-2 flex items-center justify-between gap-2 hover:bg-gray-50">
                                   <div className="flex items-center gap-3">
@@ -7182,7 +7202,7 @@ const App = () => {
                             return (a.target_start_time || '').localeCompare(b.target_start_time || '');
                           }).map((req) => {
                             const account = bookingAccounts.find(a => a.id === req.better_account_id);
-                            const canCancel = isBookingAdmin || account?.owner_profile_id === currentUser?.id;
+                            const canCancel = canManageBookingAccount(req.better_account_id);
                             return (
                               <tr key={req.id} className="bg-white hover:bg-gray-50">
                                 <td className="px-2 py-2 whitespace-nowrap text-center font-medium">{tituloFechaEs(req.target_date)}</td>
