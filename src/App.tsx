@@ -1949,6 +1949,47 @@ const App = () => {
       return;
     }
 
+    // BLOQUEO DURO: no permitir preferencias que se solapen con otra cuenta para el
+    // mismo día/hora/venue (nos trae problemas al reservar). Se compara por número de
+    // cancha. Swimming no aplica (no hay competencia por cancha). Al editar, se ignora
+    // la propia request. No aplica entre requests de la MISMA cuenta de Better.
+    if (selectedBookingVenue.key !== 'swimming') {
+      const courtNumVal = (s?: string | null): string | null => {
+        if (!s) return null;
+        const m = /(\d+)/.exec(s);
+        return m ? m[1] : null;
+      };
+      const myNums = [
+        newBooking.preferred_court_name_1,
+        newBooking.preferred_court_name_2,
+        newBooking.preferred_court_name_3,
+      ].map(courtNumVal).filter(Boolean) as string[];
+
+      const othersNums = new Set<string>();
+      activeRequests
+        .filter(r =>
+          r.id !== editingRequestId &&
+          r.target_date === newBooking.target_date &&
+          r.venue_slug === newBooking.venue_slug &&
+          r.activity_slug === newBooking.activity_slug &&
+          String(r.target_start_time).slice(0, 5) === newBooking.start_time &&
+          r.better_account_id !== newBooking.better_account_id
+        )
+        .forEach(r => {
+          [r.preferred_court_name_1, r.preferred_court_name_2, r.preferred_court_name_3]
+            .forEach(c => { const n = courtNumVal(c); if (n) othersNums.add(n); });
+        });
+
+      const clash = myNums.filter(n => othersNums.has(n));
+      if (clash.length > 0) {
+        setBookingError(
+          `No puedes elegir una cancha ya reservada por otra cuenta para ese día/hora ` +
+          `(Court ${clash.join(', ')}). Elige canchas distintas.`
+        );
+        return;
+      }
+    }
+
     try {
       setSavingBooking(true);
 
@@ -7049,21 +7090,35 @@ const App = () => {
                       {selectedBookingVenue.key === 'swimming' ? 'Lanes preferidas' : 'Canchas preferidas (máx 2)'}
                     </label>
                     {(() => {
-                      // Calculate blocked courts (already taken by others for same date/time)
-                      const blockedCourts = new Set<string>();
+                      // Canchas bloqueadas: ya elegidas por OTRA cuenta para el mismo
+                      // día/hora/venue/actividad. Se comparan por NÚMERO de cancha (robusto
+                      // para todos los venues: Highbury, Indoor, Outdoor, Rosemary) e incluye
+                      // las 3 preferencias. Esto evita que dos cuentas tengan la misma
+                      // preferencia para el mismo slot (nos trae problemas al reservar).
+                      const courtNum = (s?: string | null): string | null => {
+                        if (!s) return null;
+                        const m = /(\d+)/.exec(s);
+                        return m ? m[1] : null;
+                      };
+                      const blockedNums = new Set<string>();
                       if (newBooking.target_date && newBooking.start_time) {
                         activeRequests
                           .filter(r =>
                             r.target_date === newBooking.target_date &&
                             r.venue_slug === newBooking.venue_slug &&
+                            r.activity_slug === newBooking.activity_slug &&
                             String(r.target_start_time).slice(0, 5) === newBooking.start_time &&
                             r.better_account_id !== newBooking.better_account_id
                           )
                           .forEach(r => {
-                            if (r.preferred_court_name_1) blockedCourts.add(r.preferred_court_name_1.replace('Highbury Fields Tennis ', ''));
-                            if (r.preferred_court_name_2) blockedCourts.add(r.preferred_court_name_2.replace('Highbury Fields Tennis ', ''));
+                            [r.preferred_court_name_1, r.preferred_court_name_2, r.preferred_court_name_3]
+                              .forEach(c => { const n = courtNum(c); if (n) blockedNums.add(n); });
                           });
                       }
+                      // courtNames son los "short" del venue (ej. "Court 7"); mapeamos a número.
+                      const blockedCourts = new Set<string>(
+                        courtNames.filter(c => { const n = courtNum(c); return n !== null && blockedNums.has(n); })
+                      );
                       const availableCourts = courtNames.filter(c => !blockedCourts.has(c));
 
                       return (
