@@ -6,6 +6,7 @@ export const BUSCAR_CLASES_ALLOWED_ID = "fb045715-86c6-48fc-88dc-c784fa5ed2bc";
 // Tournament IDs ocultos de la home (accesibles solo por link directo)
 export const HIDDEN_TOURNAMENT_IDS: string[] = [
   "2606f3ec-6145-47b0-9536-3e91ac04b02d", // Andrea Vivaldi - 1 Point Slam
+  "ce2b5e25-ff7b-4222-bf4c-c70aa8f5c6a2", // Forest Cup Edición 1 (solo por link por ahora)
 ];
 
 // Profile IDs autorizados para ver el Dashboard Admin (además de role === 'admin' y capitanes)

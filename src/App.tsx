@@ -30,6 +30,7 @@ import { NavPlayerSearch } from './components/NavPlayerSearch';
 import { NavTournamentsSection } from './components/NavTournamentsSection';
 import { PhotoCarousel3D } from './components/PhotoCarousel3D';
 import { GoatRegistration } from './components/GoatRegistration';
+import { ForestCupRegistration } from './components/ForestCupRegistration';
 import { StreamingGuide } from './components/StreamingGuide';
 import FinalsPreview from './components/FinalsPreview';
 import LiveOverlay from './components/LiveScoreboard/LiveOverlay';
@@ -136,6 +137,10 @@ const App = () => {
   const [showGoatPage, setShowGoatPage] = useState(() => {
     const hash = window.location.hash.replace(/^#\/?/, '');
     return hash === 'registro-1-punto';
+  });
+  const [showForestCupPage, setShowForestCupPage] = useState(() => {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    return hash === 'forest-cup-registro';
   });
   const [overlayMatchId, setOverlayMatchId] = useState<string | null>(() => {
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -1465,6 +1470,14 @@ const App = () => {
         return;
       } else {
         setShowGoatPage(false);
+      }
+
+      // Forest Cup registration route
+      if (hash === 'forest-cup-registro') {
+        setShowForestCupPage(true);
+        return;
+      } else {
+        setShowForestCupPage(false);
       }
 
       // Division route (from push notifications)
@@ -7537,6 +7550,23 @@ const App = () => {
         onBack={() => {
           window.location.hash = '';
           setShowGoatPage(false);
+        }}
+      />
+    );
+  }
+
+  // 🌲 Forest Cup Registration — accesible via /#forest-cup-registro
+  if (showForestCupPage) {
+    return (
+      <ForestCupRegistration
+        currentUser={currentUser}
+        tournaments={tournaments}
+        divisions={divisions}
+        registrations={registrations}
+        matches={matches}
+        onBack={() => {
+          window.location.hash = '';
+          setShowForestCupPage(false);
         }}
       />
     );
