@@ -223,21 +223,79 @@ export function ForestCupRegistration({
         </div>
       </div>
 
-      {/* Bases (genérico, placeholder — se completará después) */}
+      {/* Bases del torneo */}
       <div className="max-w-3xl mx-auto px-4 mb-8">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 sm:px-8 py-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Sobre el torneo</h2>
-          <div className="text-gray-700 text-sm leading-relaxed space-y-3">
-            <p>
-              La <strong>Forest Cup</strong> es un torneo especial abierto a todos los jugadores y jugadoras
-              de la comunidad PPC/WPPC. Se jugará en formato de eliminación directa con 16 participantes.
-            </p>
-            <p>
-              Los cupos son limitados a <strong>16 jugadores</strong>. Las inscripciones cierran el{' '}
-              <strong>{CLOSE_DATE_LABEL}</strong>.
-            </p>
-            <p className="text-gray-400 italic">
-              Más detalles (fecha, formato, premios y bases completas) se anunciarán pronto.
+          <h2 className="text-lg font-bold text-gray-900 mb-5">Sobre el torneo</h2>
+
+          <div className="space-y-4">
+            {/* Quiénes participan */}
+            <div className="flex gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-lg">🏆</div>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold text-gray-900">¿Quiénes pueden participar?</p>
+                <p className="text-gray-600">
+                  TOD@S l@s pepecin@s, sin importar su división. La idea es que tengamos cruces divisionales
+                  y que cualquiera pueda terminar levantando la copa.
+                </p>
+              </div>
+            </div>
+
+            {/* Fecha límite */}
+            <div className="flex gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-lg">📅</div>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold text-gray-900">Fecha límite de inscripción</p>
+                <p className="text-gray-600">26 de noviembre.</p>
+              </div>
+            </div>
+
+            {/* Sorteo */}
+            <div className="flex gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-lg">🎲</div>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold text-gray-900">Sorteo del cuadro</p>
+                <p className="text-gray-600">27 de noviembre, durante el Social PPC.</p>
+              </div>
+            </div>
+
+            {/* Cupos */}
+            <div className="flex gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-lg">👥</div>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold text-gray-900">Cupos</p>
+                <p className="text-gray-600">Máximo 16 jugadores/as.</p>
+              </div>
+            </div>
+
+            {/* Final */}
+            <div className="flex gap-3">
+              <div className="shrink-0 w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-lg">🏁</div>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold text-gray-900">Final</p>
+                <p className="text-gray-600">
+                  Por confirmar si se juega el 20 de marzo en el Finals Day. Si no fuera posible, el torneo
+                  deberá terminar justo antes para poder hacer la premiación.
+                </p>
+              </div>
+            </div>
+
+            {/* Importante */}
+            <div className="flex gap-3 rounded-xl bg-amber-50 border border-amber-200 p-3">
+              <div className="shrink-0 w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-lg">⚠️</div>
+              <div className="text-sm leading-relaxed">
+                <p className="font-semibold text-amber-900">Importante</p>
+                <p className="text-amber-800">
+                  Al ser eliminación directa, cada partido cuenta. Será responsabilidad de cada jugador/a
+                  contactar a su rival y coordinar su partido dentro de los plazos establecidos.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 pt-5 border-t border-gray-100 text-center">
+            <p className="text-emerald-700 font-semibold text-sm">
+              ¡Inscríbete y veamos quién se queda con la primera Forest Cup! 🌳🔥
             </p>
           </div>
         </div>
