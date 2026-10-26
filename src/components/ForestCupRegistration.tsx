@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { uiName } from '../lib/displayUtils';
-import { isCalibrationTournamentByName } from '../lib/tournamentUtils';
-import type { Profile, Tournament, Division, Registration, Match } from '../types';
+import type { Profile } from '../types';
 
 const TOURNAMENT_ID = 'ce2b5e25-ff7b-4222-bf4c-c70aa8f5c6a2';
 const DIVISION_ID = '7a167e82-cc76-4a06-aac7-108601a5ffea';
@@ -11,10 +10,6 @@ const CLOSE_DATE_LABEL = '26 de noviembre, 2026';
 
 interface ForestCupRegistrationProps {
   currentUser: Profile | null;
-  tournaments: Tournament[];
-  divisions: Division[];
-  registrations: Registration[];
-  matches: Match[];
   onBack: () => void;
 }
 
@@ -25,15 +20,10 @@ interface Participant {
   avatar_url?: string;
   created_at: string;
   status: string;
-  priority: number; // % de partidos jugados en liga activa (0-100)
 }
 
 export function ForestCupRegistration({
   currentUser,
-  tournaments,
-  divisions,
-  registrations,
-  matches,
   onBack,
 }: ForestCupRegistrationProps) {
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -41,47 +31,6 @@ export function ForestCupRegistration({
   const [joining, setJoining] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [hasRead, setHasRead] = useState(false);
-
-  // Calcula el % de partidos de liga jugados por un jugador en la temporada regular ACTIVA.
-  // % = partidos jugados / partidos esperados (n-1) de su división activa de liga.
-  // Si está en más de una liga activa (no debería), toma el promedio ponderado por partidos esperados.
-  const computePriority = (profileId: string): number => {
-    const activeLeagueTournamentIds = tournaments
-      .filter(t => t.status === 'active' && (t.format === 'league' || !t.format) && !isCalibrationTournamentByName(t.name))
-      .map(t => t.id);
-
-    let totalExpected = 0;
-    let totalPlayed = 0;
-
-    for (const tId of activeLeagueTournamentIds) {
-      // Registración del jugador en esta liga activa
-      const reg = registrations.find(
-        r => r.tournament_id === tId && r.profile_id === profileId && r.status !== 'retired'
-      );
-      if (!reg) continue;
-
-      // Tamaño de la división (jugadores activos) → partidos esperados = n-1
-      const divActiveCount = registrations.filter(
-        r => r.tournament_id === tId && r.division_id === reg.division_id && r.status !== 'retired'
-      ).length;
-      const expected = Math.max(0, divActiveCount - 1);
-
-      // Partidos de liga jugados por el jugador en esa división
-      const played = matches.filter(m =>
-        m.tournament_id === tId &&
-        m.division_id === reg.division_id &&
-        m.status === 'played' &&
-        !m.phase &&
-        (m.home_player_id === profileId || m.away_player_id === profileId)
-      ).length;
-
-      totalExpected += expected;
-      totalPlayed += played;
-    }
-
-    if (totalExpected <= 0) return 0;
-    return Math.min(100, Math.round((totalPlayed / totalExpected) * 100));
-  };
 
   const fetchParticipants = async () => {
     const { data, error } = await supabase
@@ -115,7 +64,6 @@ export function ForestCupRegistration({
       avatar_url: profilesMap[r.profile_id]?.avatar_url || undefined,
       created_at: r.created_at,
       status: r.status || 'active',
-      priority: computePriority(r.profile_id),
     }));
 
     setParticipants(mapped);
@@ -124,13 +72,10 @@ export function ForestCupRegistration({
 
   useEffect(() => { fetchParticipants(); }, []);
 
-  // Ordenar activos por prioridad (% desc). Desempate: quién se inscribió primero.
+  // Orden de llegada (quién se inscribió primero).
   const activeParticipants = participants
     .filter(p => p.status === 'active')
-    .sort((a, b) => {
-      if (b.priority !== a.priority) return b.priority - a.priority;
-      return (a.created_at || '').localeCompare(b.created_at || '');
-    });
+    .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
 
   const mainList = activeParticipants.slice(0, MAX_PLAYERS);
   const waitlist = activeParticipants.slice(MAX_PLAYERS);
@@ -351,8 +296,8 @@ export function ForestCupRegistration({
                       className="mt-0.5 w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500 shrink-0"
                     />
                     <span className="text-sm text-gray-700 leading-snug">
-                      Entiendo que los cupos son limitados y que la prioridad se asigna según mi actividad en la
-                      temporada regular. Confirmo mi inscripción.
+                      Entiendo que los cupos son limitados (16) y se asignan por orden de inscripción.
+                      Confirmo mi inscripción.
                     </span>
                   </label>
 
@@ -413,8 +358,7 @@ export function ForestCupRegistration({
                 Inscritos ({mainList.length}/{MAX_PLAYERS})
               </h2>
               <p className="text-xs text-gray-500 mb-3">
-                Ordenados por actividad en la temporada regular (más partidos jugados = mayor prioridad).
-                Los primeros {MAX_PLAYERS} tienen cupo confirmado.
+                Ordenados por orden de inscripción. Los primeros {MAX_PLAYERS} tienen cupo confirmado.
               </p>
 
               {mainList.length === 0 ? (
@@ -449,7 +393,7 @@ export function ForestCupRegistration({
                   Lista de Espera ({waitlist.length})
                 </h2>
                 <p className="text-xs text-gray-500 mb-3">
-                  Superan el cupo de {MAX_PLAYERS}. Entrarán si se libera un lugar o según su actividad al cierre.
+                  Superan el cupo de {MAX_PLAYERS}. Entrarán si se libera un lugar.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {waitlist.map((p, i) => (

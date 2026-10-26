@@ -7560,10 +7560,6 @@ const App = () => {
     return (
       <ForestCupRegistration
         currentUser={currentUser}
-        tournaments={tournaments}
-        divisions={divisions}
-        registrations={registrations}
-        matches={matches}
         onBack={() => {
           window.location.hash = '';
           setShowForestCupPage(false);
