@@ -334,6 +334,9 @@ const App = () => {
   const [avTournamentCount, setAvTournamentCount] = useState(0);
   const [avTournamentProfileIds, setAvTournamentProfileIds] = useState<string[]>([]);
 
+  // Forest Cup — inscripciones (banner en home)
+  const [forestCupProfileIds, setForestCupProfileIds] = useState<string[]>([]);
+
   // Sub Fase de Grupos (Placement) – UI state (Edición 3)
   const [placementGroup, setPlacementGroup] = useState<'A' | 'B' | 'C' | 'D'>('A');
   // Switch de vistas para Edición 3 (escalable a futuras fases)
@@ -1203,6 +1206,14 @@ const App = () => {
         setAvTournamentCount(avRegs.length);
         setAvTournamentProfileIds(avRegs.map(r => r.profile_id));
       }
+
+      // Forest Cup — inscritos (para el banner de inscripciones en la home)
+      const { data: fcRegs } = await supabase
+        .from('tournament_registrations')
+        .select('profile_id')
+        .eq('tournament_id', 'ce2b5e25-ff7b-4222-bf4c-c70aa8f5c6a2')
+        .eq('status', 'active');
+      if (fcRegs) setForestCupProfileIds(fcRegs.map(r => r.profile_id));
 
       setLoading(false);
     }
@@ -8125,6 +8136,39 @@ const App = () => {
             <h2 className="text-3xl font-bold text-white mb-4">Bienvenidos a la Pinta Post Championship</h2>
             <p className="text-white text-lg opacity-90">Selecciona un torneo para ver divisiones y detalles de jugadores</p>
           </div>
+
+          {/* 🌳 Forest Cup — banner de inscripciones (el torneo aún no se muestra en la grilla) */}
+          {currentUser && (() => {
+            const yaInscrito = forestCupProfileIds.includes(currentUser.id);
+            return (
+              <button
+                type="button"
+                onClick={() => { window.location.hash = 'forest-cup-registro'; setShowForestCupPage(true); }}
+                className="w-full mb-8 text-left rounded-2xl overflow-hidden shadow-lg border border-emerald-300/40 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-700 hover:from-emerald-500 hover:via-green-500 hover:to-emerald-600 transition active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-4 px-5 sm:px-6 py-4">
+                  <span className="text-3xl sm:text-4xl shrink-0">🌳</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-emerald-100/90">
+                      {yaInscrito ? 'Ya estás inscrito' : 'Inscripciones abiertas'}
+                    </p>
+                    <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">
+                      Forest Cup — Edición 1
+                    </h3>
+                    <p className="text-xs sm:text-sm text-emerald-50/90 mt-0.5">
+                      {yaInscrito
+                        ? 'Toca para ver los inscritos y las bases del torneo.'
+                        : 'Torneo abierto para todos. Cupos limitados (16). ¡Inscríbete antes del 26 de noviembre!'}
+                    </p>
+                  </div>
+                  <span className="shrink-0 hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-emerald-700 text-sm font-bold shadow-sm">
+                    {yaInscrito ? 'Ver inscripciones' : 'Inscribirme'}
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                  </span>
+                </div>
+              </button>
+            );
+          })()}
 
             {/* Tournament Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
