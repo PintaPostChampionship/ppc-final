@@ -34,7 +34,7 @@ import { ForestCupRegistration } from './components/ForestCupRegistration';
 import { StreamingGuide } from './components/StreamingGuide';
 import FinalsPreview from './components/FinalsPreview';
 import LiveOverlay from './components/LiveScoreboard/LiveOverlay';
-import { buildMatchScheduledPayload, buildResultLoadedPayload, determineRecipient } from './lib/notificationUtils';
+import { buildMatchScheduledPayload, buildMatchRescheduledPayload, buildResultLoadedPayload, determineRecipient } from './lib/notificationUtils';
 
 
 // --- Canal para sincronizar sesión/estado entre pestañas ---
@@ -2664,6 +2664,40 @@ const App = () => {
       if (!data || data.length === 0) {
         alert('No se pudo guardar. Es posible que el partido haya cambiado de estado o fue editado por otra persona. Refresca la página.');
         return;
+      }
+
+      // Notificar reagendado al jugador que NO hizo el cambio (solo si cambió fecha u hora)
+      const dateChanged = (editingSchedule.date || '').slice(0, 10) !== editedSchedule.date;
+      const timeChanged = (editingSchedule.time || '').slice(0, 5) !== editedSchedule.time;
+      if (dateChanged || timeChanged) {
+        const actorId = currentUser?.id ?? '';
+        const homeId = editingSchedule.home_player_id;
+        const awayId = editingSchedule.away_player_id;
+        const updatedMatch = {
+          ...editingSchedule,
+          date: editedSchedule.date,
+          time: editedSchedule.time,
+          location_id: newLocId,
+        } as Match;
+        const locName = editedSchedule.locationName || undefined;
+
+        if (actorId === homeId || actorId === awayId) {
+          // Un jugador reagendó → avisar al rival
+          const recipientId = actorId === homeId ? awayId : homeId;
+          if (recipientId) {
+            const rivalName = profiles.find(p => p.id === actorId)?.name || 'Rival';
+            const payload = buildMatchRescheduledPayload(updatedMatch, rivalName, locName);
+            sendPushNotification(recipientId, payload.title, payload.body, payload.url, payload.actions);
+          }
+        } else if (homeId && awayId) {
+          // Admin reagendó → avisar a ambos
+          const nameHome = profiles.find(p => p.id === homeId)?.name || 'Rival';
+          const nameAway = profiles.find(p => p.id === awayId)?.name || 'Rival';
+          const payloadHome = buildMatchRescheduledPayload(updatedMatch, nameAway, locName);
+          const payloadAway = buildMatchRescheduledPayload(updatedMatch, nameHome, locName);
+          sendPushNotification(homeId, payloadHome.title, payloadHome.body, payloadHome.url, payloadHome.actions);
+          sendPushNotification(awayId, payloadAway.title, payloadAway.body, payloadAway.url, payloadAway.actions);
+        }
       }
 
       alert('Partido actualizado.');

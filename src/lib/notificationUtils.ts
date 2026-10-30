@@ -85,6 +85,47 @@ export function buildMatchScheduledPayload(
 }
 
 /**
+ * Builds the notification payload for a RESCHEDULED match (date/time/location changed).
+ * Recipient = el jugador que NO hizo el cambio.
+ */
+export function buildMatchRescheduledPayload(
+  match: Match,
+  rivalName: string,
+  locationName?: string
+): NotificationPayload {
+  let body = `Partido reagendado vs ${rivalName}`;
+  if (match.date) {
+    const dateStr = new Date(match.date + 'T00:00:00').toLocaleDateString('es-CL', {
+      weekday: 'long', day: 'numeric', month: 'long'
+    });
+    body += `\n📅 Nueva fecha: ${dateStr}`;
+  }
+  if (match.time) {
+    body += ` · ${match.time.slice(0, 5)}`;
+  }
+  if (locationName) {
+    body += `\n📍 ${locationName}`;
+  }
+
+  const url = match.division_id ? `/#division/${match.division_id}` : '/';
+
+  const payload: NotificationPayload = {
+    title: '🔄 Partido reagendado',
+    body,
+    url,
+  };
+
+  if (match.date && match.time) {
+    const calUrl = buildCalendarUrl(rivalName, match.date, match.time, locationName);
+    payload.actions = [
+      { action: 'calendar', title: '📅 Agendar', url: calUrl },
+    ];
+  }
+
+  return payload;
+}
+
+/**
  * Builds the notification payload for a result loaded.
  * 
  * The URL opens the division view so the recipient can see and edit the result.

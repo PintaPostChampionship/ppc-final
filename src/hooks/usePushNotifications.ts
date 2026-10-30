@@ -36,7 +36,9 @@ export function usePushNotifications(profileId: string | null): UsePushNotificat
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Check current state on mount
+  // Check current state on mount + auto-resync (renueva la sub en DB si el permiso
+  // ya está concedido). Esto evita que las suscripciones queden "stale": cada vez
+  // que el jugador abre la web, su suscripción se regenera y se re-guarda en la DB.
   useEffect(() => {
     if (!isSupported) {
       setPermission('denied');
@@ -45,12 +47,43 @@ export function usePushNotifications(profileId: string | null): UsePushNotificat
 
     setPermission(Notification.permission);
 
-    // Check if already subscribed
     navigator.serviceWorker.ready.then(async (registration) => {
-      const subscription = await registration.pushManager.getSubscription();
-      setIsSubscribed(!!subscription);
+      const existing = await registration.pushManager.getSubscription();
+      setIsSubscribed(!!existing);
+
+      // Auto-resync solo si el usuario YA concedió permiso y hay profileId.
+      if (Notification.permission !== 'granted' || !profileId || !VAPID_PUBLIC_KEY) return;
+
+      try {
+        // Reutiliza la sub existente o crea una nueva si el navegador la rotó/eliminó.
+        const subscription =
+          existing ||
+          (await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          }));
+
+        // Re-guarda en DB (idempotente por endpoint). Así se regenera la fila si
+        // había sido borrada por un 410, o se actualiza si el endpoint cambió.
+        const { data: { session } } = await supabase.auth.getSession();
+        await fetch('/api/push-subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({
+            profile_id: profileId,
+            subscription: subscription.toJSON(),
+            user_agent: navigator.userAgent,
+          }),
+        });
+        setIsSubscribed(true);
+      } catch {
+        // Silencioso: si falla el resync, el usuario puede reactivar manualmente.
+      }
     }).catch(() => {});
-  }, [isSupported]);
+  }, [isSupported, profileId]);
 
   const subscribe = useCallback(async () => {
     if (!isSupported || !profileId) return;
